@@ -1,4 +1,5 @@
 import torch
+import utils
 from timm.models import create_model
 from timm.scheduler import create_scheduler
 from timm.optim import create_optimizer
@@ -57,7 +58,7 @@ def train(args):
             checkpoint_path = os.path.join(args.output_dir, 'checkpoint/task{}_checkpoint.pth'.format(task_id + 1))
             if os.path.exists(checkpoint_path):
                 print('Loading checkpoint from:', checkpoint_path)
-                checkpoint = torch.load(checkpoint_path, map_location=device)
+                checkpoint = utils.load_checkpoint(checkpoint_path, map_location=device)
                 model.load_state_dict(checkpoint['model'])
             else:
                 print('No checkpoint found at:', checkpoint_path)
@@ -66,7 +67,7 @@ def train(args):
                                                     'checkpoint/task{}_checkpoint.pth'.format(task_id + 1))
             if os.path.exists(original_checkpoint_path):
                 print('Loading checkpoint from:', original_checkpoint_path)
-                original_checkpoint = torch.load(original_checkpoint_path, map_location=device)
+                original_checkpoint = utils.load_checkpoint(original_checkpoint_path, map_location=device)
                 original_model.load_state_dict(original_checkpoint['model'])
             else:
                 print('No checkpoint found at:', original_checkpoint_path)

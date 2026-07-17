@@ -1,64 +1,116 @@
 # Running HRM-PET on Kaggle
 
-This repository can run in a Kaggle notebook with a GPU accelerator. The main Kaggle differences are:
+This repository can run in a Kaggle notebook with a GPU accelerator. The important Kaggle rule is that inputs under `/kaggle/input` are read-only, while the ImageNet-R loader creates `train/` and `test/` folders. Copy ImageNet-R to `/kaggle/working` before training.
 
-- put datasets under `/kaggle/input`
-- write checkpoints and logs under `/kaggle/working`
-- install the pinned `timm` version used by the model code
-- use `torch.distributed.run` instead of the deprecated `torch.distributed.launch`
+## 1. Clone repo
 
-## 1. Add the code and data
+```bash
+%%bash
+set -e
 
-Add this repository to the notebook, or upload it as a Kaggle dataset. Also add the ImageNet-R dataset. The runner expects this layout by default:
-
-```text
-/kaggle/input/imagenet-r/imagenet-r/<class folders>
+cd /kaggle/working
+rm -rf Hybrid_ReMatching
+git clone https://github.com/Truong140206/Hybrid_ReMatching.git
+cd Hybrid_ReMatching
+ls
 ```
-
-If your Kaggle dataset has a different folder name, set `DATA_PATH` before running the script.
 
 ## 2. Install dependencies
 
-Run this in the first notebook cell:
-
 ```bash
-pip install -r /kaggle/input/<repo-dataset-name>/requirements.txt
+%%bash
+set -e
+
+cd /kaggle/working/Hybrid_ReMatching
+pip install -q timm==0.6.7 scikit-learn scipy requests
 ```
 
-If you cloned the repo into `/kaggle/working/HRM-PET`, use:
+## 3. Copy ImageNet-R to writable storage
 
-```bash
-pip install -r /kaggle/working/HRM-PET/requirements.txt
+The observed Kaggle input layout is:
+
+```text
+/kaggle/input/datasets/my1nonly/imagenet-r/imagenet-r
 ```
 
-## 3. Run the ImageNet-R LoRA experiment
-
-From the repository directory:
+Copy the parent folder to `/kaggle/working`:
 
 ```bash
+%%bash
+set -e
+
+rm -rf /kaggle/working/datasets
+mkdir -p /kaggle/working/datasets
+cp -r /kaggle/input/datasets/my1nonly/imagenet-r /kaggle/working/datasets/
+
+ls /kaggle/working/datasets/imagenet-r
+ls /kaggle/working/datasets/imagenet-r/imagenet-r | head
+```
+
+Use this runtime data path:
+
+```text
+/kaggle/working/datasets/imagenet-r
+```
+
+## 4. Smoke test stage 1 only
+
+```bash
+%%bash
+set -e
+
+cd /kaggle/working/Hybrid_ReMatching
+
+python -m torch.distributed.run \
+  --nproc_per_node=1 \
+  --master_port=29500 \
+  main.py \
+  imr_hideprompt_5e \
+  --model vit_base_patch16_224 \
+  --original_model vit_base_patch16_224 \
+  --batch-size 8 \
+  --epochs 1 \
+  --data-path /kaggle/working/datasets/imagenet-r \
+  --lr 0.0005 \
+  --ca_lr 0.005 \
+  --crct_epochs 1 \
+  --seed 42 \
+  --train_inference_task_only \
+  --num_workers 2 \
+  --output_dir /kaggle/working/hrm-pet-output/debug_tii
+```
+
+## 5. Full two-stage run
+
+The launcher copies ImageNet-R from `INPUT_DATA_PATH` to `DATA_PATH` if `DATA_PATH` does not exist yet.
+
+```bash
+%%bash
+set -e
+
+cd /kaggle/working/Hybrid_ReMatching
+
+export INPUT_DATA_PATH="/kaggle/input/datasets/my1nonly/imagenet-r"
+export DATA_PATH="/kaggle/working/datasets/imagenet-r"
+export OUTPUT_ROOT="/kaggle/working/hrm-pet-output"
+export GPUS=1
+export SEED=42
+export TII_EPOCHS=20
+export LORA_EPOCHS=50
+export TII_BATCH_SIZE=64
+export LORA_BATCH_SIZE=24
+
 bash training_scripts/kaggle_train_imr_lora_sup21k.sh
 ```
 
-For a smoke test, reduce the epochs:
+For a quick end-to-end check, reduce epochs:
 
 ```bash
 TII_EPOCHS=1 LORA_EPOCHS=1 bash training_scripts/kaggle_train_imr_lora_sup21k.sh
 ```
 
-For a different dataset mount:
-
-```bash
-DATA_PATH=/kaggle/input/<your-imagenet-r-dataset> bash training_scripts/kaggle_train_imr_lora_sup21k.sh
-```
-
-Outputs are written to:
-
-```text
-/kaggle/working/hrm-pet-output
-```
-
 ## Notes
 
-- Internet must be enabled if pretrained `timm` weights or torchvision datasets need to be downloaded.
-- If internet is disabled, attach a Kaggle dataset containing the required cached weights and datasets.
-- A single Kaggle GPU should use `GPUS=1`, which is the default.
+- If your Kaggle dataset is mounted somewhere else, set `INPUT_DATA_PATH` to the folder that contains the inner `imagenet-r` class-folder directory.
+- Outputs are written to `/kaggle/working/hrm-pet-output` by default.
+- Use `GPUS=1` for a single Kaggle GPU.

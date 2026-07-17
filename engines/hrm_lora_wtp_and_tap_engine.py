@@ -450,7 +450,7 @@ def train_and_evaluate(model: torch.nn.Module, model_without_ddp: torch.nn.Modul
                                                     'checkpoint/task{}_checkpoint.pth'.format(task_id + 1))
             if os.path.exists(original_checkpoint_path):
                 print('Loading checkpoint from:', original_checkpoint_path)
-                original_checkpoint = torch.load(original_checkpoint_path, map_location=device)
+                original_checkpoint = utils.load_checkpoint(original_checkpoint_path, map_location=device)
                 original_model.load_state_dict(original_checkpoint['model'], strict=False)
             else:
                 print('No checkpoint found at:', original_checkpoint_path)

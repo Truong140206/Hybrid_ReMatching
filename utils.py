@@ -211,6 +211,13 @@ def save_on_master(*args, **kwargs):
         torch.save(*args, **kwargs)
 
 
+def load_checkpoint(*args, **kwargs):
+    try:
+        return torch.load(*args, weights_only=False, **kwargs)
+    except TypeError:
+        return torch.load(*args, **kwargs)
+
+
 def init_distributed_mode(args):
     if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
         args.rank = int(os.environ["RANK"])

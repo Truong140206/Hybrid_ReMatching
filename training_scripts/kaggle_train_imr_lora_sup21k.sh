@@ -2,9 +2,20 @@
 set -euo pipefail
 
 SEED="${SEED:-42}"
-DATA_PATH="${DATA_PATH:-/kaggle/input/imagenet-r}"
+INPUT_DATA_PATH="${INPUT_DATA_PATH:-/kaggle/input/datasets/my1nonly/imagenet-r}"
+DATA_PATH="${DATA_PATH:-/kaggle/working/datasets/imagenet-r}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-/kaggle/working/hrm-pet-output}"
 GPUS="${GPUS:-1}"
+
+if [ ! -d "${DATA_PATH}" ]; then
+  if [ ! -d "${INPUT_DATA_PATH}" ]; then
+    echo "ImageNet-R input not found: ${INPUT_DATA_PATH}" >&2
+    echo "Set INPUT_DATA_PATH to the Kaggle input folder that contains imagenet-r." >&2
+    exit 1
+  fi
+  mkdir -p "$(dirname "${DATA_PATH}")"
+  cp -r "${INPUT_DATA_PATH}" "${DATA_PATH}"
+fi
 
 mkdir -p "${OUTPUT_ROOT}"
 
