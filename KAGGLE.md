@@ -97,6 +97,7 @@ export GPUS=1
 export SEED=42
 export TII_EPOCHS=20
 export LORA_EPOCHS=50
+export CRCT_EPOCHS=30
 export TII_BATCH_SIZE=64
 export LORA_BATCH_SIZE=24
 
@@ -105,8 +106,11 @@ bash training_scripts/kaggle_train_imr_lora_sup21k.sh
 
 For a quick end-to-end check, reduce epochs:
 
+The launcher skips stage 1 when all TII checkpoints already exist, so a failed stage 2 run does not force you to retrain stage 1. Set SKIP_TII_IF_COMPLETE=0 only if you intentionally want to rebuild stage 1.
+
+
 ```bash
-TII_EPOCHS=1 LORA_EPOCHS=1 bash training_scripts/kaggle_train_imr_lora_sup21k.sh
+TII_EPOCHS=1 LORA_EPOCHS=1 CRCT_EPOCHS=1 bash training_scripts/kaggle_train_imr_lora_sup21k.sh
 ```
 
 ## Notes
@@ -114,3 +118,4 @@ TII_EPOCHS=1 LORA_EPOCHS=1 bash training_scripts/kaggle_train_imr_lora_sup21k.sh
 - If your Kaggle dataset is mounted somewhere else, set `INPUT_DATA_PATH` to the folder that contains the inner `imagenet-r` class-folder directory.
 - Outputs are written to `/kaggle/working/hrm-pet-output` by default.
 - Use `GPUS=1` for a single Kaggle GPU.
+

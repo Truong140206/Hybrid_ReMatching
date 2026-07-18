@@ -38,7 +38,7 @@ class SmoothedValue(object):
         if not is_dist_avail_and_initialized():
             return
         t = torch.tensor([self.count, self.total], dtype=torch.float64, device='cuda')
-        dist.barrier()
+        distributed_barrier()
         dist.all_reduce(t)
         t = t.tolist()
         self.count = int(t[0])
@@ -211,6 +211,23 @@ def save_on_master(*args, **kwargs):
         torch.save(*args, **kwargs)
 
 
+def distributed_barrier():
+    if not is_dist_avail_and_initialized():
+        return
+    if dist.get_backend() == 'nccl' and torch.cuda.is_available():
+        try:
+            dist.barrier(device_ids=[torch.cuda.current_device()])
+            return
+        except TypeError:
+            pass
+    dist.barrier()
+
+
+def cleanup_distributed():
+    if is_dist_avail_and_initialized():
+        dist.destroy_process_group()
+
+
 def load_checkpoint(*args, **kwargs):
     try:
         return torch.load(*args, weights_only=False, **kwargs)
@@ -239,7 +256,7 @@ def init_distributed_mode(args):
         args.rank, args.dist_url), flush=True)
     torch.distributed.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
                                          world_size=args.world_size, rank=args.rank)
-    torch.distributed.barrier()
+    distributed_barrier()
     setup_for_distributed(args.rank == 0)
 
 

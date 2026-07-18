@@ -12,6 +12,7 @@ from shutil import move, rmtree
 import numpy as np
 
 import torch
+import utils
 from torchvision import datasets
 from torchvision.datasets.utils import download_url, check_integrity, verify_str_arg, download_and_extract_archive
 
@@ -642,7 +643,13 @@ class Imagenet_R(torch.utils.data.Dataset):
             tar_ref.extractall(root)
             tar_ref.close()
         
-        if not os.path.exists(self.fpath + '/train') and not os.path.exists(self.fpath + '/test'):
+        train_folder = os.path.join(self.fpath, 'train')
+        test_folder = os.path.join(self.fpath, 'test')
+        needs_split = not (os.path.exists(train_folder) and os.path.exists(test_folder))
+        dist_ready = torch.distributed.is_available() and torch.distributed.is_initialized()
+        is_rank0 = not dist_ready or torch.distributed.get_rank() == 0
+
+        if needs_split and is_rank0:
             self.dataset = datasets.ImageFolder(self.fpath, transform=transform)
             
             train_size = int(0.8 * len(self.dataset))
@@ -655,7 +662,12 @@ class Imagenet_R(torch.utils.data.Dataset):
             self.test_file_list = [self.dataset.imgs[i][0] for i in val_idx]
 
             self.split()
-        
+
+        if dist_ready:
+            utils.distributed_barrier()
+
+        if not os.path.exists(train_folder) or not os.path.exists(test_folder):
+            raise RuntimeError('ImageNet-R split was not created correctly under {}'.format(self.fpath))        
         if self.train:
             fpath = self.fpath + '/train'
 
