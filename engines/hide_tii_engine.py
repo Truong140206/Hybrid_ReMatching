@@ -171,21 +171,24 @@ def _compute_mean(model: torch.nn.Module, data_loader: Iterable, device: torch.d
 
         utils.distributed_barrier()
         dist.all_gather(features_per_cls_list, features_per_cls)
+        gathered_features_per_cls = torch.cat(features_per_cls_list, dim=0)
+        if utils.use_cfs_sampling(args):
+            cls_cfs_model[cls_id] = utils.train_cfs_model(gathered_features_per_cls, args, device)
 
         if args.ca_storage_efficient_method == 'covariance':
-            features_per_cls = torch.cat(features_per_cls_list, dim=0)
+            features_per_cls = gathered_features_per_cls
             # print(features_per_cls.shape)
             cls_mean[cls_id] = features_per_cls.mean(dim=0)
             cls_cov[cls_id] = torch.cov(features_per_cls.T) + (torch.eye(cls_mean[cls_id].shape[-1]) * 1e-4).to(device)
         if args.ca_storage_efficient_method == 'variance':
-            features_per_cls = torch.cat(features_per_cls_list, dim=0)
+            features_per_cls = gathered_features_per_cls
             # print(features_per_cls.shape)
             cls_mean[cls_id] = features_per_cls.mean(dim=0)
             cls_cov[cls_id] = torch.diag(torch.cov(features_per_cls.T) + (torch.eye(cls_mean[cls_id].shape[-1]) * 1e-4).to(device))
         if args.ca_storage_efficient_method == 'multi-centroid':
             from sklearn.cluster import KMeans
             n_clusters = args.n_centroids
-            features_per_cls = torch.cat(features_per_cls_list, dim=0).cpu().numpy()
+            features_per_cls = gathered_features_per_cls.cpu().numpy()
             kmeans = KMeans(n_clusters=n_clusters)
             kmeans.fit(features_per_cls)
             cluster_lables = kmeans.labels_
@@ -212,8 +215,10 @@ def train_and_evaluate(model: torch.nn.Module, model_without_ddp: torch.nn.Modul
     pre_ca_acc_matrix = np.zeros((args.num_tasks, args.num_tasks))
     global cls_mean
     global cls_cov
+    global cls_cfs_model
     cls_mean = dict()
     cls_cov = dict()
+    cls_cfs_model = dict()
 
     for task_id in range(args.num_tasks):
 
@@ -315,8 +320,9 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
                     cov = cls_cov[c_id].to(device)
                     if args.ca_storage_efficient_method == 'variance':
                         cov = torch.diag(cov)
-                    m = MultivariateNormal(mean.float(), cov.float())
-                    sampled_data_single = m.sample(sample_shape=(num_sampled_pcls,))
+                    sampled_data_single = utils.sample_cfs_features(
+                        mean.float(), cov.float(), num_sampled_pcls, args, device,
+                        cfs_model=cls_cfs_model.get(c_id))
                     sampled_data.append(sampled_data_single)
 
                     sampled_label.extend([c_id] * num_sampled_pcls)
@@ -329,8 +335,10 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
                        var = cls_cov[c_id][cluster]
                        if var.mean() == 0:
                            continue
-                       m = MultivariateNormal(mean.float(), (torch.diag(var) + 1e-4 * torch.eye(mean.shape[0]).to(mean.device)).float())
-                       sampled_data_single = m.sample(sample_shape=(num_sampled_pcls,))
+                       cov = (torch.diag(var) + 1e-4 * torch.eye(mean.shape[0]).to(mean.device)).float()
+                       sampled_data_single = utils.sample_cfs_features(
+                           mean.float(), cov, num_sampled_pcls, args, device,
+                           cfs_model=cls_cfs_model.get(c_id))
                        sampled_data.append(sampled_data_single)
                        sampled_label.extend([c_id] * num_sampled_pcls)
         else:

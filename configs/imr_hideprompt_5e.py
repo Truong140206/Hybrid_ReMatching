@@ -135,7 +135,7 @@ def get_args_parser(subparsers):
                             type=str, help='input type of classification head')
     subparsers.add_argument('--freeze', default=['blocks', 'patch_embed', 'cls_token', 'norm', 'pos_embed'], nargs='*',
                             type=list, help='freeze part in backbone model')
-    
+
 
     # CA parameters
     subparsers.add_argument('--crct_epochs', default=30, type=int)
@@ -149,6 +149,14 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--not_train_ca', action='store_true')
     subparsers.add_argument('--ca_storage_efficient_method', default='covariance', choices=['covariance', 'multi-centroid', 'variance'], type=str)
     subparsers.add_argument('--n_centroids', default=10, type=int)
-    
+    subparsers.add_argument('--cfs_sampling', action='store_true', help='use CFS-selected Gaussian samples for CRCT')
+    subparsers.add_argument('--cfs_epochs', default=50, type=int)
+    subparsers.add_argument('--cfs_lr', default=0.01, type=float)
+    subparsers.add_argument('--cfs_momentum', default=0.9, type=float)
+    subparsers.add_argument('--cfs_hidden_dim', default=512, type=int)
+    subparsers.add_argument('--cfs_batch_size', default=256, type=int)
+    subparsers.add_argument('--cfs_train_max_samples', default=1024, type=int)
+    subparsers.add_argument('--cfs_candidate_multiplier', default=3, type=int)
+    subparsers.add_argument('--cfs_tau', default=1.0, type=float)
     # Misc parameters
     subparsers.add_argument('--print_freq', type=int, default=10, help='The frequency of printing')

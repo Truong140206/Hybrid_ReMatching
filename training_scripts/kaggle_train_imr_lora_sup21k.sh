@@ -13,6 +13,17 @@ SKIP_LORA_IF_COMPLETE="${SKIP_LORA_IF_COMPLETE:-0}"
 
 TII_OUTPUT="${OUTPUT_ROOT}/imr_vit_multi_centroid_mlp_2_seed${SEED}"
 LORA_OUTPUT="${OUTPUT_ROOT}/test_imr_sup21k_lora_pe_seed${SEED}"
+CFS_ARGS=()
+if [ "${CFS_SAMPLING:-0}" = "1" ]; then
+  CFS_ARGS+=(--cfs_sampling)
+  CFS_ARGS+=(--cfs_epochs "${CFS_EPOCHS:-50}")
+  CFS_ARGS+=(--cfs_lr "${CFS_LR:-0.01}")
+  CFS_ARGS+=(--cfs_hidden_dim "${CFS_HIDDEN_DIM:-512}")
+  CFS_ARGS+=(--cfs_batch_size "${CFS_BATCH_SIZE:-256}")
+  CFS_ARGS+=(--cfs_train_max_samples "${CFS_TRAIN_MAX_SAMPLES:-1024}")
+  CFS_ARGS+=(--cfs_candidate_multiplier "${CFS_CANDIDATE_MULTIPLIER:-3}")
+  CFS_ARGS+=(--cfs_tau "${CFS_TAU:-1.0}")
+fi
 
 require_checkpoints() {
   local run_dir="$1"
@@ -66,7 +77,8 @@ else
     --crct_epochs "${CRCT_EPOCHS}" \
     --seed "${SEED}" \
     --train_inference_task_only \
-    --output_dir "${TII_OUTPUT}"
+    --output_dir "${TII_OUTPUT}" \
+    "${CFS_ARGS[@]}"
 
   require_checkpoints "${TII_OUTPUT}" "Stage 1 TII"
 fi
@@ -98,7 +110,8 @@ else
     --lora_momentum 0.4 \
     --lora_type hide \
     --trained_original_model "${TII_OUTPUT}" \
-    --output_dir "${LORA_OUTPUT}"
+    --output_dir "${LORA_OUTPUT}" \
+    "${CFS_ARGS[@]}"
 
   require_checkpoints "${LORA_OUTPUT}" "Stage 2 LoRA"
 fi

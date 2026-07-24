@@ -12,6 +12,7 @@ import datetime
 
 import torch
 import torch.distributed as dist
+import torch.nn.functional as F
 
 class SmoothedValue(object):
     """Track a series of values and provide access to smoothed values over a
@@ -233,6 +234,99 @@ def load_checkpoint(*args, **kwargs):
         return torch.load(*args, weights_only=False, **kwargs)
     except TypeError:
         return torch.load(*args, **kwargs)
+
+class CFSContrastiveMLP(torch.nn.Module):
+    def __init__(self, in_features, hidden_features):
+        super().__init__()
+        self.net = torch.nn.Sequential(
+            torch.nn.Linear(in_features, hidden_features),
+            torch.nn.LeakyReLU(inplace=True),
+            torch.nn.Linear(hidden_features, hidden_features),
+        )
+
+    def forward(self, x):
+        return F.normalize(self.net(x), p=2, dim=1)
+
+
+def use_cfs_sampling(args):
+    return bool(getattr(args, 'cfs_sampling', False))
+
+
+def train_cfs_model(features, args, device):
+    if not use_cfs_sampling(args) or features.shape[0] < 2:
+        return None
+
+    with torch.enable_grad():
+        features = features.detach().float().to(device)
+        max_samples = int(getattr(args, 'cfs_train_max_samples', 1024))
+        if features.shape[0] > max_samples:
+            sample_ids = torch.randperm(features.shape[0], device=device)[:max_samples]
+            features = features[sample_ids]
+
+        in_features = features.shape[1]
+        hidden_features = int(getattr(args, 'cfs_hidden_dim', 512))
+        hidden_features = max(1, min(hidden_features, in_features))
+        model = CFSContrastiveMLP(in_features, hidden_features).to(device)
+        optimizer = torch.optim.SGD(
+            model.parameters(),
+            lr=float(getattr(args, 'cfs_lr', 0.01)),
+            momentum=float(getattr(args, 'cfs_momentum', 0.9)),
+        )
+        epochs = int(getattr(args, 'cfs_epochs', 50))
+        batch_size = min(int(getattr(args, 'cfs_batch_size', 256)), features.shape[0])
+        tau = float(getattr(args, 'cfs_tau', 1.0))
+
+        model.train()
+        for _ in range(epochs):
+            perm = torch.randperm(features.shape[0], device=device)
+            for start in range(0, features.shape[0], batch_size):
+                batch = features[perm[start:start + batch_size]]
+                if batch.shape[0] < 2:
+                    continue
+                out = model(batch)
+                sim = torch.mm(out, out.t()) / tau
+                sim.fill_diagonal_(float('-inf'))
+                loss = torch.logsumexp(sim, dim=1).mean()
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+        model.eval()
+        for param in model.parameters():
+            param.requires_grad_(False)
+        return model
+
+
+@torch.no_grad()
+def sample_cfs_features(mean, cov, num_samples, args, device, cfs_model=None):
+    distribution = torch.distributions.MultivariateNormal(mean.float(), cov.float())
+    if not use_cfs_sampling(args) or cfs_model is None or num_samples <= 1:
+        return distribution.sample(sample_shape=(num_samples,))
+
+    multiplier = max(1, int(getattr(args, 'cfs_candidate_multiplier', 3)))
+    candidate_count = max(num_samples, num_samples * multiplier)
+    candidates = distribution.sample(sample_shape=(candidate_count,)).to(device)
+
+    cfs_model = cfs_model.to(device)
+    embeddings = cfs_model(candidates.float())
+    tau = float(getattr(args, 'cfs_tau', 1.0))
+    sim = torch.exp(torch.mm(embeddings, embeddings.t()) / tau)
+    sim.fill_diagonal_(0)
+
+    selected = [torch.randint(candidate_count, (1,), device=device).item()]
+    score_sum = sim[:, selected[0]].clone()
+    available = torch.ones(candidate_count, dtype=torch.bool, device=device)
+    available[selected[0]] = False
+
+    for _ in range(1, num_samples):
+        scores = score_sum / len(selected)
+        scores = scores.masked_fill(~available, float('inf'))
+        next_id = torch.argmin(scores).item()
+        selected.append(next_id)
+        available[next_id] = False
+        score_sum += sim[:, next_id]
+
+    return candidates[torch.tensor(selected, device=device)]
 
 
 def init_distributed_mode(args):
