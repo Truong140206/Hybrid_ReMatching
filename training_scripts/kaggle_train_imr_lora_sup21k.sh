@@ -31,11 +31,17 @@ if [ "${SEMANTIC_DISTILL:-0}" = "1" ]; then
   if [ -n "${SEMANTIC_CLASS_NAME_FILE:-}" ]; then
     SEMANTIC_ARGS+=(--semantic_class_name_file "${SEMANTIC_CLASS_NAME_FILE}")
   fi
-  SEMANTIC_ARGS+=(--semantic_alpha "${SEMANTIC_ALPHA:-0.1}")
+  SEMANTIC_ARGS+=(--semantic_alpha "${SEMANTIC_ALPHA:-0.05}")
   SEMANTIC_ARGS+=(--semantic_floor "${SEMANTIC_FLOOR:-0.2}")
   SEMANTIC_ARGS+=(--semantic_sharpness "${SEMANTIC_SHARPNESS:-1.0}")
   SEMANTIC_ARGS+=(--semantic_top_k "${SEMANTIC_TOP_K:-5}")
-  SEMANTIC_ARGS+=(--semantic_mode "${SEMANTIC_MODE:-topk_mix}")
+  SEMANTIC_ARGS+=(--semantic_mode "${SEMANTIC_MODE:-adaptive_gate}")
+  if [ "${SEMANTIC_PROJECTION:-0}" = "1" ]; then
+    SEMANTIC_ARGS+=(--semantic_projection)
+    SEMANTIC_ARGS+=(--semantic_projection_ratio "${SEMANTIC_PROJECTION_RATIO:-0.25}")
+    SEMANTIC_ARGS+=(--semantic_projection_top_k "${SEMANTIC_PROJECTION_TOP_K:-5}")
+    SEMANTIC_ARGS+=(--semantic_projection_strength "${SEMANTIC_PROJECTION_STRENGTH:-1.0}")
+  fi
 fi
 require_checkpoints() {
   local run_dir="$1"

@@ -291,6 +291,9 @@ def use_semantic_distillation(args):
     return bool(getattr(args, 'semantic_distill', False))
 
 
+
+def use_semantic_projection(args):
+    return bool(getattr(args, 'semantic_projection', False))
 def _semantic_tokens(class_name):
     text = str(class_name).lower()
     for char in ['_', '-', '/', '.', ',', ';', ':', '(', ')', '[', ']']:
@@ -420,8 +423,22 @@ def apply_semantic_relation_distillation(relation_target, labels, args, device):
         return relation_target
 
     weights = semantic_sim.index_select(0, labels).index_select(1, labels)
-    mode = getattr(args, 'semantic_mode', 'topk_mix')
+    mode = getattr(args, 'semantic_mode', 'adaptive_gate')
 
+    if mode == 'adaptive_gate':
+        class_top_k = int(getattr(args, 'semantic_top_k', 5))
+        if class_top_k > 0:
+            keep_count = min(class_top_k + 1, semantic_sim.shape[1])
+            _, global_top_ids = torch.topk(semantic_sim, k=keep_count, dim=1)
+            class_keep = torch.zeros_like(semantic_sim, dtype=torch.bool)
+            class_keep.scatter_(1, global_top_ids, True)
+            batch_keep = class_keep.index_select(0, labels).index_select(1, labels)
+            weights = weights * batch_keep.float()
+
+        alpha = float(getattr(args, 'semantic_alpha', 0.05))
+        alpha = max(0.0, min(1.0, alpha))
+        gated_target = relation_target * (1.0 + alpha * weights)
+        return gated_target / gated_target.sum(dim=1, keepdim=True).clamp_min(1e-12)
     if mode == 'topk_mix':
         class_top_k = int(getattr(args, 'semantic_top_k', 5))
         if class_top_k > 0:
@@ -455,6 +472,98 @@ def apply_semantic_relation_distillation(relation_target, labels, args, device):
         weighted_target = (1.0 - alpha) * relation_target + alpha * weighted_target
         weighted_target = weighted_target / weighted_target.sum(dim=1, keepdim=True).clamp_min(1e-12)
     return weighted_target
+
+
+
+def _semantic_projection_embeddings(args, device, feature_dim):
+    class_names = getattr(args, 'class_names', None)
+    if not class_names:
+        return None
+    class_names = resolve_semantic_class_names(class_names, args)
+    return build_semantic_class_embeddings(class_names, device, dim=feature_dim)
+
+
+@torch.no_grad()
+def semantic_project_features(features, source_mean, target_mean, source_cls, target_cls, args, device):
+    feature_dim = features.shape[-1]
+    embeddings = _semantic_projection_embeddings(args, device, feature_dim)
+    if embeddings is None or source_cls >= embeddings.shape[0] or target_cls >= embeddings.shape[0]:
+        return features
+
+    source_sem = embeddings[source_cls].float()
+    target_sem = embeddings[target_cls].float()
+    bridge = F.normalize(source_sem + target_sem, p=2, dim=0)
+    if not torch.isfinite(bridge).all() or bridge.norm() < 1e-6:
+        return features
+
+    source_mean = source_mean.float().to(device)
+    target_mean = target_mean.float().to(device)
+    centered = features.float().to(device) - source_mean.unsqueeze(0)
+    rotated = 2.0 * torch.matmul(centered, bridge).unsqueeze(1) * bridge.unsqueeze(0) - centered
+
+    strength = float(getattr(args, 'semantic_projection_strength', 1.0))
+    strength = max(0.0, min(1.0, strength))
+    projected = target_mean.unsqueeze(0) + strength * rotated + (1.0 - strength) * centered
+    return projected
+
+
+@torch.no_grad()
+def sample_semantic_projected_features(target_cls, target_mean, num_samples, args, device,
+                                       cls_mean, cls_cov, cls_cfs_model=None, available_classes=None):
+    if not use_semantic_projection(args) or num_samples <= 0:
+        return None
+
+    feature_dim = target_mean.numel()
+    embeddings = _semantic_projection_embeddings(args, device, feature_dim)
+    if embeddings is None or target_cls >= embeddings.shape[0]:
+        return None
+
+    if available_classes is None:
+        available_classes = list(cls_mean.keys())
+    available_classes = [int(c) for c in available_classes if int(c) != int(target_cls) and int(c) in cls_mean and int(c) in cls_cov]
+    if not available_classes:
+        return None
+
+    source_ids = torch.tensor(available_classes, dtype=torch.long, device=device)
+    sim = embeddings[target_cls].matmul(embeddings.index_select(0, source_ids).t()).clamp(min=0.0)
+    top_k = int(getattr(args, 'semantic_projection_top_k', getattr(args, 'semantic_top_k', 5)))
+    top_k = max(1, min(top_k, source_ids.numel()))
+    _, order = torch.topk(sim, k=top_k)
+    selected_sources = source_ids.index_select(0, order).tolist()
+
+    chunks = []
+    remaining = num_samples
+    for idx, source_cls in enumerate(selected_sources):
+        take = remaining // (len(selected_sources) - idx)
+        if take <= 0:
+            continue
+        source_mean = cls_mean[source_cls]
+        source_cov = cls_cov[source_cls]
+        if isinstance(source_mean, list) or isinstance(source_cov, list):
+            valid_clusters = [idx for idx, var in enumerate(source_cov) if torch.as_tensor(var).float().mean().item() != 0]
+            if not valid_clusters:
+                continue
+            cluster_idx = valid_clusters[torch.randint(len(valid_clusters), (1,), device=device).item()]
+            source_mean = source_mean[cluster_idx]
+            source_cov = source_cov[cluster_idx]
+        source_mean = source_mean.float().to(device)
+        source_cov = source_cov.float().to(device)
+        if source_cov.dim() == 1:
+            source_cov = torch.diag(source_cov) + 1e-4 * torch.eye(source_mean.shape[0], device=device)
+        source_samples = sample_cfs_features(
+            source_mean, source_cov, take, args, device,
+            cfs_model=cls_cfs_model.get(source_cls) if cls_cfs_model is not None else None)
+        chunks.append(semantic_project_features(
+            source_samples, source_mean, target_mean, source_cls, target_cls, args, device))
+        remaining -= take
+
+    if not chunks:
+        return None
+    projected = torch.cat(chunks, dim=0)
+    if projected.shape[0] < num_samples:
+        pad = projected[torch.randint(projected.shape[0], (num_samples - projected.shape[0],), device=device)]
+        projected = torch.cat([projected, pad], dim=0)
+    return projected[:num_samples]
 
 def train_cfs_model(features, args, device):
     if not use_cfs_sampling(args) or features.shape[0] < 2:

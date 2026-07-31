@@ -647,12 +647,32 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
                     cov = cls_cov[c_id].to(device)
                     if args.ca_storage_efficient_method == 'variance':
                         cov = torch.diag(cov)
+                    projected_count = 0
+                    if utils.use_semantic_projection(args):
+                        projected_count = int(num_sampled_pcls * float(getattr(args, 'semantic_projection_ratio', 0.25)))
+                        projected_count = max(0, min(num_sampled_pcls - 1, projected_count))
+                    base_count = num_sampled_pcls - projected_count
                     sampled_data_single = utils.sample_cfs_features(
-                        mean.float(), cov.float(), num_sampled_pcls, args, device,
+                        mean.float(), cov.float(), base_count, args, device,
                         cfs_model=cls_cfs_model.get(c_id))
+                    if projected_count > 0:
+                        available_classes = []
+                        for seen_task in range(task_id + 1):
+                            available_classes.extend(class_mask[seen_task])
+                        projected_data = utils.sample_semantic_projected_features(
+                            c_id, mean.float(), projected_count, args, device,
+                            cls_mean, cls_cov, cls_cfs_model=cls_cfs_model,
+                            available_classes=available_classes)
+                        if projected_data is not None:
+                            sampled_data_single = torch.cat([sampled_data_single, projected_data], dim=0)
+                        elif base_count < num_sampled_pcls:
+                            fallback_data = utils.sample_cfs_features(
+                                mean.float(), cov.float(), num_sampled_pcls - base_count, args, device,
+                                cfs_model=cls_cfs_model.get(c_id))
+                            sampled_data_single = torch.cat([sampled_data_single, fallback_data], dim=0)
                     sampled_data.append(sampled_data_single)
 
-                    sampled_label.extend([c_id] * num_sampled_pcls)
+                    sampled_label.extend([c_id] * sampled_data_single.shape[0])
 
         elif args.ca_storage_efficient_method == 'multi-centroid':
             for i in range(task_id + 1):
@@ -663,11 +683,31 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
                        if var.mean() == 0:
                            continue
                        cov = (torch.diag(var) + 1e-4 * torch.eye(mean.shape[0]).to(mean.device)).float()
+                       projected_count = 0
+                       if utils.use_semantic_projection(args):
+                           projected_count = int(num_sampled_pcls * float(getattr(args, 'semantic_projection_ratio', 0.25)))
+                           projected_count = max(0, min(num_sampled_pcls - 1, projected_count))
+                       base_count = num_sampled_pcls - projected_count
                        sampled_data_single = utils.sample_cfs_features(
-                           mean.float(), cov, num_sampled_pcls, args, device,
+                           mean.float(), cov, base_count, args, device,
                            cfs_model=cls_cfs_model.get(c_id))
+                       if projected_count > 0:
+                           available_classes = []
+                           for seen_task in range(task_id + 1):
+                               available_classes.extend(class_mask[seen_task])
+                           projected_data = utils.sample_semantic_projected_features(
+                               c_id, mean.float(), projected_count, args, device,
+                               cls_mean, cls_cov, cls_cfs_model=cls_cfs_model,
+                               available_classes=available_classes)
+                           if projected_data is not None:
+                               sampled_data_single = torch.cat([sampled_data_single, projected_data], dim=0)
+                           elif base_count < num_sampled_pcls:
+                               fallback_data = utils.sample_cfs_features(
+                                   mean.float(), cov, num_sampled_pcls - base_count, args, device,
+                                   cfs_model=cls_cfs_model.get(c_id))
+                               sampled_data_single = torch.cat([sampled_data_single, fallback_data], dim=0)
                        sampled_data.append(sampled_data_single)
-                       sampled_label.extend([c_id] * num_sampled_pcls)
+                       sampled_label.extend([c_id] * sampled_data_single.shape[0])
         else:
             raise NotImplementedError
 
