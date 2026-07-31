@@ -176,7 +176,8 @@ def train_one_epoch(model: torch.nn.Module, original_model: torch.nn.Module,
                 similarity_matrix = torch.exp(similarity_matrix)
                 similarity_matrix = similarity_matrix / similarity_matrix.sum(1, keepdim=True)
                 pos_mask = (similarity_matrix > 0.038).float()
-                loss_ctird = F.kl_div(torch.log(similarity_matrix), robust_logits[k], reduction='batchmean')
+                relation_target = utils.apply_semantic_relation_distillation(robust_logits[k], target, args, device)
+                loss_ctird = F.kl_div(torch.log(similarity_matrix.clamp_min(1e-12)), relation_target, reduction='batchmean')
                 
                 loss = loss + args.con*loss_ctird
         else:

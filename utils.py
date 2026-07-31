@@ -7,12 +7,16 @@ import io
 import os
 import time
 import math
+import hashlib
+import json
 from collections import defaultdict, deque
 import datetime
 
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
+
+_SEMANTIC_SIMILARITY_CACHE = {}
 
 class SmoothedValue(object):
     """Track a series of values and provide access to smoothed values over a
@@ -250,6 +254,142 @@ class CFSContrastiveMLP(torch.nn.Module):
 
 def use_cfs_sampling(args):
     return bool(getattr(args, 'cfs_sampling', False))
+
+
+
+
+def use_semantic_distillation(args):
+    return bool(getattr(args, 'semantic_distill', False))
+
+
+def _semantic_tokens(class_name):
+    text = str(class_name).lower()
+    for char in ['_', '-', '/', '.', ',', ';', ':', '(', ')', '[', ']']:
+        text = text.replace(char, ' ')
+    tokens = [token for token in text.split() if token]
+    if not tokens:
+        tokens = [text] if text else ['unknown']
+    return tokens
+
+
+def _hashed_text_vector(tokens, dim):
+    vector = torch.zeros(dim, dtype=torch.float32)
+    for token in tokens:
+        pieces = [token]
+        if len(token) > 3:
+            pieces.extend(token[i:i + 3] for i in range(len(token) - 2))
+        for piece in pieces:
+            digest = hashlib.md5(piece.encode('utf-8')).digest()
+            index = int.from_bytes(digest[:4], byteorder='little') % dim
+            sign = 1.0 if digest[4] % 2 == 0 else -1.0
+            vector[index] += sign
+    return vector
+
+
+
+
+def _load_semantic_class_name_file(path):
+    if not path:
+        return None
+    if not os.path.exists(path):
+        raise FileNotFoundError('semantic class name file not found: {}'.format(path))
+
+    with open(path, 'r', encoding='utf-8') as f:
+        if path.endswith('.json'):
+            data = json.load(f)
+        else:
+            data = []
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                parts = line.split(maxsplit=1)
+                data.append(parts[1] if len(parts) == 2 else parts[0])
+
+    if isinstance(data, dict):
+        return {str(k): str(v) for k, v in data.items()}
+    if isinstance(data, list):
+        return [str(v) for v in data]
+    raise ValueError('semantic class name file must be a JSON dict/list or a text file')
+
+
+def resolve_semantic_class_names(class_names, args):
+    mapping = _load_semantic_class_name_file(getattr(args, 'semantic_class_name_file', ''))
+    if mapping is None:
+        return class_names
+
+    resolved = []
+    for idx, name in enumerate(class_names):
+        key = str(name)
+        if isinstance(mapping, dict):
+            resolved.append(mapping.get(key, key))
+        elif idx < len(mapping):
+            resolved.append(mapping[idx])
+        else:
+            resolved.append(key)
+    return resolved
+def build_semantic_class_embeddings(class_names, device, dim=512):
+    if not class_names:
+        return None
+
+    embeddings = []
+    for class_name in class_names:
+        tokens = _semantic_tokens(class_name)
+        embeddings.append(_hashed_text_vector(tokens, dim))
+    embeddings = torch.stack(embeddings, dim=0).to(device)
+    return F.normalize(embeddings, p=2, dim=1)
+
+
+def get_semantic_similarity_matrix(args, device):
+    if not use_semantic_distillation(args):
+        return None
+
+    class_names = getattr(args, 'class_names', None)
+    if not class_names:
+        return None
+
+    class_names = resolve_semantic_class_names(class_names, args)
+    dim = max(1, int(getattr(args, 'semantic_dim', 512)))
+    sharpness = max(1e-6, float(getattr(args, 'semantic_sharpness', 1.0)))
+    cache_key = (id(args), str(device), tuple(str(name) for name in class_names), dim, sharpness)
+    if cache_key in _SEMANTIC_SIMILARITY_CACHE:
+        return _SEMANTIC_SIMILARITY_CACHE[cache_key]
+
+    embeddings = build_semantic_class_embeddings(class_names, device, dim=dim)
+    if embeddings is None:
+        return None
+
+    sim = torch.mm(embeddings, embeddings.t()).clamp(min=0.0)
+    if sharpness != 1.0:
+        sim = sim.pow(sharpness)
+
+    _SEMANTIC_SIMILARITY_CACHE[cache_key] = sim
+    return sim
+
+
+def apply_semantic_relation_distillation(relation_target, labels, args, device):
+    semantic_sim = get_semantic_similarity_matrix(args, device)
+    if semantic_sim is None:
+        return relation_target
+
+    labels = labels.long().to(device)
+    if labels.numel() == 0 or labels.max().item() >= semantic_sim.shape[0]:
+        return relation_target
+
+    weights = semantic_sim.index_select(0, labels).index_select(1, labels)
+    floor = float(getattr(args, 'semantic_floor', 0.2))
+    floor = max(0.0, min(1.0, floor))
+    weights = floor + (1.0 - floor) * weights
+
+    weighted_target = relation_target * weights
+    weighted_target = weighted_target / weighted_target.sum(dim=1, keepdim=True).clamp_min(1e-12)
+
+    alpha = float(getattr(args, 'semantic_alpha', 1.0))
+    alpha = max(0.0, min(1.0, alpha))
+    if alpha < 1.0:
+        weighted_target = (1.0 - alpha) * relation_target + alpha * weighted_target
+        weighted_target = weighted_target / weighted_target.sum(dim=1, keepdim=True).clamp_min(1e-12)
+    return weighted_target
 
 
 def train_cfs_model(features, args, device):

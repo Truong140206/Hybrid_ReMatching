@@ -27,6 +27,26 @@ def target_transform(x, nb_classes):
     return x + nb_classes
 
 
+
+
+def _get_dataset_class_names(dataset, dataset_name=''):
+    names = getattr(dataset, 'classes', None)
+    if names is None:
+        targets = getattr(dataset, 'targets', None)
+        if targets is not None:
+            names = sorted(set(int(target) for target in targets))
+    if names is None:
+        return []
+
+    cleaned_names = []
+    for name in names:
+        text = str(name).replace('_', ' ').replace('-', ' ')
+        if dataset_name and text.isdigit():
+            text = '{} {}'.format(dataset_name, text)
+        cleaned_names.append(text)
+    return cleaned_names
+
+
 def build_continual_dataloader(args):
     dataloader = list()
     dataloader_per_cls = dict()
@@ -47,6 +67,7 @@ def build_continual_dataloader(args):
                                                            transform_val, args)
 
         args.nb_classes = len(dataset_val.classes)
+        args.class_names = _get_dataset_class_names(dataset_val, args.dataset)
 
         splited_dataset, class_mask, target_task_map = split_single_dataset(dataset_train, dataset_val, args)
         splited_dataset_per_cls = split_single_class_dataset(dataset_train_mean, dataset_val_mean, class_mask, args)
@@ -61,6 +82,7 @@ def build_continual_dataloader(args):
         print(dataset_list)
 
         args.nb_classes = 0
+        args.class_names = []
         splited_dataset_per_cls = {}
 
     for i in range(args.num_tasks):
@@ -72,6 +94,7 @@ def build_continual_dataloader(args):
                 transform_train = build_cifar_transform(True, args)
                 transform_val = build_cifar_transform(False, args)
             dataset_train, dataset_val = get_dataset(dataset_list[i], transform_train, transform_val, args)
+            args.class_names.extend(_get_dataset_class_names(dataset_val, dataset_list[i]))
             dataset_train_mean, dataset_val_mean = get_dataset(dataset_list[i], transform_val, transform_val, args)
 
             transform_target = Lambda(target_transform, args.nb_classes)
@@ -470,6 +493,7 @@ def build_upstream_continual_dataloader(args):
     dataloader_per_cls = dict()
     class_mask = list() if args.task_inc or args.train_mask else None
     args.nb_classes = 0
+    args.class_names = []
     args.num_datasets = len(args.datasets)
     args.num_tasks = sum(args.tasks_per_dataset)
     datasets_info = dict(dict())
@@ -490,6 +514,7 @@ def build_upstream_continual_dataloader(args):
         datasets_info[i] = dict()
         datasets_info[i]['train'] = dataset_train
         datasets_info[i]['val'] = dataset_val
+        args.class_names.extend(_get_dataset_class_names(dataset_val, dataset))
         datasets_info[i]['num_classes'] = len(args.continual_datasets_targets[i])
         datasets_info[i]['num_tasks'] = args.tasks_per_dataset[i]
         last_classes_index += datasets_info[i]['num_classes']

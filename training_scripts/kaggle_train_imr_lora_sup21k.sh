@@ -24,7 +24,17 @@ if [ "${CFS_SAMPLING:-0}" = "1" ]; then
   CFS_ARGS+=(--cfs_candidate_multiplier "${CFS_CANDIDATE_MULTIPLIER:-3}")
   CFS_ARGS+=(--cfs_tau "${CFS_TAU:-1.0}")
 fi
-
+SEMANTIC_ARGS=()
+if [ "${SEMANTIC_DISTILL:-0}" = "1" ]; then
+  SEMANTIC_ARGS+=(--semantic_distill)
+  SEMANTIC_ARGS+=(--semantic_dim "${SEMANTIC_DIM:-512}")
+  if [ -n "${SEMANTIC_CLASS_NAME_FILE:-}" ]; then
+    SEMANTIC_ARGS+=(--semantic_class_name_file "${SEMANTIC_CLASS_NAME_FILE}")
+  fi
+  SEMANTIC_ARGS+=(--semantic_alpha "${SEMANTIC_ALPHA:-1.0}")
+  SEMANTIC_ARGS+=(--semantic_floor "${SEMANTIC_FLOOR:-0.2}")
+  SEMANTIC_ARGS+=(--semantic_sharpness "${SEMANTIC_SHARPNESS:-1.0}")
+fi
 require_checkpoints() {
   local run_dir="$1"
   local label="$2"
@@ -78,7 +88,8 @@ else
     --seed "${SEED}" \
     --train_inference_task_only \
     --output_dir "${TII_OUTPUT}" \
-    "${CFS_ARGS[@]}"
+    "${CFS_ARGS[@]}" \
+    "${SEMANTIC_ARGS[@]}"
 
   require_checkpoints "${TII_OUTPUT}" "Stage 1 TII"
 fi
@@ -111,7 +122,8 @@ else
     --lora_type hide \
     --trained_original_model "${TII_OUTPUT}" \
     --output_dir "${LORA_OUTPUT}" \
-    "${CFS_ARGS[@]}"
+    "${CFS_ARGS[@]}" \
+    "${SEMANTIC_ARGS[@]}"
 
   require_checkpoints "${LORA_OUTPUT}" "Stage 2 LoRA"
 fi

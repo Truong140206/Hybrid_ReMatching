@@ -113,5 +113,11 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--cfs_batch_size', default=256, type=int)
     subparsers.add_argument('--cfs_train_max_samples', default=1024, type=int)
     subparsers.add_argument('--cfs_candidate_multiplier', default=3, type=int)
-    subparsers.add_argument('--cfs_tau', default=1.0, type=float)    # Misc parameters
+    subparsers.add_argument('--cfs_tau', default=1.0, type=float)
+    subparsers.add_argument('--semantic_distill', action='store_true', help='use semantic-aware weighting for relation distillation')
+    subparsers.add_argument('--semantic_dim', default=512, type=int)
+    subparsers.add_argument('--semantic_class_name_file', default='', type=str)
+    subparsers.add_argument('--semantic_alpha', default=1.0, type=float)
+    subparsers.add_argument('--semantic_floor', default=0.2, type=float)
+    subparsers.add_argument('--semantic_sharpness', default=1.0, type=float)    # Misc parameters
     subparsers.add_argument('--print_freq', type=int, default=10, help = 'The frequency of printing')
