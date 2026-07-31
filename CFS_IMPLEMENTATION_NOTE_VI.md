@@ -518,3 +518,44 @@ export SEMANTIC_DISTILL=1
 Tóm t?t d? trình bày thêm:
 
 Sau khi thêm CFS cho CRCT, nhóm ti?p t?c b? sung semantic-aware relation distillation cho CTIRD. Thay vì distill ma tr?n quan h? feature m?t cách thu?n túy, phuong pháp m?i dùng tên class d? t?o semantic similarity, sau dó dùng semantic similarity này d? di?u ch?nh target relation t? model cu. Nh? v?y, quá trình distillation uu tiên gi? các quan h? có ý nghia ng? nghia hon, giúp gi?m nhi?u khi h?c task m?i.
+## 16. Nh?n xét v? m?c c?i thi?n c?a CFS
+
+D?a trên k?t qu? dã ch?y trên CIFAR100 10 task, CFS có c?i thi?n so v?i b?n chua c?i ti?n, nhung m?c c?i thi?n là v?a ph?i ch? không ph?i tang d?t bi?n.
+
+K?t qu? so sánh:
+
+```text
+B?n g?c / không CFS:
+Acc@task: 87.0500
+Acc@1:    86.9000
+Acc@5:    97.5900
+Loss:     0.5860
+
+B?n có CFS:
+Acc@task: 88.0600
+Acc@1:    88.0000
+Acc@5:    97.9400
+Loss:     0.5232
+```
+
+M?c thay d?i:
+
+```text
+Acc@task: +1.01
+Acc@1:    +1.10
+Acc@5:    +0.35
+Loss:     -0.0628
+```
+
+Cách di?n gi?i:
+
+- `Acc@1` tang t? 86.90 lên 88.00, t?c là tang kho?ng 1.10 di?m ph?n tram.
+- `Acc@task` tang 1.01 di?m ph?n tram.
+- `Acc@5` ch? tang nh? vì b?n g?c dã r?t cao, g?n 98%.
+- `Loss` gi?m t? 0.5860 xu?ng 0.5232, cho th?y classifier sau CRCT ?n d?nh hon.
+
+K?t lu?n nên trình bày:
+
+> Sau khi áp d?ng CFS vào bu?c sinh feature gi? cho CRCT, k?t qu? trên CIFAR100 10 task tang Acc@1 t? 86.90% lên 88.00% và gi?m loss t? 0.5860 xu?ng 0.5232. Ði?u này cho th?y vi?c ch?n các feature replay da d?ng hon giúp quá trình cân ch?nh classifier hi?u qu? hon so v?i Gaussian sampling ng?u nhiên trong b?n g?c.
+
+Không nên di?n gi?i là CFS t?o ra c?i thi?n r?t l?n. Cách nói h?p lý hon là CFS mang l?i c?i thi?n nh?t quán và có ý nghia, d?c bi?t vì thay d?i này ch? tác d?ng vào bu?c feature replay/CRCT mà không thay d?i backbone hay d? li?u hu?n luy?n chính.

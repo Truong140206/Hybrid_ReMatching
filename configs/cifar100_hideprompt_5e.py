@@ -161,7 +161,9 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--semantic_distill', action='store_true', help='use semantic-aware weighting for relation distillation')
     subparsers.add_argument('--semantic_dim', default=512, type=int)
     subparsers.add_argument('--semantic_class_name_file', default='', type=str)
-    subparsers.add_argument('--semantic_alpha', default=1.0, type=float)
+    subparsers.add_argument('--semantic_alpha', default=0.1, type=float)
     subparsers.add_argument('--semantic_floor', default=0.2, type=float)
     subparsers.add_argument('--semantic_sharpness', default=1.0, type=float)    # Misc parameters
+    subparsers.add_argument('--semantic_top_k', default=5, type=int)
+    subparsers.add_argument('--semantic_mode', default='topk_mix', choices=['topk_mix', 'weight'], type=str)
     subparsers.add_argument('--print_freq', type=int, default=10, help='The frequency of printing')

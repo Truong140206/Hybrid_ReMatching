@@ -18,6 +18,35 @@ import torch.nn.functional as F
 
 _SEMANTIC_SIMILARITY_CACHE = {}
 
+_CIFAR100_COARSE_GROUPS = {
+    'aquatic_mammals': ['beaver', 'dolphin', 'otter', 'seal', 'whale'],
+    'fish': ['aquarium_fish', 'flatfish', 'ray', 'shark', 'trout'],
+    'flowers': ['orchid', 'poppy', 'rose', 'sunflower', 'tulip'],
+    'food_containers': ['bottle', 'bowl', 'can', 'cup', 'plate'],
+    'fruit_and_vegetables': ['apple', 'mushroom', 'orange', 'pear', 'sweet_pepper'],
+    'household_electrical_devices': ['clock', 'keyboard', 'lamp', 'telephone', 'television'],
+    'household_furniture': ['bed', 'chair', 'couch', 'table', 'wardrobe'],
+    'insects': ['bee', 'beetle', 'butterfly', 'caterpillar', 'cockroach'],
+    'large_carnivores': ['bear', 'leopard', 'lion', 'tiger', 'wolf'],
+    'large_man_made_outdoor_things': ['bridge', 'castle', 'house', 'road', 'skyscraper'],
+    'large_natural_outdoor_scenes': ['cloud', 'forest', 'mountain', 'plain', 'sea'],
+    'large_omnivores_and_herbivores': ['camel', 'cattle', 'chimpanzee', 'elephant', 'kangaroo'],
+    'medium_mammals': ['fox', 'porcupine', 'possum', 'raccoon', 'skunk'],
+    'non_insect_invertebrates': ['crab', 'lobster', 'snail', 'spider', 'worm'],
+    'people': ['baby', 'boy', 'girl', 'man', 'woman'],
+    'reptiles': ['crocodile', 'dinosaur', 'lizard', 'snake', 'turtle'],
+    'small_mammals': ['hamster', 'mouse', 'rabbit', 'shrew', 'squirrel'],
+    'trees': ['maple_tree', 'oak_tree', 'palm_tree', 'pine_tree', 'willow_tree'],
+    'vehicles_1': ['bicycle', 'bus', 'motorcycle', 'pickup_truck', 'train'],
+    'vehicles_2': ['lawn_mower', 'rocket', 'streetcar', 'tank', 'tractor'],
+}
+
+_CIFAR100_CLASS_TO_COARSE = {
+    class_name: group_name
+    for group_name, class_names in _CIFAR100_COARSE_GROUPS.items()
+    for class_name in class_names
+}
+
 class SmoothedValue(object):
     """Track a series of values and provide access to smoothed values over a
     window or the global series average.
@@ -272,6 +301,10 @@ def _semantic_tokens(class_name):
     return tokens
 
 
+def _semantic_key(class_name):
+    return '_'.join(_semantic_tokens(class_name))
+
+
 def _hashed_text_vector(tokens, dim):
     vector = torch.zeros(dim, dtype=torch.float32)
     for token in tokens:
@@ -335,7 +368,16 @@ def build_semantic_class_embeddings(class_names, device, dim=512):
     embeddings = []
     for class_name in class_names:
         tokens = _semantic_tokens(class_name)
-        embeddings.append(_hashed_text_vector(tokens, dim))
+        name_vector = F.normalize(_hashed_text_vector(tokens, dim).unsqueeze(0), p=2, dim=1).squeeze(0)
+        coarse_group = _CIFAR100_CLASS_TO_COARSE.get(_semantic_key(class_name))
+        if coarse_group is not None:
+            group_vector = F.normalize(
+                _hashed_text_vector(['cifar100', coarse_group], dim).unsqueeze(0),
+                p=2,
+                dim=1).squeeze(0)
+            embeddings.append((0.45 * name_vector) + (0.89 * group_vector))
+        else:
+            embeddings.append(name_vector)
     embeddings = torch.stack(embeddings, dim=0).to(device)
     return F.normalize(embeddings, p=2, dim=1)
 
@@ -360,6 +402,7 @@ def get_semantic_similarity_matrix(args, device):
         return None
 
     sim = torch.mm(embeddings, embeddings.t()).clamp(min=0.0)
+    sim.fill_diagonal_(1.0)
     if sharpness != 1.0:
         sim = sim.pow(sharpness)
 
@@ -377,6 +420,28 @@ def apply_semantic_relation_distillation(relation_target, labels, args, device):
         return relation_target
 
     weights = semantic_sim.index_select(0, labels).index_select(1, labels)
+    mode = getattr(args, 'semantic_mode', 'topk_mix')
+
+    if mode == 'topk_mix':
+        class_top_k = int(getattr(args, 'semantic_top_k', 5))
+        if class_top_k > 0:
+            keep_count = min(class_top_k + 1, semantic_sim.shape[1])
+            _, global_top_ids = torch.topk(semantic_sim, k=keep_count, dim=1)
+            class_keep = torch.zeros_like(semantic_sim, dtype=torch.bool)
+            class_keep.scatter_(1, global_top_ids, True)
+            batch_keep = class_keep.index_select(0, labels).index_select(1, labels)
+            weights = weights * batch_keep.float()
+
+        semantic_target = weights / weights.sum(dim=1, keepdim=True).clamp_min(1e-12)
+        empty_rows = semantic_target.sum(dim=1, keepdim=True) <= 0
+        if empty_rows.any():
+            semantic_target = torch.where(empty_rows, relation_target, semantic_target)
+
+        alpha = float(getattr(args, 'semantic_alpha', 0.1))
+        alpha = max(0.0, min(1.0, alpha))
+        mixed_target = (1.0 - alpha) * relation_target + alpha * semantic_target
+        return mixed_target / mixed_target.sum(dim=1, keepdim=True).clamp_min(1e-12)
+
     floor = float(getattr(args, 'semantic_floor', 0.2))
     floor = max(0.0, min(1.0, floor))
     weights = floor + (1.0 - floor) * weights
@@ -384,13 +449,12 @@ def apply_semantic_relation_distillation(relation_target, labels, args, device):
     weighted_target = relation_target * weights
     weighted_target = weighted_target / weighted_target.sum(dim=1, keepdim=True).clamp_min(1e-12)
 
-    alpha = float(getattr(args, 'semantic_alpha', 1.0))
+    alpha = float(getattr(args, 'semantic_alpha', 0.1))
     alpha = max(0.0, min(1.0, alpha))
     if alpha < 1.0:
         weighted_target = (1.0 - alpha) * relation_target + alpha * weighted_target
         weighted_target = weighted_target / weighted_target.sum(dim=1, keepdim=True).clamp_min(1e-12)
     return weighted_target
-
 
 def train_cfs_model(features, args, device):
     if not use_cfs_sampling(args) or features.shape[0] < 2:
