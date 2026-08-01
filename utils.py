@@ -17,6 +17,8 @@ import torch.distributed as dist
 import torch.nn.functional as F
 
 _SEMANTIC_SIMILARITY_CACHE = {}
+_SEMANTIC_EMBEDDING_CACHE = {}
+_SEMANTIC_BACKEND_WARNING_EMITTED = set()
 
 _CIFAR100_COARSE_GROUPS = {
     'aquatic_mammals': ['beaver', 'dolphin', 'otter', 'seal', 'whale'],
@@ -364,10 +366,37 @@ def resolve_semantic_class_names(class_names, args):
         else:
             resolved.append(key)
     return resolved
-def build_semantic_class_embeddings(class_names, device, dim=512):
-    if not class_names:
-        return None
+def _semantic_backend(args):
+    return str(getattr(args, 'semantic_backend', 'hash')).lower()
 
+
+def _semantic_prompt_templates(args):
+    raw_templates = str(getattr(args, 'semantic_clip_templates', 'a photo of a {}.'))
+    templates = [item.strip() for item in raw_templates.split('|') if item.strip()]
+    return templates or ['a photo of a {}.']
+
+
+def _format_semantic_prompt(template, class_name):
+    class_name = str(class_name).replace('_', ' ')
+    if '{}' in template:
+        return template.format(class_name)
+    return '{} {}'.format(template.rstrip(), class_name)
+
+
+def _resize_semantic_embeddings(embeddings, dim):
+    if embeddings.shape[1] == dim:
+        return embeddings
+    if embeddings.shape[1] > dim:
+        return F.normalize(embeddings[:, :dim], p=2, dim=1)
+    pad = torch.zeros(
+        embeddings.shape[0],
+        dim - embeddings.shape[1],
+        dtype=embeddings.dtype,
+        device=embeddings.device)
+    return F.normalize(torch.cat([embeddings, pad], dim=1), p=2, dim=1)
+
+
+def _build_hash_semantic_embeddings(class_names, device, dim):
     embeddings = []
     for class_name in class_names:
         tokens = _semantic_tokens(class_name)
@@ -385,6 +414,80 @@ def build_semantic_class_embeddings(class_names, device, dim=512):
     return F.normalize(embeddings, p=2, dim=1)
 
 
+@torch.no_grad()
+def _build_clip_semantic_embeddings(class_names, args, device):
+    model_name = str(getattr(args, 'semantic_clip_model', 'ViT-B-16'))
+    pretrained = str(getattr(args, 'semantic_clip_pretrained', 'openai'))
+    templates = tuple(_semantic_prompt_templates(args))
+    class_names = tuple(str(name).replace('_', ' ') for name in class_names)
+    cache_key = ('clip-native', str(device), class_names, model_name, pretrained, templates)
+    if cache_key in _SEMANTIC_EMBEDDING_CACHE:
+        return _SEMANTIC_EMBEDDING_CACHE[cache_key]
+
+    prompts_per_class = [
+        [_format_semantic_prompt(template, class_name) for template in templates]
+        for class_name in class_names
+    ]
+
+    open_clip_error = None
+    try:
+        import open_clip
+        model, _, _ = open_clip.create_model_and_transforms(model_name, pretrained=pretrained, device=device)
+        tokenizer = open_clip.get_tokenizer(model_name)
+        model.eval()
+        embeddings = []
+        for prompts in prompts_per_class:
+            tokens = tokenizer(prompts).to(device)
+            text_features = model.encode_text(tokens).float()
+            text_features = F.normalize(text_features, p=2, dim=1)
+            embeddings.append(F.normalize(text_features.mean(dim=0, keepdim=True), p=2, dim=1).squeeze(0))
+        embeddings = torch.stack(embeddings, dim=0).to(device)
+        _SEMANTIC_EMBEDDING_CACHE[cache_key] = embeddings
+        return embeddings
+    except Exception as exc:
+        open_clip_error = exc
+
+    try:
+        import clip
+        clip_model_name = model_name.replace('-', '/') if model_name.startswith('ViT-') else model_name
+        model, _ = clip.load(clip_model_name, device=device, jit=False)
+        model.eval()
+        embeddings = []
+        for prompts in prompts_per_class:
+            tokens = clip.tokenize(prompts).to(device)
+            text_features = model.encode_text(tokens).float()
+            text_features = F.normalize(text_features, p=2, dim=1)
+            embeddings.append(F.normalize(text_features.mean(dim=0, keepdim=True), p=2, dim=1).squeeze(0))
+        embeddings = torch.stack(embeddings, dim=0).to(device)
+        _SEMANTIC_EMBEDDING_CACHE[cache_key] = embeddings
+        return embeddings
+    except Exception as exc:
+        message = (
+            'semantic_backend=clip requires open_clip_torch or clip. '
+            'Install with: pip install open_clip_torch. '
+            'open_clip error: {}; clip error: {}'.format(open_clip_error, exc)
+        )
+        if _semantic_backend(args) == 'clip':
+            raise RuntimeError(message)
+        if message not in _SEMANTIC_BACKEND_WARNING_EMITTED:
+            print('Warning:', message)
+            _SEMANTIC_BACKEND_WARNING_EMITTED.add(message)
+        return None
+
+
+def build_semantic_class_embeddings(class_names, device, dim=512, args=None):
+    if not class_names:
+        return None
+
+    backend = _semantic_backend(args) if args is not None else 'hash'
+    if backend in ('clip', 'auto'):
+        clip_embeddings = _build_clip_semantic_embeddings(class_names, args, device)
+        if clip_embeddings is not None:
+            return _resize_semantic_embeddings(clip_embeddings, dim)
+
+    return _build_hash_semantic_embeddings(class_names, device, dim)
+
+
 def get_semantic_similarity_matrix(args, device):
     if not use_semantic_distillation(args):
         return None
@@ -396,11 +499,11 @@ def get_semantic_similarity_matrix(args, device):
     class_names = resolve_semantic_class_names(class_names, args)
     dim = max(1, int(getattr(args, 'semantic_dim', 512)))
     sharpness = max(1e-6, float(getattr(args, 'semantic_sharpness', 1.0)))
-    cache_key = (id(args), str(device), tuple(str(name) for name in class_names), dim, sharpness)
+    cache_key = (id(args), str(device), tuple(str(name) for name in class_names), dim, sharpness, _semantic_backend(args), str(getattr(args, 'semantic_clip_model', '')), str(getattr(args, 'semantic_clip_pretrained', '')), str(getattr(args, 'semantic_clip_templates', '')))
     if cache_key in _SEMANTIC_SIMILARITY_CACHE:
         return _SEMANTIC_SIMILARITY_CACHE[cache_key]
 
-    embeddings = build_semantic_class_embeddings(class_names, device, dim=dim)
+    embeddings = build_semantic_class_embeddings(class_names, device, dim=dim, args=args)
     if embeddings is None:
         return None
 
@@ -480,7 +583,34 @@ def _semantic_projection_embeddings(args, device, feature_dim):
     if not class_names:
         return None
     class_names = resolve_semantic_class_names(class_names, args)
-    return build_semantic_class_embeddings(class_names, device, dim=feature_dim)
+    return build_semantic_class_embeddings(class_names, device, dim=feature_dim, args=args)
+
+
+def _rotate_features_between_semantics(features, source_sem, target_sem):
+    source_sem = F.normalize(source_sem.float(), p=2, dim=0)
+    target_sem = F.normalize(target_sem.float(), p=2, dim=0)
+    cosine = torch.dot(source_sem, target_sem).clamp(-1.0, 1.0)
+
+    if (1.0 - cosine).abs() < 1e-6:
+        return features
+
+    if (1.0 + cosine).abs() < 1e-6:
+        reflected = features - 2.0 * torch.matmul(features, source_sem).unsqueeze(1) * source_sem.unsqueeze(0)
+        return reflected
+
+    sine = torch.sqrt((1.0 - cosine * cosine).clamp_min(1e-12))
+    basis_1 = source_sem
+    basis_2 = F.normalize(target_sem - cosine * basis_1, p=2, dim=0)
+
+    coord_1 = torch.matmul(features, basis_1).unsqueeze(1)
+    coord_2 = torch.matmul(features, basis_2).unsqueeze(1)
+    in_plane = coord_1 * basis_1.unsqueeze(0) + coord_2 * basis_2.unsqueeze(0)
+    out_plane = features - in_plane
+    rotated_plane = (
+        (coord_1 * cosine - coord_2 * sine) * basis_1.unsqueeze(0)
+        + (coord_1 * sine + coord_2 * cosine) * basis_2.unsqueeze(0)
+    )
+    return out_plane + rotated_plane
 
 
 @torch.no_grad()
@@ -492,13 +622,30 @@ def semantic_project_features(features, source_mean, target_mean, source_cls, ta
 
     source_sem = embeddings[source_cls].float()
     target_sem = embeddings[target_cls].float()
+    features = features.float().to(device)
+    projection_mode = str(getattr(args, 'semantic_projection_mode', 'mean_shift')).lower()
+
+    if projection_mode == 'paper':
+        feature_norm = features.norm(dim=1, keepdim=True).clamp_min(1e-12)
+        feature_dir = F.normalize(features, p=2, dim=1)
+        rotated_dir = _rotate_features_between_semantics(feature_dir, source_sem, target_sem)
+        alpha = float(getattr(args, 'semantic_projection_alpha', getattr(args, 'semantic_alpha', 0.1)))
+        alpha = max(0.0, min(1.0, alpha))
+        adjusted_dir = F.normalize(
+            (1.0 - alpha) * rotated_dir + alpha * target_sem.unsqueeze(0),
+            p=2,
+            dim=1)
+        if bool(getattr(args, 'semantic_projection_preserve_norm', False)):
+            return adjusted_dir * feature_norm
+        return adjusted_dir
+
     bridge = F.normalize(source_sem + target_sem, p=2, dim=0)
     if not torch.isfinite(bridge).all() or bridge.norm() < 1e-6:
         return features
 
     source_mean = source_mean.float().to(device)
     target_mean = target_mean.float().to(device)
-    centered = features.float().to(device) - source_mean.unsqueeze(0)
+    centered = features - source_mean.unsqueeze(0)
     rotated = 2.0 * torch.matmul(centered, bridge).unsqueeze(1) * bridge.unsqueeze(0) - centered
 
     strength = float(getattr(args, 'semantic_projection_strength', 1.0))
@@ -611,16 +758,60 @@ def train_cfs_model(features, args, device):
 
 
 @torch.no_grad()
+def _sample_cfs_features_paper_style(distribution, num_samples, args, device, cfs_model):
+    if num_samples <= 1:
+        return distribution.sample(sample_shape=(num_samples,))
+
+    ratio = float(getattr(args, 'cfs_selection_ratio', 0.5))
+    ratio = max(0.0, min(1.0, ratio))
+    steps = max(1, int(getattr(args, 'cfs_selection_steps', 5)))
+    multiplier = max(1, int(getattr(args, 'cfs_candidate_multiplier', 3)))
+    step_candidates = int(getattr(args, 'cfs_step_candidates', 0))
+    tau = float(getattr(args, 'cfs_tau', 1.0))
+
+    selected_target = max(1, int(round(num_samples * ratio)))
+    init_count = max(1, num_samples - selected_target)
+    selected_features = [distribution.sample(sample_shape=(init_count,)).to(device)]
+    selected_embeddings = cfs_model(selected_features[0].float())
+    remaining = num_samples - init_count
+
+    for step in range(steps):
+        if remaining <= 0:
+            break
+        take = int(math.ceil(remaining / float(steps - step)))
+        candidate_count = step_candidates if step_candidates > 0 else max(take * multiplier, take)
+        candidates = distribution.sample(sample_shape=(candidate_count,)).to(device)
+        candidate_embeddings = cfs_model(candidates.float())
+        scores = torch.exp(torch.mm(candidate_embeddings, selected_embeddings.t()) / tau).mean(dim=1)
+        take = min(take, candidate_count)
+        selected_ids = torch.topk(scores, k=take, largest=False).indices
+        chosen_features = candidates.index_select(0, selected_ids)
+        chosen_embeddings = candidate_embeddings.index_select(0, selected_ids)
+        selected_features.append(chosen_features)
+        selected_embeddings = torch.cat([selected_embeddings, chosen_embeddings], dim=0)
+        remaining -= take
+
+    features = torch.cat(selected_features, dim=0)
+    if features.shape[0] < num_samples:
+        pad = distribution.sample(sample_shape=(num_samples - features.shape[0],)).to(device)
+        features = torch.cat([features, pad], dim=0)
+    return features[:num_samples]
+
+
+@torch.no_grad()
 def sample_cfs_features(mean, cov, num_samples, args, device, cfs_model=None):
     distribution = torch.distributions.MultivariateNormal(mean.float(), cov.float())
     if not use_cfs_sampling(args) or cfs_model is None or num_samples <= 1:
         return distribution.sample(sample_shape=(num_samples,))
 
+    cfs_model = cfs_model.to(device)
+    if bool(getattr(args, 'cfs_paper_style', False)):
+        return _sample_cfs_features_paper_style(distribution, num_samples, args, device, cfs_model)
+
     multiplier = max(1, int(getattr(args, 'cfs_candidate_multiplier', 3)))
     candidate_count = max(num_samples, num_samples * multiplier)
     candidates = distribution.sample(sample_shape=(candidate_count,)).to(device)
 
-    cfs_model = cfs_model.to(device)
     embeddings = cfs_model(candidates.float())
     tau = float(getattr(args, 'cfs_tau', 1.0))
     sim = torch.exp(torch.mm(embeddings, embeddings.t()) / tau)

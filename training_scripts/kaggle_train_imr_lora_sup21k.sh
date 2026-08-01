@@ -23,11 +23,21 @@ if [ "${CFS_SAMPLING:-0}" = "1" ]; then
   CFS_ARGS+=(--cfs_train_max_samples "${CFS_TRAIN_MAX_SAMPLES:-1024}")
   CFS_ARGS+=(--cfs_candidate_multiplier "${CFS_CANDIDATE_MULTIPLIER:-3}")
   CFS_ARGS+=(--cfs_tau "${CFS_TAU:-1.0}")
+  if [ "${CFS_PAPER_STYLE:-0}" = "1" ]; then
+    CFS_ARGS+=(--cfs_paper_style)
+    CFS_ARGS+=(--cfs_selection_ratio "${CFS_SELECTION_RATIO:-0.5}")
+    CFS_ARGS+=(--cfs_selection_steps "${CFS_SELECTION_STEPS:-5}")
+    CFS_ARGS+=(--cfs_step_candidates "${CFS_STEP_CANDIDATES:-0}")
+  fi
 fi
 SEMANTIC_ARGS=()
 if [ "${SEMANTIC_DISTILL:-0}" = "1" ]; then
   SEMANTIC_ARGS+=(--semantic_distill)
   SEMANTIC_ARGS+=(--semantic_dim "${SEMANTIC_DIM:-512}")
+  SEMANTIC_ARGS+=(--semantic_backend "${SEMANTIC_BACKEND:-hash}")
+  SEMANTIC_ARGS+=(--semantic_clip_model "${SEMANTIC_CLIP_MODEL:-ViT-B-16}")
+  SEMANTIC_ARGS+=(--semantic_clip_pretrained "${SEMANTIC_CLIP_PRETRAINED:-openai}")
+  SEMANTIC_ARGS+=(--semantic_clip_templates "${SEMANTIC_CLIP_TEMPLATES:-a photo of a {}.}")
   if [ -n "${SEMANTIC_CLASS_NAME_FILE:-}" ]; then
     SEMANTIC_ARGS+=(--semantic_class_name_file "${SEMANTIC_CLASS_NAME_FILE}")
   fi
@@ -41,6 +51,11 @@ if [ "${SEMANTIC_DISTILL:-0}" = "1" ]; then
     SEMANTIC_ARGS+=(--semantic_projection_ratio "${SEMANTIC_PROJECTION_RATIO:-0.25}")
     SEMANTIC_ARGS+=(--semantic_projection_top_k "${SEMANTIC_PROJECTION_TOP_K:-5}")
     SEMANTIC_ARGS+=(--semantic_projection_strength "${SEMANTIC_PROJECTION_STRENGTH:-1.0}")
+    SEMANTIC_ARGS+=(--semantic_projection_mode "${SEMANTIC_PROJECTION_MODE:-mean_shift}")
+    SEMANTIC_ARGS+=(--semantic_projection_alpha "${SEMANTIC_PROJECTION_ALPHA:-0.1}")
+    if [ "${SEMANTIC_PROJECTION_PRESERVE_NORM:-0}" = "1" ]; then
+      SEMANTIC_ARGS+=(--semantic_projection_preserve_norm)
+    fi
   fi
 fi
 require_checkpoints() {
