@@ -56,6 +56,11 @@ if [ "${SEMANTIC_DISTILL:-0}" = "1" ]; then
     if [ "${SEMANTIC_PROJECTION_PRESERVE_NORM:-0}" = "1" ]; then
       SEMANTIC_ARGS+=(--semantic_projection_preserve_norm)
     fi
+    if [ "${SEMANTIC_PROJECTION_FILTER:-0}" = "1" ]; then
+      SEMANTIC_ARGS+=(--semantic_projection_filter)
+      SEMANTIC_ARGS+=(--semantic_projection_filter_multiplier "${SEMANTIC_PROJECTION_FILTER_MULTIPLIER:-3}")
+      SEMANTIC_ARGS+=(--semantic_projection_filter_cosine_weight "${SEMANTIC_PROJECTION_FILTER_COSINE_WEIGHT:-0.1}")
+    fi
   fi
 fi
 require_checkpoints() {

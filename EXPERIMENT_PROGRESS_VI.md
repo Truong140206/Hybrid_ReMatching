@@ -383,3 +383,109 @@ K? v?ng:
 
 - N?u CLIP text feature giúp ch?n class liên quan t?t hon hash/superclass, k?t qu? có th? t?t hon semantic projection cu.
 - N?u Acc v?n th?p hon CFS-only, có th? k?t lu?n r?ng ph?n semantic c?a paper c?n dúng CLIP image feature/model inversion m?i phát huy d?y d?, còn trong HRM feature space thì CFS replay v?n là thành ph?n có l?i nh?t.
+
+## 9. K?t qu? ch?y paper-style CLIP semantic projection
+
+L?nh ch?y dùng c?u hình sát paper hon:
+
+```text
+cfs_paper_style = True
+cfs_epochs = 200
+cfs_selection_ratio = 0.5
+cfs_selection_steps = 5
+semantic_backend = clip
+semantic_alpha = 0.1
+semantic_mode = topk_mix
+semantic_projection = True
+semantic_projection_mode = paper
+semantic_projection_ratio = 0.5
+semantic_projection_top_k = 5
+semantic_projection_alpha = 0.1
+```
+
+K?t qu? cu?i sau CRCT task 10:
+
+```text
+[Average accuracy till task10]
+Acc@task 87.1600
+Acc@1    86.5500
+Acc@5    97.3300
+Loss     0.6142
+Forgetting 3.5222
+Backward  -2.9222
+Total training time: 0:46:48
+```
+
+So sánh v?i các m?c tru?c:
+
+| Phiên b?n | Acc@task | Acc@1 | Acc@5 | Loss | Nh?n xét |
+|---|---:|---:|---:|---:|---|
+| Baseline chua CFS | 87.0500 | 86.9000 | 97.5900 | 0.5860 | M?c g?c |
+| CFS-only | 88.0600 | 88.0000 | 97.9400 | 0.5232 | T?t nh?t hi?n t?i |
+| CFS + semantic projection cu | 87.5600 | 87.0100 | 97.5900 | 0.5508 | T?t hon paper-style |
+| CFS + paper-style CLIP semantic | 87.1600 | 86.5500 | 97.3300 | 0.6142 | Ch?y dúng nhung chua c?i thi?n |
+
+K?t lu?n:
+
+- B?n paper-style dã ch?y du?c end-to-end, không còn l?i runtime.
+- Tuy nhiên k?t qu? không t?t hon CFS-only, và cung th?p hon semantic projection cu.
+- Nguyên nhân h?p lý: công th?c paper gi? d?nh CLIP image feature và CLIP text feature n?m chung không gian semantic dã normalize. HRM-PET hi?n t?i dùng ViT/timm feature trong CRCT, không ph?i CLIP image feature dúng nghia, nên vi?c xoay feature theo CLIP text có th? làm l?ch feature kh?i không gian mà classifier HRM dang dùng.
+- `semantic_projection_ratio = 0.5` có th? quá m?nh: 50% feature CRCT b? thay b?ng projected feature, trong khi feature space chua th?t s? align v?i CLIP.
+- Hu?ng th? ti?p h?p lý hon: gi? `semantic_backend=clip` nhung gi?m projection ratio v? `0.1` ho?c `0.25`, ho?c b?t CLIP semantic ch? cho ch?n top-k class liên quan, còn projection gi? ki?u mean_shift cu.
+
+## 10. Hu?ng c?i ti?n th?c d?ng: semantic-safe CRCT
+
+Sau khi b?n paper-style ch?y xong nhung không c?i thi?n, hu?ng ti?p theo không c? bê nguyên paper n?a. Lý do là công th?c paper gi? d?nh CLIP image feature và CLIP text feature n?m chung không gian, còn HRM-PET hi?n t?i dùng feature ViT/timm trong CRCT. Vì v?y n?u xoay feature quá m?nh theo CLIP text, feature có th? r?i kh?i phân ph?i mà classifier HRM dang h?c.
+
+Ý tu?ng m?i: semantic ch? dùng d? g?i ý class ngu?n liên quan, còn feature cu?i cùng ph?i du?c ki?m tra b?ng th?ng kê feature HRM.
+
+Pipeline m?i:
+
+```text
+1. Dùng semantic embedding d? ch?n top-k class ngu?n g?n class dích.
+2. Sample feature t? Gaussian/CFS c?a các class ngu?n dó.
+3. Project feature ngu?n sang class dích b?ng mode mean_shift nh?.
+4. Sinh nhi?u candidate hon s? c?n dùng.
+5. L?c candidate b?ng kho?ng cách t?i phân ph?i feature th?t c?a class dích.
+6. Ch? dua các projected feature g?n phân ph?i class dích nh?t vào CRCT.
+```
+
+Các tham s? m?i:
+
+```bash
+--semantic_projection_filter
+--semantic_projection_filter_multiplier 3
+--semantic_projection_filter_cosine_weight 0.1
+```
+
+Ý nghia:
+
+- `--semantic_projection_filter`: b?t l?c feature projected theo phân ph?i class dích.
+- `--semantic_projection_filter_multiplier`: sinh nhi?u candidate hon r?i ch?n l?i. Ví d? `3` nghia là c?n 100 feature thì sinh 300 candidate r?i l?c l?y 100 t?t nh?t.
+- `--semantic_projection_filter_cosine_weight`: thêm m?t ph?n nh? cosine distance t?i mean class dích khi x?p h?ng candidate.
+
+Khác v?i paper-style:
+
+- Không normalize feature v? unit vector nhu Eq. 9 n?a, vì HRM classifier không nh?t thi?t ho?t d?ng trong cùng CLIP unit hypersphere.
+- Không dùng semantic d? ép toàn b? feature space.
+- Semantic ch? là prior d? ch?n ngu?n và t?o candidate; phân ph?i feature th?t c?a HRM m?i là b? l?c cu?i.
+
+C?u hình nên th? d?u tiên:
+
+```bash
+--cfs_sampling
+--cfs_epochs 50
+--cfs_train_max_samples 1024
+--cfs_candidate_multiplier 3
+--semantic_backend clip
+--semantic_projection
+--semantic_projection_mode mean_shift
+--semantic_projection_ratio 0.1
+--semantic_projection_top_k 5
+--semantic_projection_strength 0.5
+--semantic_projection_filter
+--semantic_projection_filter_multiplier 3
+--semantic_projection_filter_cosine_weight 0.1
+```
+
+Luu ý: c?u hình này c? ý không b?t `--semantic_distill` ban d?u, vì các l?n tru?c semantic CTIRD làm k?t qu? gi?m. Tru?c m?t ch? thêm semantic vào CRCT replay m?t cách có ki?m soát. N?u k?t qu? t?t hon CFS-only, sau dó m?i th? b?t semantic CTIRD r?t nh?.

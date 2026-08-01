@@ -135,4 +135,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--semantic_projection_mode', default='mean_shift', choices=['mean_shift', 'paper'], type=str)
     subparsers.add_argument('--semantic_projection_alpha', default=0.1, type=float)
     subparsers.add_argument('--semantic_projection_preserve_norm', action='store_true')
+    subparsers.add_argument('--semantic_projection_filter', action='store_true', help='filter semantic projected CRCT features by target feature distribution')
+    subparsers.add_argument('--semantic_projection_filter_multiplier', default=3, type=int)
+    subparsers.add_argument('--semantic_projection_filter_cosine_weight', default=0.1, type=float)
     subparsers.add_argument('--print_freq', type=int, default=10, help = 'The frequency of printing')

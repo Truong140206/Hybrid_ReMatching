@@ -654,6 +654,62 @@ def semantic_project_features(features, source_mean, target_mean, source_cls, ta
     return projected
 
 
+def _class_stat_for_target_cluster(target_cls, target_mean, cls_mean, cls_cov, device):
+    target_cov = cls_cov.get(target_cls)
+    if target_cov is None:
+        return None
+    if isinstance(target_cov, list):
+        target_means = cls_mean.get(target_cls)
+        if not isinstance(target_means, list):
+            valid = [cov for cov in target_cov if torch.as_tensor(cov).float().mean().item() != 0]
+            return valid[0].float().to(device) if valid else None
+        target_mean = target_mean.float().to(device)
+        best_idx = None
+        best_dist = None
+        for idx, mean in enumerate(target_means):
+            if idx >= len(target_cov):
+                continue
+            cov = torch.as_tensor(target_cov[idx]).float()
+            if cov.mean().item() == 0:
+                continue
+            dist = torch.norm(torch.as_tensor(mean).float().to(device) - target_mean).item()
+            if best_dist is None or dist < best_dist:
+                best_dist = dist
+                best_idx = idx
+        if best_idx is None:
+            return None
+        target_cov = target_cov[best_idx]
+    return torch.as_tensor(target_cov).float().to(device)
+
+
+@torch.no_grad()
+def _filter_projected_features_for_target(projected, target_mean, target_cov, num_samples, args, device):
+    if projected.shape[0] <= num_samples:
+        return projected[:num_samples]
+
+    target_mean = target_mean.float().to(device)
+    target_cov = torch.as_tensor(target_cov).float().to(device)
+    if target_cov.dim() == 2:
+        diag_var = torch.diag(target_cov)
+    else:
+        diag_var = target_cov
+    diag_var = diag_var.clamp_min(1e-5)
+
+    centered = projected.float().to(device) - target_mean.unsqueeze(0)
+    maha_score = (centered.pow(2) / diag_var.unsqueeze(0)).mean(dim=1)
+
+    cosine_weight = float(getattr(args, 'semantic_projection_filter_cosine_weight', 0.1))
+    if cosine_weight > 0 and target_mean.norm().item() > 1e-8:
+        cosine_distance = 1.0 - F.cosine_similarity(projected.float(), target_mean.unsqueeze(0), dim=1)
+        score = maha_score + cosine_weight * cosine_distance
+    else:
+        score = maha_score
+
+    keep_count = min(num_samples, projected.shape[0])
+    keep_ids = torch.topk(score, k=keep_count, largest=False).indices
+    return projected.index_select(0, keep_ids)
+
+
 @torch.no_grad()
 def sample_semantic_projected_features(target_cls, target_mean, num_samples, args, device,
                                        cls_mean, cls_cov, cls_cfs_model=None, available_classes=None):
@@ -678,8 +734,13 @@ def sample_semantic_projected_features(target_cls, target_mean, num_samples, arg
     _, order = torch.topk(sim, k=top_k)
     selected_sources = source_ids.index_select(0, order).tolist()
 
+    candidate_multiplier = 1
+    if bool(getattr(args, 'semantic_projection_filter', False)):
+        candidate_multiplier = max(1, int(getattr(args, 'semantic_projection_filter_multiplier', 3)))
+    requested_samples = max(num_samples, num_samples * candidate_multiplier)
+
     chunks = []
-    remaining = num_samples
+    remaining = requested_samples
     for idx, source_cls in enumerate(selected_sources):
         take = remaining // (len(selected_sources) - idx)
         if take <= 0:
@@ -707,10 +768,17 @@ def sample_semantic_projected_features(target_cls, target_mean, num_samples, arg
     if not chunks:
         return None
     projected = torch.cat(chunks, dim=0)
+
+    if bool(getattr(args, 'semantic_projection_filter', False)):
+        target_cov = _class_stat_for_target_cluster(target_cls, target_mean, cls_mean, cls_cov, device)
+        if target_cov is not None:
+            projected = _filter_projected_features_for_target(projected, target_mean, target_cov, num_samples, args, device)
+
     if projected.shape[0] < num_samples:
         pad = projected[torch.randint(projected.shape[0], (num_samples - projected.shape[0],), device=device)]
         projected = torch.cat([projected, pad], dim=0)
     return projected[:num_samples]
+
 
 def train_cfs_model(features, args, device):
     if not use_cfs_sampling(args) or features.shape[0] < 2:
