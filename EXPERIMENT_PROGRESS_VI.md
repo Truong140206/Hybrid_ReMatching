@@ -489,3 +489,119 @@ C?u h�nh n�n th? d?u ti�n:
 ```
 
 Luu �: c?u h�nh n�y c? � kh�ng b?t `--semantic_distill` ban d?u, v� c�c l?n tru?c semantic CTIRD l�m k?t qu? gi?m. Tru?c m?t ch? th�m semantic v�o CRCT replay m?t c�ch c� ki?m so�t. N?u k?t qu? t?t hon CFS-only, sau d� m?i th? b?t semantic CTIRD r?t nh?.
+
+## 11. Kết quả semantic-safe CRCT trên CIFAR100
+
+Cấu hình đã chạy:
+
+```bash
+--cfs_sampling
+--cfs_epochs 50
+--cfs_train_max_samples 1024
+--cfs_candidate_multiplier 3
+--semantic_backend clip
+--semantic_projection
+--semantic_projection_mode mean_shift
+--semantic_projection_ratio 0.1
+--semantic_projection_top_k 5
+--semantic_projection_strength 0.5
+--semantic_projection_filter
+--semantic_projection_filter_multiplier 3
+--semantic_projection_filter_cosine_weight 0.1
+```
+
+Kết quả cuối sau task 10:
+
+```text
+[Average accuracy till task10]
+Acc@task 87.3600
+Acc@1    86.9900
+Acc@5    97.7400
+Loss     0.5526
+Forgetting 3.7333
+Backward  -3.3222
+```
+
+So sánh với các mốc chính:
+
+| Phiên bản | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Nhận xét |
+|---|---:|---:|---:|---:|---:|---|
+| Baseline chưa CFS | 87.0500 | 86.9000 | 97.5900 | 0.5860 | - | Mốc gốc |
+| CFS-only | 88.0600 | 88.0000 | 97.9400 | 0.5232 | 3.8889 | Tốt nhất hiện tại |
+| CFS + semantic projection cũ | 87.5600 | 87.0100 | 97.5900 | 0.5508 | 3.8111 | Tốt hơn baseline, nhưng chưa vượt CFS-only |
+| CFS + paper-style CLIP semantic | 87.1600 | 86.5500 | 97.3300 | 0.6142 | 3.5222 | Không cải thiện |
+| CFS + semantic-safe CRCT | 87.3600 | 86.9900 | 97.7400 | 0.5526 | 3.7333 | Cải thiện so với paper-style, nhưng vẫn chưa vượt CFS-only |
+
+Nhận xét:
+
+- Semantic-safe CRCT đã sửa được vấn đề lớn của paper-style: không còn ép feature quá mạnh theo CLIP text space.
+- So với paper-style, kết quả tốt hơn rõ ở Acc@task, Acc@1, Acc@5 và loss.
+- Tuy nhiên so với CFS-only, kết quả vẫn thấp hơn khoảng `0.70` Acc@task và `1.01` Acc@1.
+- Điều này cho thấy phần cải thiện chắc chắn nhất hiện tại vẫn là CFS replay. Semantic hiện tại có thể giúp làm giàu replay, nhưng tín hiệu semantic chưa đủ chuẩn để vượt replay thống kê thuần.
+- Hướng nên thử tiếp theo là giảm ảnh hưởng semantic hơn nữa, ví dụ `semantic_projection_ratio=0.05`, hoặc chỉ dùng semantic để chọn class nguồn nhưng không project mạnh. Một hướng khác là cải thiện CFS-only trước, vì đây đang là nền tốt nhất.
+
+## 12. Cải tiến tiếp theo: CFS distribution filter
+
+Sau khi các biến thể semantic chưa vượt được CFS-only, hướng cải tiến được chuyển về phần đang có hiệu quả nhất: CFS replay.
+
+Vấn đề của CFS-only hiện tại:
+
+- CFS chọn synthetic feature sao cho các điểm được chọn đa dạng trong embedding CFS.
+- Tuy nhiên candidate ban đầu vẫn được sample từ Gaussian/covariance của class.
+- Nếu Gaussian sinh ra outlier, CFS có thể chọn outlier đó vì nó khác các điểm còn lại, dù outlier này không thật sự nằm gần phân phối feature của class.
+- Outlier trong CRCT có thể làm classifier bị kéo lệch, nhất là ở các task sau khi số class tăng lên.
+
+Ý tưởng mới:
+
+```text
+1. Sinh nhiều Gaussian candidate hơn bình thường.
+2. Tính điểm gần phân phối class bằng diagonal Mahalanobis distance tới mean/cov của class.
+3. Có thể cộng thêm cosine distance nhỏ tới class mean.
+4. Giữ lại các candidate sạch nhất.
+5. Chạy CFS diversity selection trên candidate pool đã lọc.
+```
+
+Tham số mới:
+
+```bash
+--cfs_distribution_filter
+--cfs_filter_multiplier 3
+--cfs_filter_cosine_weight 0.0
+```
+
+Ý nghĩa:
+
+- `--cfs_distribution_filter`: bật lọc candidate trước khi CFS chọn diversity.
+- `--cfs_filter_multiplier`: số candidate thô sinh thêm trước khi lọc. Ví dụ CFS cần 360 candidate, multiplier 3 sẽ sinh 1080 candidate rồi lọc còn 360.
+- `--cfs_filter_cosine_weight`: trọng số cosine distance tới class mean. Mặc định `0.0` để ưu tiên Mahalanobis thuần; có thể thử `0.05` hoặc `0.1` nếu muốn thêm ràng buộc hướng feature.
+
+Điểm khác so với semantic-safe:
+
+- Không dùng semantic, không dùng CLIP, không project feature.
+- Chỉ làm sạch candidate Gaussian trước khi đưa vào CFS.
+- Vì CFS-only đang là bản tốt nhất, hướng này ít rủi ro hơn semantic và bám trực tiếp vào thành phần đang có lợi.
+
+Cấu hình nên chạy thử đầu tiên:
+
+```bash
+--cfs_sampling
+--cfs_epochs 50
+--cfs_train_max_samples 1024
+--cfs_candidate_multiplier 3
+--cfs_distribution_filter
+--cfs_filter_multiplier 3
+--cfs_filter_cosine_weight 0.0
+```
+
+Nếu kết quả tốt hơn CFS-only, có thể thử tiếp:
+
+```bash
+--cfs_filter_cosine_weight 0.05
+```
+
+hoặc tăng nhẹ candidate pool:
+
+```bash
+--cfs_candidate_multiplier 4
+--cfs_filter_multiplier 3
+```

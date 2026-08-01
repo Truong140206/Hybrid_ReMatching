@@ -23,6 +23,11 @@ if [ "${CFS_SAMPLING:-0}" = "1" ]; then
   CFS_ARGS+=(--cfs_train_max_samples "${CFS_TRAIN_MAX_SAMPLES:-1024}")
   CFS_ARGS+=(--cfs_candidate_multiplier "${CFS_CANDIDATE_MULTIPLIER:-3}")
   CFS_ARGS+=(--cfs_tau "${CFS_TAU:-1.0}")
+  if [ "${CFS_DISTRIBUTION_FILTER:-0}" = "1" ]; then
+    CFS_ARGS+=(--cfs_distribution_filter)
+    CFS_ARGS+=(--cfs_filter_multiplier "${CFS_FILTER_MULTIPLIER:-3}")
+    CFS_ARGS+=(--cfs_filter_cosine_weight "${CFS_FILTER_COSINE_WEIGHT:-0.0}")
+  fi
   if [ "${CFS_PAPER_STYLE:-0}" = "1" ]; then
     CFS_ARGS+=(--cfs_paper_style)
     CFS_ARGS+=(--cfs_selection_ratio "${CFS_SELECTION_RATIO:-0.5}")

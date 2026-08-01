@@ -826,9 +826,51 @@ def train_cfs_model(features, args, device):
 
 
 @torch.no_grad()
-def _sample_cfs_features_paper_style(distribution, num_samples, args, device, cfs_model):
+def _filter_cfs_candidate_features(candidates, mean, cov, keep_count, args, device):
+    if candidates.shape[0] <= keep_count:
+        return candidates[:keep_count]
+
+    mean = mean.float().to(device)
+    cov = torch.as_tensor(cov).float().to(device)
+    if cov.dim() == 2:
+        diag_var = torch.diag(cov)
+    else:
+        diag_var = cov
+    diag_var = diag_var.clamp_min(1e-5)
+
+    candidates = candidates.float().to(device)
+    centered = candidates - mean.unsqueeze(0)
+    maha_score = (centered.pow(2) / diag_var.unsqueeze(0)).mean(dim=1)
+
+    cosine_weight = float(getattr(args, 'cfs_filter_cosine_weight', 0.0))
+    if cosine_weight > 0 and mean.norm().item() > 1e-8:
+        cosine_distance = 1.0 - F.cosine_similarity(candidates, mean.unsqueeze(0), dim=1)
+        score = maha_score + cosine_weight * cosine_distance
+    else:
+        score = maha_score
+
+    keep_count = min(keep_count, candidates.shape[0])
+    keep_ids = torch.topk(score, k=keep_count, largest=False).indices
+    return candidates.index_select(0, keep_ids)
+
+
+@torch.no_grad()
+def _sample_filtered_gaussian(distribution, mean, cov, keep_count, args, device):
+    if keep_count <= 0:
+        return distribution.sample(sample_shape=(0,)).to(device)
+    if not bool(getattr(args, 'cfs_distribution_filter', False)):
+        return distribution.sample(sample_shape=(keep_count,)).to(device)
+
+    filter_multiplier = max(1, int(getattr(args, 'cfs_filter_multiplier', 3)))
+    raw_count = max(keep_count, keep_count * filter_multiplier)
+    candidates = distribution.sample(sample_shape=(raw_count,)).to(device)
+    return _filter_cfs_candidate_features(candidates, mean, cov, keep_count, args, device)
+
+
+@torch.no_grad()
+def _sample_cfs_features_paper_style(distribution, mean, cov, num_samples, args, device, cfs_model):
     if num_samples <= 1:
-        return distribution.sample(sample_shape=(num_samples,))
+        return _sample_filtered_gaussian(distribution, mean, cov, num_samples, args, device)
 
     ratio = float(getattr(args, 'cfs_selection_ratio', 0.5))
     ratio = max(0.0, min(1.0, ratio))
@@ -839,7 +881,7 @@ def _sample_cfs_features_paper_style(distribution, num_samples, args, device, cf
 
     selected_target = max(1, int(round(num_samples * ratio)))
     init_count = max(1, num_samples - selected_target)
-    selected_features = [distribution.sample(sample_shape=(init_count,)).to(device)]
+    selected_features = [_sample_filtered_gaussian(distribution, mean, cov, init_count, args, device)]
     selected_embeddings = cfs_model(selected_features[0].float())
     remaining = num_samples - init_count
 
@@ -848,7 +890,7 @@ def _sample_cfs_features_paper_style(distribution, num_samples, args, device, cf
             break
         take = int(math.ceil(remaining / float(steps - step)))
         candidate_count = step_candidates if step_candidates > 0 else max(take * multiplier, take)
-        candidates = distribution.sample(sample_shape=(candidate_count,)).to(device)
+        candidates = _sample_filtered_gaussian(distribution, mean, cov, candidate_count, args, device)
         candidate_embeddings = cfs_model(candidates.float())
         scores = torch.exp(torch.mm(candidate_embeddings, selected_embeddings.t()) / tau).mean(dim=1)
         take = min(take, candidate_count)
@@ -861,7 +903,7 @@ def _sample_cfs_features_paper_style(distribution, num_samples, args, device, cf
 
     features = torch.cat(selected_features, dim=0)
     if features.shape[0] < num_samples:
-        pad = distribution.sample(sample_shape=(num_samples - features.shape[0],)).to(device)
+        pad = _sample_filtered_gaussian(distribution, mean, cov, num_samples - features.shape[0], args, device)
         features = torch.cat([features, pad], dim=0)
     return features[:num_samples]
 
@@ -874,11 +916,11 @@ def sample_cfs_features(mean, cov, num_samples, args, device, cfs_model=None):
 
     cfs_model = cfs_model.to(device)
     if bool(getattr(args, 'cfs_paper_style', False)):
-        return _sample_cfs_features_paper_style(distribution, num_samples, args, device, cfs_model)
+        return _sample_cfs_features_paper_style(distribution, mean, cov, num_samples, args, device, cfs_model)
 
     multiplier = max(1, int(getattr(args, 'cfs_candidate_multiplier', 3)))
     candidate_count = max(num_samples, num_samples * multiplier)
-    candidates = distribution.sample(sample_shape=(candidate_count,)).to(device)
+    candidates = _sample_filtered_gaussian(distribution, mean, cov, candidate_count, args, device)
 
     embeddings = cfs_model(candidates.float())
     tau = float(getattr(args, 'cfs_tau', 1.0))
