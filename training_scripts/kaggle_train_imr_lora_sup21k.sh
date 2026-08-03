@@ -60,6 +60,8 @@ if [ "${SEMANTIC_DISTILL:-0}" = "1" ] || [ "${SEMANTIC_PROJECTION:-0}" = "1" ] |
     SEMANTIC_ARGS+=(--semantic_projection_strength "${SEMANTIC_PROJECTION_STRENGTH:-1.0}")
     SEMANTIC_ARGS+=(--semantic_projection_mode "${SEMANTIC_PROJECTION_MODE:-mean_shift}")
     SEMANTIC_ARGS+=(--semantic_projection_alpha "${SEMANTIC_PROJECTION_ALPHA:-0.1}")
+    SEMANTIC_ARGS+=(--semantic_cov_transfer_min_scale "${SEMANTIC_COV_TRANSFER_MIN_SCALE:-0.5}")
+    SEMANTIC_ARGS+=(--semantic_cov_transfer_max_scale "${SEMANTIC_COV_TRANSFER_MAX_SCALE:-2.0}")
     if [ "${SEMANTIC_PROJECTION_PRESERVE_NORM:-0}" = "1" ]; then
       SEMANTIC_ARGS+=(--semantic_projection_preserve_norm)
     fi

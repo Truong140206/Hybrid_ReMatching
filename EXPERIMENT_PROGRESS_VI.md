@@ -671,3 +671,78 @@ Kỳ vọng:
 - Nếu semantic thật sự giúp, bản này có cơ hội tốt hơn các bản semantic cũ vì semantic đã được align với HRM feature space.
 - Vẫn chưa thể đảm bảo vượt CFS-only trước khi chạy, nhưng đây là hướng semantic hợp lý hơn so với dùng CLIP/text trực tiếp.
 - Nên chạy với ratio nhỏ `0.05` trước để tránh phá baseline CFS-only.
+## 14. Kết quả semantic feature adapter và hướng covariance transfer
+
+Kết quả chạy `semantic feature adapter` trên CIFAR100:
+
+```text
+[Average accuracy till task10]
+Acc@task 87.4200
+Acc@1    87.1500
+Acc@5    97.8200
+Loss     0.5464
+Forgetting 3.6556
+Backward  -3.1000
+```
+
+So với semantic-safe trước đó:
+
+| Phiên bản | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|
+| Semantic-safe CRCT | 87.3600 | 86.9900 | 97.7400 | 0.5526 | 3.7333 | -3.3222 |
+| Semantic feature adapter | 87.4200 | 87.1500 | 97.8200 | 0.5464 | 3.6556 | -3.1000 |
+
+Nhận xét:
+
+- Adapter có cải thiện thật so với semantic-safe: Acc@1 tăng `0.16`, loss giảm `0.0062`.
+- Điều này cho thấy hướng align semantic sang HRM feature space hợp lý hơn dùng CLIP/text trực tiếp.
+- Tuy nhiên vẫn chưa vượt CFS-only, nên semantic vẫn cần được đưa vào nhẹ và có kiểm soát hơn.
+
+Cải tiến tiếp theo: `semantic_projection_mode=covariance_transfer`.
+
+Ý tưởng:
+
+```text
+1. Semantic adapter chỉ dùng để chọn source class gần target class.
+2. Sample feature từ source class.
+3. Lấy residual: source_feature - source_mean.
+4. Scale residual theo tỉ lệ variance target/source.
+5. Đặt residual đã scale quanh target_mean.
+6. Lọc lại bằng target distribution.
+```
+
+Khác với `mean_shift`:
+
+- `mean_shift` vẫn xoay residual theo hướng semantic vector.
+- `covariance_transfer` không xoay theo semantic nữa, chỉ mượn hình dạng biến thiên từ source class rồi neo vào target distribution.
+- Vì vậy semantic đóng vai trò chọn hàng xóm class, còn hình học feature vẫn do mean/cov thật của HRM quyết định.
+
+Tham số mới:
+
+```bash
+--semantic_projection_mode covariance_transfer
+--semantic_cov_transfer_min_scale 0.5
+--semantic_cov_transfer_max_scale 2.0
+```
+
+Cấu hình nên thử:
+
+```bash
+--semantic_backend clip
+--semantic_projection
+--semantic_feature_adapter
+--semantic_projection_mode covariance_transfer
+--semantic_projection_ratio 0.03
+--semantic_projection_top_k 3
+--semantic_projection_strength 0.75
+--semantic_cov_transfer_min_scale 0.5
+--semantic_cov_transfer_max_scale 2.0
+--semantic_projection_filter
+--semantic_projection_filter_multiplier 3
+--semantic_projection_filter_cosine_weight 0.1
+```
+
+Kỳ vọng:
+
+- Ít phá CFS-only hơn vì projected features bám target mean/cov chặt hơn.
+- Nếu semantic hữu ích, bản này có khả năng cải thiện hơn adapter `mean_shift` do tránh xoay feature theo semantic vector.

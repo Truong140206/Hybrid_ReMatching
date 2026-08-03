@@ -705,8 +705,18 @@ def _rotate_features_between_semantics(features, source_sem, target_sem):
     return out_plane + rotated_plane
 
 
+def _diag_variance_from_cov(cov, device):
+    if cov is None:
+        return None
+    cov = torch.as_tensor(cov).float().to(device)
+    if cov.dim() == 2:
+        return torch.diag(cov).clamp_min(1e-5)
+    return cov.clamp_min(1e-5)
+
+
 @torch.no_grad()
-def semantic_project_features(features, source_mean, target_mean, source_cls, target_cls, args, device):
+def semantic_project_features(features, source_mean, target_mean, source_cls, target_cls, args, device,
+                              source_cov=None, target_cov=None):
     feature_dim = features.shape[-1]
     embeddings = _semantic_projection_embeddings(args, device, feature_dim)
     if embeddings is None or source_cls >= embeddings.shape[0] or target_cls >= embeddings.shape[0]:
@@ -715,7 +725,30 @@ def semantic_project_features(features, source_mean, target_mean, source_cls, ta
     source_sem = embeddings[source_cls].float()
     target_sem = embeddings[target_cls].float()
     features = features.float().to(device)
+    source_mean = source_mean.float().to(device)
+    target_mean = target_mean.float().to(device)
+    centered = features - source_mean.unsqueeze(0)
     projection_mode = str(getattr(args, 'semantic_projection_mode', 'mean_shift')).lower()
+
+    if projection_mode == 'covariance_transfer':
+        source_var = _diag_variance_from_cov(source_cov, device)
+        target_var = _diag_variance_from_cov(target_cov, device)
+        if (
+            source_var is not None and target_var is not None
+            and source_var.shape[0] == centered.shape[1]
+            and target_var.shape[0] == centered.shape[1]
+        ):
+            max_scale = float(getattr(args, 'semantic_cov_transfer_max_scale', 2.0))
+            min_scale = float(getattr(args, 'semantic_cov_transfer_min_scale', 0.5))
+            scale = torch.sqrt(target_var / source_var).clamp(min=min_scale, max=max_scale)
+            transferred = centered * scale.unsqueeze(0)
+        else:
+            transferred = centered
+
+        strength = float(getattr(args, 'semantic_projection_strength', 1.0))
+        strength = max(0.0, min(1.0, strength))
+        residual = (1.0 - strength) * centered + strength * transferred
+        return target_mean.unsqueeze(0) + residual
 
     if projection_mode == 'paper':
         feature_norm = features.norm(dim=1, keepdim=True).clamp_min(1e-12)
@@ -735,16 +768,12 @@ def semantic_project_features(features, source_mean, target_mean, source_cls, ta
     if not torch.isfinite(bridge).all() or bridge.norm() < 1e-6:
         return features
 
-    source_mean = source_mean.float().to(device)
-    target_mean = target_mean.float().to(device)
-    centered = features - source_mean.unsqueeze(0)
     rotated = 2.0 * torch.matmul(centered, bridge).unsqueeze(1) * bridge.unsqueeze(0) - centered
 
     strength = float(getattr(args, 'semantic_projection_strength', 1.0))
     strength = max(0.0, min(1.0, strength))
     projected = target_mean.unsqueeze(0) + strength * rotated + (1.0 - strength) * centered
     return projected
-
 
 def _class_stat_for_target_cluster(target_cls, target_mean, cls_mean, cls_cov, device):
     target_cov = cls_cov.get(target_cls)
@@ -853,8 +882,10 @@ def sample_semantic_projected_features(target_cls, target_mean, num_samples, arg
         source_samples = sample_cfs_features(
             source_mean, source_cov, take, args, device,
             cfs_model=cls_cfs_model.get(source_cls) if cls_cfs_model is not None else None)
+        target_cov = _class_stat_for_target_cluster(target_cls, target_mean, cls_mean, cls_cov, device)
         chunks.append(semantic_project_features(
-            source_samples, source_mean, target_mean, source_cls, target_cls, args, device))
+            source_samples, source_mean, target_mean, source_cls, target_cls, args, device,
+            source_cov=source_cov, target_cov=target_cov))
         remaining -= take
 
     if not chunks:
