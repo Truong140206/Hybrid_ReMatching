@@ -246,6 +246,12 @@ def train_and_evaluate(model: torch.nn.Module, model_without_ddp: torch.nn.Modul
         # TODO compute mean and variance
         _compute_mean(model=model, data_loader=data_loader_per_cls, device=device, class_mask=class_mask[task_id],
                       args=args)
+        if utils.use_semantic_feature_adapter(args):
+            seen_classes = []
+            for seen_task in range(task_id + 1):
+                seen_classes.extend(class_mask[seen_task])
+            utils.update_semantic_feature_adapter(args, cls_mean, device, available_classes=seen_classes)
+
 
         # TODO classifier alignment
         if task_id > 0:

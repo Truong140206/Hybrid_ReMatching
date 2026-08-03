@@ -605,3 +605,69 @@ hoặc tăng nhẹ candidate pool:
 --cfs_candidate_multiplier 4
 --cfs_filter_multiplier 3
 ```
+## 13. Cải tiến semantic mới: semantic feature adapter
+
+Các lần semantic trước chưa vượt CFS-only vì semantic được dùng trực tiếp từ text/CLIP. Cách này có một lệch pha quan trọng: CLIP text embedding nằm trong không gian ngữ nghĩa của CLIP, còn HRM-PET dùng feature `pre_logits` của ViT/timm để CRCT. Vì vậy semantic có thể đúng về nghĩa ngôn ngữ nhưng vẫn không khớp hình học feature mà classifier đang học.
+
+Hướng mới là `semantic feature adapter`.
+
+Ý tưởng:
+
+```text
+1. Lấy semantic embedding của toàn bộ class, ví dụ CLIP text embedding.
+2. Sau mỗi task, lấy mean feature thật của các class đã thấy trong HRM.
+3. Học một phép chiếu ridge regression từ semantic embedding sang HRM class mean.
+4. Dùng semantic embedding đã align này để chọn source class liên quan và semantic projection.
+5. Vẫn giữ semantic projection ratio nhỏ và filter theo target distribution để tránh phá CFS replay.
+```
+
+Khác với paper-style CLIP semantic:
+
+- Paper-style dùng CLIP text vector trực tiếp để xoay/project feature.
+- Bản adapter học cách dịch CLIP/text semantic sang feature space của HRM trước.
+- Vì vậy semantic không còn ép replay đi theo không gian CLIP thuần, mà bám vào thống kê class thật đã học.
+
+Tham số mới:
+
+```bash
+--semantic_feature_adapter
+--semantic_adapter_dim 512
+--semantic_adapter_ridge 0.01
+--semantic_adapter_blend 1.0
+--semantic_adapter_min_classes 5
+```
+
+Ý nghĩa:
+
+- `--semantic_feature_adapter`: bật adapter semantic -> HRM feature mean.
+- `--semantic_adapter_dim`: số chiều semantic embedding đầu vào cho adapter.
+- `--semantic_adapter_ridge`: hệ số regularization khi học phép chiếu; giúp tránh overfit khi số class đã thấy còn ít.
+- `--semantic_adapter_blend`: tỉ lệ dùng embedding đã align. `1.0` nghĩa là dùng hoàn toàn embedding đã align.
+- `--semantic_adapter_min_classes`: cần ít nhất bao nhiêu class đã thấy mới bật adapter.
+
+Cấu hình nên thử:
+
+```bash
+--cfs_sampling
+--cfs_epochs 50
+--cfs_train_max_samples 1024
+--cfs_candidate_multiplier 3
+--semantic_backend clip
+--semantic_projection
+--semantic_feature_adapter
+--semantic_adapter_ridge 0.01
+--semantic_adapter_blend 1.0
+--semantic_projection_mode mean_shift
+--semantic_projection_ratio 0.05
+--semantic_projection_top_k 5
+--semantic_projection_strength 0.35
+--semantic_projection_filter
+--semantic_projection_filter_multiplier 3
+--semantic_projection_filter_cosine_weight 0.1
+```
+
+Kỳ vọng:
+
+- Nếu semantic thật sự giúp, bản này có cơ hội tốt hơn các bản semantic cũ vì semantic đã được align với HRM feature space.
+- Vẫn chưa thể đảm bảo vượt CFS-only trước khi chạy, nhưng đây là hướng semantic hợp lý hơn so với dùng CLIP/text trực tiếp.
+- Nên chạy với ratio nhỏ `0.05` trước để tránh phá baseline CFS-only.

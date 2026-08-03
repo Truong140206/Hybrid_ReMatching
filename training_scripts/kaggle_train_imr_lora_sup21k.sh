@@ -36,8 +36,10 @@ if [ "${CFS_SAMPLING:-0}" = "1" ]; then
   fi
 fi
 SEMANTIC_ARGS=()
-if [ "${SEMANTIC_DISTILL:-0}" = "1" ]; then
-  SEMANTIC_ARGS+=(--semantic_distill)
+if [ "${SEMANTIC_DISTILL:-0}" = "1" ] || [ "${SEMANTIC_PROJECTION:-0}" = "1" ] || [ "${SEMANTIC_FEATURE_ADAPTER:-0}" = "1" ]; then
+  if [ "${SEMANTIC_DISTILL:-0}" = "1" ]; then
+    SEMANTIC_ARGS+=(--semantic_distill)
+  fi
   SEMANTIC_ARGS+=(--semantic_dim "${SEMANTIC_DIM:-512}")
   SEMANTIC_ARGS+=(--semantic_backend "${SEMANTIC_BACKEND:-hash}")
   SEMANTIC_ARGS+=(--semantic_clip_model "${SEMANTIC_CLIP_MODEL:-ViT-B-16}")
@@ -66,6 +68,13 @@ if [ "${SEMANTIC_DISTILL:-0}" = "1" ]; then
       SEMANTIC_ARGS+=(--semantic_projection_filter_multiplier "${SEMANTIC_PROJECTION_FILTER_MULTIPLIER:-3}")
       SEMANTIC_ARGS+=(--semantic_projection_filter_cosine_weight "${SEMANTIC_PROJECTION_FILTER_COSINE_WEIGHT:-0.1}")
     fi
+  fi
+  if [ "${SEMANTIC_FEATURE_ADAPTER:-0}" = "1" ]; then
+    SEMANTIC_ARGS+=(--semantic_feature_adapter)
+    SEMANTIC_ARGS+=(--semantic_adapter_dim "${SEMANTIC_ADAPTER_DIM:-512}")
+    SEMANTIC_ARGS+=(--semantic_adapter_ridge "${SEMANTIC_ADAPTER_RIDGE:-0.01}")
+    SEMANTIC_ARGS+=(--semantic_adapter_blend "${SEMANTIC_ADAPTER_BLEND:-1.0}")
+    SEMANTIC_ARGS+=(--semantic_adapter_min_classes "${SEMANTIC_ADAPTER_MIN_CLASSES:-5}")
   fi
 fi
 require_checkpoints() {

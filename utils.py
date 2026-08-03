@@ -19,6 +19,7 @@ import torch.nn.functional as F
 _SEMANTIC_SIMILARITY_CACHE = {}
 _SEMANTIC_EMBEDDING_CACHE = {}
 _SEMANTIC_BACKEND_WARNING_EMITTED = set()
+_SEMANTIC_FEATURE_ADAPTER_CACHE = {}
 
 _CIFAR100_COARSE_GROUPS = {
     'aquatic_mammals': ['beaver', 'dolphin', 'otter', 'seal', 'whale'],
@@ -296,6 +297,9 @@ def use_semantic_distillation(args):
 
 def use_semantic_projection(args):
     return bool(getattr(args, 'semantic_projection', False))
+
+def use_semantic_feature_adapter(args):
+    return bool(getattr(args, 'semantic_feature_adapter', False))
 def _semantic_tokens(class_name):
     text = str(class_name).lower()
     for char in ['_', '-', '/', '.', ',', ';', ':', '(', ')', '[', ']']:
@@ -578,13 +582,101 @@ def apply_semantic_relation_distillation(relation_target, labels, args, device):
 
 
 
+def _feature_mean_for_class(cls_id, cls_mean, device):
+    mean = cls_mean.get(cls_id)
+    if mean is None:
+        return None
+    if isinstance(mean, list):
+        valid = [torch.as_tensor(item).float().to(device) for item in mean]
+        valid = [item for item in valid if torch.isfinite(item).all()]
+        if not valid:
+            return None
+        return torch.stack(valid, dim=0).mean(dim=0)
+    mean = torch.as_tensor(mean).float().to(device)
+    return mean if torch.isfinite(mean).all() else None
+
+
+@torch.no_grad()
+def update_semantic_feature_adapter(args, cls_mean, device, available_classes=None):
+    if not use_semantic_feature_adapter(args):
+        return None
+
+    class_names = getattr(args, 'class_names', None)
+    if not class_names:
+        return None
+    class_names = resolve_semantic_class_names(class_names, args)
+
+    if available_classes is None:
+        available_classes = sorted(int(c) for c in cls_mean.keys())
+    else:
+        available_classes = sorted(int(c) for c in available_classes if int(c) in cls_mean)
+
+    feature_means = []
+    train_ids = []
+    for cls_id in available_classes:
+        if cls_id < 0 or cls_id >= len(class_names):
+            continue
+        mean = _feature_mean_for_class(cls_id, cls_mean, device)
+        if mean is None:
+            continue
+        feature_means.append(mean)
+        train_ids.append(cls_id)
+
+    min_classes = max(2, int(getattr(args, 'semantic_adapter_min_classes', 5)))
+    if len(train_ids) < min_classes:
+        return None
+
+    feature_dim = feature_means[0].numel()
+    semantic_dim = max(1, int(getattr(args, 'semantic_adapter_dim', getattr(args, 'semantic_dim', 512))))
+    semantic_embeddings = build_semantic_class_embeddings(class_names, device, dim=semantic_dim, args=args)
+    if semantic_embeddings is None:
+        return None
+
+    source_ids = torch.tensor(train_ids, dtype=torch.long, device=device)
+    source = semantic_embeddings.index_select(0, source_ids).float()
+    target = torch.stack(feature_means, dim=0).float().to(device)
+    target = F.normalize(target, p=2, dim=1)
+    ones = torch.ones(source.shape[0], 1, dtype=source.dtype, device=device)
+    source_aug = torch.cat([source, ones], dim=1)
+
+    ridge = float(getattr(args, 'semantic_adapter_ridge', 1e-2))
+    identity = torch.eye(source_aug.shape[1], dtype=source_aug.dtype, device=device)
+    identity[-1, -1] = 0.0
+    lhs = source_aug.t().matmul(source_aug) + ridge * identity
+    rhs = source_aug.t().matmul(target)
+    try:
+        weight = torch.linalg.solve(lhs, rhs)
+    except RuntimeError:
+        weight = torch.linalg.pinv(lhs).matmul(rhs)
+
+    all_source = torch.cat([
+        semantic_embeddings.float(),
+        torch.ones(semantic_embeddings.shape[0], 1, dtype=semantic_embeddings.dtype, device=device)
+    ], dim=1)
+    adapted = F.normalize(all_source.matmul(weight), p=2, dim=1)
+
+    blend = float(getattr(args, 'semantic_adapter_blend', 1.0))
+    blend = max(0.0, min(1.0, blend))
+    if semantic_embeddings.shape[1] == feature_dim:
+        base = F.normalize(semantic_embeddings.float(), p=2, dim=1)
+        adapted = F.normalize((1.0 - blend) * base + blend * adapted, p=2, dim=1)
+
+    cache_key = (id(args), str(device), feature_dim)
+    _SEMANTIC_FEATURE_ADAPTER_CACHE[cache_key] = adapted.detach()
+    return adapted
+
+
 def _semantic_projection_embeddings(args, device, feature_dim):
+    if use_semantic_feature_adapter(args):
+        adapted = _SEMANTIC_FEATURE_ADAPTER_CACHE.get((id(args), str(device), feature_dim))
+        if adapted is not None:
+            return adapted.to(device)
+
     class_names = getattr(args, 'class_names', None)
     if not class_names:
         return None
     class_names = resolve_semantic_class_names(class_names, args)
     return build_semantic_class_embeddings(class_names, device, dim=feature_dim, args=args)
-
 
 def _rotate_features_between_semantics(features, source_sem, target_sem):
     source_sem = F.normalize(source_sem.float(), p=2, dim=0)
