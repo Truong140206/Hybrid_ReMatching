@@ -746,3 +746,245 @@ Kỳ vọng:
 
 - Ít phá CFS-only hơn vì projected features bám target mean/cov chặt hơn.
 - Nếu semantic hữu ích, bản này có khả năng cải thiện hơn adapter `mean_shift` do tránh xoay feature theo semantic vector.
+## 15. Kết quả semantic covariance transfer
+
+Kết quả chạy `semantic_projection_mode=covariance_transfer` trên CIFAR100:
+
+```text
+[Average accuracy till task10]
+Acc@task 87.4000
+Acc@1    87.1800
+Acc@5    97.8000
+Loss     0.5462
+Forgetting 3.6444
+Backward  -3.0778
+```
+
+So sánh với bản semantic adapter `mean_shift` trước đó:
+
+| Phiên bản | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|
+| Semantic feature adapter + mean_shift | 87.4200 | 87.1500 | 97.8200 | 0.5464 | 3.6556 | -3.1000 |
+| Semantic feature adapter + covariance_transfer | 87.4000 | 87.1800 | 97.8000 | 0.5462 | 3.6444 | -3.0778 |
+
+Nhận xét:
+
+- `covariance_transfer` tăng nhẹ Acc@1: `+0.03`.
+- Loss giảm rất nhẹ: `0.5464 -> 0.5462`.
+- Forgetting và Backward tốt hơn nhẹ.
+- Acc@task giảm `0.02`, Acc@5 giảm `0.02`, tức khác biệt rất nhỏ.
+- Kết luận: hướng covariance transfer không tạo bước nhảy lớn, nhưng nó ổn định hơn một chút ở Acc@1/forgetting so với mean_shift. Tuy nhiên cả hai vẫn chưa vượt CFS-only.
+
+Hướng thử tiếp nên tập trung vào ablation nhỏ quanh covariance transfer thay vì tăng semantic mạnh:
+
+```bash
+--semantic_projection_ratio 0.02
+--semantic_projection_top_k 3
+--semantic_projection_strength 0.5
+```
+
+hoặc thử giữ ratio `0.03` nhưng giảm strength:
+
+```bash
+--semantic_projection_ratio 0.03
+--semantic_projection_strength 0.5
+```
+## 16. Lần thử tiếp theo: semantic rất nhẹ
+
+Sau kết quả `covariance_transfer`, semantic có cải thiện rất nhỏ ở Acc@1/loss/forgetting nhưng vẫn chưa vượt CFS-only. Vì vậy lần thử tiếp theo không tăng semantic nữa, mà giảm semantic xuống mức rất nhẹ.
+
+Cấu hình đề xuất:
+
+```bash
+--semantic_projection_mode covariance_transfer
+--semantic_projection_ratio 0.02
+--semantic_projection_top_k 3
+--semantic_projection_strength 0.5
+```
+
+Lý do:
+
+- `ratio 0.02`: chỉ 2% replay feature đến từ semantic projection, tránh làm lệch CFS replay.
+- `top_k 3`: chỉ dùng vài class semantic gần nhất, giảm nhiễu từ class liên quan yếu.
+- `strength 0.5`: covariance transfer chỉ tác động một nửa, phần còn lại giữ residual gốc.
+
+Kỳ vọng:
+
+- Nếu semantic thực sự có ích, cấu hình nhẹ này có thể giữ được độ ổn định của CFS-only tốt hơn.
+- Nếu kết quả vẫn dưới CFS-only, kết luận hợp lý là semantic projection chưa phù hợp bằng CFS trong setting CIFAR100/HRM hiện tại; khi trình bày nên nhấn mạnh rằng CFS là cải tiến chính, còn semantic là nhánh thử nghiệm có phân tích ablation.
+## 17. Kết quả semantic rất nhẹ
+
+Kết quả chạy cấu hình semantic rất nhẹ:
+
+```text
+[Average accuracy till task10]
+Acc@task 87.3600
+Acc@1    87.1400
+Acc@5    97.8000
+Loss     0.5463
+Forgetting 3.6667
+Backward  -3.1000
+```
+
+So sánh ba bản semantic gần nhất:
+
+| Phiên bản | Ratio | Strength | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Adapter + mean_shift | 0.05 | 0.35 | 87.4200 | 87.1500 | 97.8200 | 0.5464 | 3.6556 | -3.1000 |
+| Adapter + covariance_transfer | 0.03 | 0.75 | 87.4000 | 87.1800 | 97.8000 | 0.5462 | 3.6444 | -3.0778 |
+| Adapter + covariance_transfer rất nhẹ | 0.02 | 0.5 | 87.3600 | 87.1400 | 97.8000 | 0.5463 | 3.6667 | -3.1000 |
+
+Nhận xét:
+
+- Giảm semantic xuống `ratio=0.02` không cải thiện thêm.
+- Ba bản semantic adapter dao động rất gần nhau, quanh `Acc@1 = 87.14 - 87.18`.
+- Tất cả vẫn thấp hơn CFS-only `Acc@1 = 88.0000`.
+- Kết luận thực nghiệm hiện tại: semantic projection/adapter có thể cải thiện nhẹ so với các bản semantic cũ, nhưng chưa phải hướng mạnh nhất trong setting này. CFS-only vẫn là cấu hình tốt nhất và nên là cải tiến chính khi trình bày.
+
+Hướng đi hợp lý tiếp theo:
+
+- Không nên tiếp tục tăng độ mạnh semantic projection vì các lần trước cho thấy dễ kéo accuracy xuống.
+- Nếu cần thêm cải tiến, nên quay lại tối ưu CFS-only: candidate filter, số candidate, CFS temperature, hoặc CRCT hyperparameter.
+## 18. Ablation bỏ semantic: CFS-only + distribution filter
+
+Sau nhiều lần thử semantic adapter/projection, kết quả vẫn chưa vượt CFS-only. Vì vậy bước tiếp theo là bỏ hoàn toàn semantic và chỉ cải tiến CFS.
+
+Cấu hình mới:
+
+```bash
+--cfs_sampling
+--cfs_epochs 50
+--cfs_train_max_samples 1024
+--cfs_candidate_multiplier 3
+--cfs_distribution_filter
+--cfs_filter_multiplier 3
+--cfs_filter_cosine_weight 0.0
+```
+
+Không bật các flag sau:
+
+```bash
+--semantic_projection
+--semantic_feature_adapter
+--semantic_distill
+--semantic_backend clip
+```
+
+Ý nghĩa:
+
+- CFS vẫn sinh synthetic replay feature từ Gaussian/covariance của từng class.
+- `cfs_distribution_filter` sinh nhiều Gaussian candidate hơn rồi lọc các điểm gần phân phối class thật nhất.
+- Sau khi lọc, CFS mới chọn các điểm đa dạng trong candidate pool sạch hơn.
+- Mục tiêu là giữ lợi ích chính của CFS nhưng giảm khả năng chọn outlier.
+
+Kỳ vọng:
+
+- Nếu semantic đúng là đang kéo CFS xuống, bản này nên gần hoặc tốt hơn CFS-only.
+- Nếu distribution filter tốt, có thể vượt mốc CFS-only hiện tại `Acc@1 = 88.0000`.
+- Nếu không vượt, CFS-only gốc vẫn là baseline mạnh nhất và các cải tiến nên tập trung vào hyperparameter hơn là thêm semantic.
+## 19. Kết quả CFS-only + distribution filter
+
+Kết quả chạy bỏ semantic hoàn toàn, chỉ dùng CFS + distribution filter:
+
+```text
+[Average accuracy till task10]
+Acc@task 87.2000
+Acc@1    87.1100
+Acc@5    97.5000
+Loss     0.5511
+Forgetting 3.8222
+Backward  -3.2111
+```
+
+So sánh với CFS-only gốc:
+
+| Phiên bản | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|
+| CFS-only gốc | 88.0600 | 88.0000 | 97.9400 | 0.5232 | 3.8889 | -3.7000 |
+| CFS-only + distribution filter | 87.2000 | 87.1100 | 97.5000 | 0.5511 | 3.8222 | -3.2111 |
+
+Nhận xét:
+
+- Distribution filter làm giảm Acc@task `-0.86` và Acc@1 `-0.89` so với CFS-only gốc.
+- Loss tăng từ `0.5232` lên `0.5511`.
+- Forgetting/Backward nhìn tốt hơn một chút, nhưng accuracy giảm nhiều hơn nên không đáng đánh đổi.
+- Kết luận: lọc Gaussian candidate quá chặt có thể làm mất các replay feature đa dạng mà CFS cần. CFS gốc chọn được các synthetic feature đa dạng hơn, và trong setting này diversity quan trọng hơn việc lọc gần mean/cov.
+
+Kết luận tổng hợp đến thời điểm này:
+
+- Bản tốt nhất vẫn là CFS-only gốc.
+- Semantic adapter/projection có cải thiện so với các bản semantic ban đầu nhưng chưa vượt CFS-only.
+- Distribution filter cũng không vượt CFS-only.
+- Khi trình bày, nên chốt CFS là cải tiến chính. Semantic và distribution filter nên trình bày như ablation/nhánh thử nghiệm: có ý tưởng hợp lý, chạy được, nhưng thực nghiệm cho thấy chưa tốt bằng CFS-only trong CIFAR100 setting.
+## 20. Đính chính mốc CFS-only 88.0000
+
+Đã tìm lại được full log cũ trong attachment:
+
+```text
+C:\Users\admin\.codex\attachments\2499c2a0-e0dc-4520-ab0f-eb9dca4f5851\pasted-text.txt
+```
+
+Kết quả `88.0600 / 88.0000` là kết quả thật ở task10:
+
+```text
+[Average accuracy till task10]
+Acc@task 88.0600
+Acc@1    88.0000
+Acc@5    97.9400
+Loss     0.5232
+Forgetting 3.8889
+Backward  -3.7000
+Total training time: 8:42:11
+```
+
+Tuy nhiên đây không cùng cấu hình với các lệnh rerun gần đây.
+
+Cấu hình LoRA trong log cũ:
+
+```text
+subparser_name = cifar100_lora
+batch_size = 24
+epochs = 10
+crct_epochs = 3
+trained_original_model = /content/drive/MyDrive/hrm-pet-output-colab/cifar100_tii_cfs_10tasks_seed42
+cfs_sampling = True
+cfs_epochs = 20
+cfs_batch_size = 128
+cfs_candidate_multiplier = 2
+cfs_train_max_samples = 1024
+cfs_tau = 1.0
+semantic_projection = không có / False
+```
+
+Cấu hình TII trong cùng log cũ:
+
+```text
+subparser_name = cifar100_hideprompt_5e
+batch_size = 64
+epochs = 5
+crct_epochs = 3
+train_inference_task_only = True
+ca_storage_efficient_method = covariance
+cfs_sampling = True
+cfs_epochs = 20
+cfs_batch_size = 128
+cfs_candidate_multiplier = 2
+output_dir = /content/drive/MyDrive/hrm-pet-output-colab/cifar100_tii_cfs_10tasks_seed42
+```
+
+Các rerun gần đây khác ở nhiều điểm:
+
+```text
+LoRA epochs = 5 thay vì 10
+crct_epochs = 10 hoặc 30 thay vì 3
+cfs_epochs = 50 thay vì 20
+cfs_candidate_multiplier = 3 thay vì 2
+cfs_batch_size = 256 thay vì 128
+trained_original_model = cifar100_tii_10tasks_seed42 thay vì cifar100_tii_cfs_10tasks_seed42
+```
+
+Kết luận sửa lại:
+
+- Mốc CFS-only `Acc@1=88.0000` là đúng, không phải nhầm task9.
+- Nhưng để reproduce phải chạy đúng cấu hình cũ, đặc biệt là dùng checkpoint TII `cifar100_tii_cfs_10tasks_seed42` và LoRA `epochs=10`, `crct_epochs=3`, `cfs_epochs=20`, `candidate_multiplier=2`.
+- Các kết quả rerun sau này không thể dùng để phủ định mốc cũ vì không cùng cấu hình/checkpoint.
