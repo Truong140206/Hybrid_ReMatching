@@ -114,6 +114,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--cfs_train_max_samples', default=1024, type=int)
     subparsers.add_argument('--cfs_candidate_multiplier', default=3, type=int)
     subparsers.add_argument('--cfs_tau', default=1.0, type=float)
+    subparsers.add_argument('--cfs_init_strategy', default='random', choices=['random', 'mean'], type=str, help='initial candidate selection strategy for CFS diversity sampling')
     subparsers.add_argument('--cfs_distribution_filter', action='store_true', help='filter CFS Gaussian candidates by class feature distribution before diversity selection')
     subparsers.add_argument('--cfs_filter_multiplier', default=3, type=int)
     subparsers.add_argument('--cfs_filter_cosine_weight', default=0.0, type=float)

@@ -23,6 +23,7 @@ if [ "${CFS_SAMPLING:-0}" = "1" ]; then
   CFS_ARGS+=(--cfs_train_max_samples "${CFS_TRAIN_MAX_SAMPLES:-1024}")
   CFS_ARGS+=(--cfs_candidate_multiplier "${CFS_CANDIDATE_MULTIPLIER:-3}")
   CFS_ARGS+=(--cfs_tau "${CFS_TAU:-1.0}")
+  CFS_ARGS+=(--cfs_init_strategy "${CFS_INIT_STRATEGY:-random}")
   if [ "${CFS_DISTRIBUTION_FILTER:-0}" = "1" ]; then
     CFS_ARGS+=(--cfs_distribution_filter)
     CFS_ARGS+=(--cfs_filter_multiplier "${CFS_FILTER_MULTIPLIER:-3}")

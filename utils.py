@@ -1050,7 +1050,20 @@ def sample_cfs_features(mean, cov, num_samples, args, device, cfs_model=None):
     sim = torch.exp(torch.mm(embeddings, embeddings.t()) / tau)
     sim.fill_diagonal_(0)
 
-    selected = [torch.randint(candidate_count, (1,), device=device).item()]
+    init_strategy = str(getattr(args, 'cfs_init_strategy', 'random')).lower()
+    if init_strategy == 'mean':
+        mean_for_init = mean.float().to(device)
+        cov_for_init = torch.as_tensor(cov).float().to(device)
+        if cov_for_init.dim() == 2:
+            diag_var = torch.diag(cov_for_init)
+        else:
+            diag_var = cov_for_init
+        diag_var = diag_var.clamp_min(1e-5)
+        centered = candidates.float() - mean_for_init.unsqueeze(0)
+        init_scores = (centered.pow(2) / diag_var.unsqueeze(0)).mean(dim=1)
+        selected = [torch.argmin(init_scores).item()]
+    else:
+        selected = [torch.randint(candidate_count, (1,), device=device).item()]
     score_sum = sim[:, selected[0]].clone()
     available = torch.ones(candidate_count, dtype=torch.bool, device=device)
     available[selected[0]] = False

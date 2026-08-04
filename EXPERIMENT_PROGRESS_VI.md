@@ -988,3 +988,79 @@ Kết luận sửa lại:
 - Mốc CFS-only `Acc@1=88.0000` là đúng, không phải nhầm task9.
 - Nhưng để reproduce phải chạy đúng cấu hình cũ, đặc biệt là dùng checkpoint TII `cifar100_tii_cfs_10tasks_seed42` và LoRA `epochs=10`, `crct_epochs=3`, `cfs_epochs=20`, `candidate_multiplier=2`.
 - Các kết quả rerun sau này không thể dùng để phủ định mốc cũ vì không cùng cấu hình/checkpoint.
+## 21. Kết quả reproduce CFS-only cấu hình cũ trên máy ảo
+
+Sau khi patch lỗi `PretrainedCfg` trong `hide_prompt_vision_transformer.py`, đã chạy lại cấu hình CFS-only cũ trên máy ảo.
+
+Kết quả:
+
+```text
+[Average accuracy till task10]
+Acc@task 87.6200
+Acc@1    87.8800
+Acc@5    98.0800
+Loss     0.5222
+Forgetting 3.7222
+Backward  -3.3889
+```
+
+So sánh với log cũ trên Colab/Kaggle:
+
+| Phiên bản | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|
+| CFS-only cũ trong full log | 88.0600 | 88.0000 | 97.9400 | 0.5232 | 3.8889 | -3.7000 |
+| Reproduce trên máy ảo | 87.6200 | 87.8800 | 98.0800 | 0.5222 | 3.7222 | -3.3889 |
+
+Nhận xét:
+
+- Reproduce không khớp tuyệt đối, nhưng rất gần mốc cũ.
+- Acc@1 chỉ thấp hơn `0.12` so với log cũ.
+- Acc@5 cao hơn `0.14`, loss tốt hơn `0.0010`, forgetting/backward cũng tốt hơn.
+- Chênh lệch nhỏ có thể đến từ môi trường khác nhau: Colab/Kaggle vs máy ảo RTX 4090, phiên bản thư viện, nondeterminism CUDA/DDP, hoặc checkpoint TII được train lại.
+- Cấu hình CFS-only cũ vẫn là nhánh mạnh nhất/ổn định nhất hiện tại.
+## 22. Cải tiến CFS-only: mean initialization
+
+Sau khi reproduce CFS-only cấu hình cũ, hướng tối ưu tiếp theo tập trung vào CFS-only, không dùng semantic.
+
+Vấn đề nhỏ trong CFS gốc:
+
+```text
+CFS sinh candidate Gaussian
+-> chọn điểm đầu tiên ngẫu nhiên
+-> chọn các điểm tiếp theo sao cho ít giống tập đã chọn nhất
+```
+
+Điểm đầu tiên ngẫu nhiên có thể làm kết quả dao động. Nếu điểm đầu tiên nằm hơi xa phân phối class, các điểm sau vẫn đa dạng nhưng tập replay có thể bị kéo lệch.
+
+Cải tiến mới:
+
+```text
+--cfs_init_strategy mean
+```
+
+Ý tưởng:
+
+- Không lọc bỏ candidate nào, nên không làm nghèo diversity như `cfs_distribution_filter`.
+- Chỉ đổi điểm khởi đầu của CFS: chọn candidate gần mean class nhất theo diagonal Mahalanobis distance.
+- Sau đó CFS vẫn chọn diversity như cũ.
+
+So với distribution filter:
+
+- `distribution_filter`: lọc cả candidate pool, đã làm accuracy giảm.
+- `mean init`: chỉ neo điểm đầu tiên, còn candidate pool vẫn giữ nguyên độ đa dạng.
+
+Cấu hình nên thử đầu tiên:
+
+```bash
+--cfs_sampling
+--cfs_epochs 20
+--cfs_batch_size 128
+--cfs_train_max_samples 1024
+--cfs_candidate_multiplier 2
+--cfs_init_strategy mean
+```
+
+Kỳ vọng:
+
+- Nếu random init là nguồn dao động, mean init có thể giúp kết quả ổn định hơn hoặc nhích lên.
+- Nếu không cải thiện, vẫn có thể bỏ flag này vì mặc định `random` giữ nguyên CFS gốc.
