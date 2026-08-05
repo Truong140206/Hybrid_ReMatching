@@ -1372,3 +1372,51 @@ Cách mới:
 6. Cập nhật `prompt_id` theo adapter thực sự được chọn và mask lại class chưa thấy.
 
 Đây là thay đổi ở pha đánh giá. Có thể dùng `--eval` với checkpoint tốt nhất hiện tại mà không cần train lại. Mặc định vẫn là `task_routing_mode=class`, nên baseline cũ không thay đổi.
+## 31. Kết quả task-energy evaluation routing
+
+Đã đánh giá checkpoint tốt nhất `full CRCT + boundary 0.25` bằng task-energy routing, không train lại.
+
+```text
+[Average accuracy till task10]
+Acc@task 84.9100
+Acc@1    88.1400
+Acc@5    98.0700
+Loss     0.4727
+Forgetting 4.4222
+Backward  -4.3222
+```
+
+So với routing class gốc trên cùng checkpoint:
+
+| Routing | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|
+| Class routing gốc | 88.0400 | 88.1700 | 98.0800 | 0.4704 | 4.4778 | -4.3444 |
+| Task-energy routing | 84.9100 | 88.1400 | 98.0700 | 0.4727 | 4.4222 | -4.3222 |
+
+Kết luận:
+
+- Acc@1 giảm `0.03`, Acc@5 giảm `0.01`, loss tăng `0.0023`.
+- Acc@task giảm mạnh `3.13`.
+- Forgetting/backward tốt hơn nhẹ nhưng không bù được routing accuracy giảm.
+- Không dùng `--task_routing_mode task_energy` cho cấu hình chính; giữ mặc định `class`.
+- Checkpoint không bị thay đổi vì đây chỉ là eval.
+
+## 32. Cải tiến CTIRD: chọn top-K task liên quan
+
+Trong CTIRD gốc, code tính task-level energy nhưng không dùng. Nó gọi `torch.topk(..., largest=False)` trên class logits, tức chọn các class có logit thấp nhất, sau đó đổi class sang task. Hệ quả là source adapter có thể ít liên quan và nhiều class có thể trỏ trùng cùng một task.
+
+Đã thêm chế độ:
+
+```text
+--ctird_task_selection task_energy
+--ctird_task_temperature 0.1
+```
+
+Khi bật:
+
+- Tính energy riêng cho từng task cũ từ logits TII.
+- Chọn top-K task có energy cao nhất (`largest=True`).
+- Mỗi source là một task phân biệt, không còn trùng do nhiều class cùng task.
+- CTIRD distill quan hệ từ những adapter cũ liên quan nhất tới batch hiện tại.
+
+Mặc định vẫn là `legacy`, nên baseline không thay đổi. Thay đổi này tác động lúc train LoRA và vì vậy cần chạy LoRA mới; TII checkpoint vẫn được tái sử dụng.

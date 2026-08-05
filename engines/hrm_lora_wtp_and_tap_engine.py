@@ -76,16 +76,19 @@ def get_old_features(model: torch.nn.Module, original_model: torch.nn.Module,
         if task_id>0:
 
             probabilities = temp[:,:task_id*len(class_mask[0])]
-            probabilities_reshaped = probabilities.view(probabilities.shape[0], task_id, -1)
-            entropies = (0.1*torch.logsumexp( probabilities_reshaped/ 0.1, dim=2))
-            m = task_id
-            if task_id>(args.K-1):
-                m=args.K
-            _, top_indices = torch.topk(probabilities, k=m, dim=1, largest=False)
-            top5_id = []
-            for i in range(top_indices.shape[0]):
-                top5_id.append(torch.tensor([target_task_map[v.item()] for v in top_indices[i]]))
-            top5_id = torch.stack(top5_id, dim=0).to(device, non_blocking=True)
+            m = min(task_id, args.K)
+            ctird_selection = str(getattr(args, 'ctird_task_selection', 'legacy')).lower()
+            if ctird_selection == 'task_energy':
+                task_scores = compute_task_energy_scores(
+                    temp, class_mask, task_id,
+                    temperature=getattr(args, 'ctird_task_temperature', 0.1))
+                top5_id = torch.topk(task_scores, k=m, dim=1, largest=True).indices
+            else:
+                _, top_indices = torch.topk(probabilities, k=m, dim=1, largest=False)
+                top5_id = []
+                for i in range(top_indices.shape[0]):
+                    top5_id.append(torch.tensor([target_task_map[v.item()] for v in top_indices[i]]))
+                top5_id = torch.stack(top5_id, dim=0).to(device, non_blocking=True)
         
         if task_id>0:
             # robust_logits = robust_loss(model, input, output['features'], target,device,task_id,class_mask,top5_id)
@@ -151,16 +154,19 @@ def train_one_epoch(model: torch.nn.Module, original_model: torch.nn.Module,
         if task_id>0:
 
             probabilities = temp[:,:task_id*len(class_mask[0])]
-            probabilities_reshaped = probabilities.view(probabilities.shape[0], task_id, -1)
-            entropies = (0.1*torch.logsumexp( probabilities_reshaped/ 0.1, dim=2))
-            m = task_id
-            if task_id>(args.K-1):
-                m=args.K
-            _, top_indices = torch.topk(probabilities, k=m, dim=1, largest=False)
-            top5_id = []
-            for i in range(top_indices.shape[0]):
-                top5_id.append(torch.tensor([target_task_map[v.item()] for v in top_indices[i]]))
-            top5_id = torch.stack(top5_id, dim=0).to(device, non_blocking=True)
+            m = min(task_id, args.K)
+            ctird_selection = str(getattr(args, 'ctird_task_selection', 'legacy')).lower()
+            if ctird_selection == 'task_energy':
+                task_scores = compute_task_energy_scores(
+                    temp, class_mask, task_id,
+                    temperature=getattr(args, 'ctird_task_temperature', 0.1))
+                top5_id = torch.topk(task_scores, k=m, dim=1, largest=True).indices
+            else:
+                _, top_indices = torch.topk(probabilities, k=m, dim=1, largest=False)
+                top5_id = []
+                for i in range(top_indices.shape[0]):
+                    top5_id.append(torch.tensor([target_task_map[v.item()] for v in top_indices[i]]))
+                top5_id = torch.stack(top5_id, dim=0).to(device, non_blocking=True)
         
         if task_id>0:
             #robust_logits = robust_loss(model, input, output['features'], target,device,task_id,class_mask,top5_id)

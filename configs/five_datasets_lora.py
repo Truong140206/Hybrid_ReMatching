@@ -79,6 +79,8 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--task_inc', default=False, type=bool, help='if doing task incremental')
 
     subparsers.add_argument('--con', default=0.1, type=float,)
+    subparsers.add_argument('--ctird_task_selection', default='legacy', choices=['legacy', 'task_energy'], type=str, help='select CTIRD source adapters using legacy bottom classes or top task energy')
+    subparsers.add_argument('--ctird_task_temperature', default=0.1, type=float)
     subparsers.add_argument('--K', default=5, type=int,)
     subparsers.add_argument('--En', default='gen', choices=['msp', 'gen'])
     subparsers.add_argument('--tau', default=-10, type=float)
