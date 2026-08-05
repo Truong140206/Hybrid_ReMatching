@@ -13,6 +13,10 @@ SKIP_LORA_IF_COMPLETE="${SKIP_LORA_IF_COMPLETE:-0}"
 
 TII_OUTPUT="${OUTPUT_ROOT}/imr_vit_multi_centroid_mlp_2_seed${SEED}"
 LORA_OUTPUT="${OUTPUT_ROOT}/test_imr_sup21k_lora_pe_seed${SEED}"
+CRCT_ARGS=()
+if [ "${CRCT_USE_ALL_SAMPLES:-0}" = "1" ]; then
+  CRCT_ARGS+=(--crct_use_all_samples)
+fi
 CFS_ARGS=()
 if [ "${CFS_SAMPLING:-0}" = "1" ]; then
   CFS_ARGS+=(--cfs_sampling)
@@ -24,6 +28,12 @@ if [ "${CFS_SAMPLING:-0}" = "1" ]; then
   CFS_ARGS+=(--cfs_candidate_multiplier "${CFS_CANDIDATE_MULTIPLIER:-3}")
   CFS_ARGS+=(--cfs_tau "${CFS_TAU:-1.0}")
   CFS_ARGS+=(--cfs_init_strategy "${CFS_INIT_STRATEGY:-random}")
+  if [ "${CFS_BOUNDARY_REPLAY:-0}" = "1" ]; then
+    CFS_ARGS+=(--cfs_boundary_replay)
+    CFS_ARGS+=(--cfs_boundary_ratio "${CFS_BOUNDARY_RATIO:-0.5}")
+    CFS_ARGS+=(--cfs_boundary_multiplier "${CFS_BOUNDARY_MULTIPLIER:-3}")
+    CFS_ARGS+=(--cfs_boundary_density_quantile "${CFS_BOUNDARY_DENSITY_QUANTILE:-0.9}")
+  fi
   if [ "${CFS_DISTRIBUTION_FILTER:-0}" = "1" ]; then
     CFS_ARGS+=(--cfs_distribution_filter)
     CFS_ARGS+=(--cfs_filter_multiplier "${CFS_FILTER_MULTIPLIER:-3}")
@@ -133,6 +143,7 @@ else
     --seed "${SEED}" \
     --train_inference_task_only \
     --output_dir "${TII_OUTPUT}" \
+    "${CRCT_ARGS[@]}" \
     "${CFS_ARGS[@]}" \
     "${SEMANTIC_ARGS[@]}"
 
@@ -167,6 +178,7 @@ else
     --lora_type hide \
     --trained_original_model "${TII_OUTPUT}" \
     --output_dir "${LORA_OUTPUT}" \
+    "${CRCT_ARGS[@]}" \
     "${CFS_ARGS[@]}" \
     "${SEMANTIC_ARGS[@]}"
 

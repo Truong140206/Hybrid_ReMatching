@@ -138,6 +138,7 @@ def get_args_parser(subparsers):
 
     # CA parameters
     subparsers.add_argument('--crct_epochs', default=30, type=int)
+    subparsers.add_argument('--crct_use_all_samples', action='store_true', help='use every balanced synthetic replay sample during classifier correction')
     subparsers.add_argument('--train_inference_task_only', action='store_true')
     subparsers.add_argument('--original_model_mlp_structure', default=[2], type=int, nargs='*')
     subparsers.add_argument('--ca_lr', default=0.005, type=float)
@@ -159,6 +160,10 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--cfs_candidate_multiplier', default=3, type=int)
     subparsers.add_argument('--cfs_tau', default=1.0, type=float)
     subparsers.add_argument('--cfs_init_strategy', default='random', choices=['random', 'mean'], type=str, help='initial candidate selection strategy for CFS diversity sampling')
+    subparsers.add_argument('--cfs_boundary_replay', action='store_true', help='mix diverse CFS samples with samples near the current classifier boundary')
+    subparsers.add_argument('--cfs_boundary_ratio', default=0.5, type=float)
+    subparsers.add_argument('--cfs_boundary_multiplier', default=3, type=int)
+    subparsers.add_argument('--cfs_boundary_density_quantile', default=0.9, type=float)
     subparsers.add_argument('--cfs_distribution_filter', action='store_true', help='filter CFS Gaussian candidates by class feature distribution before diversity selection')
     subparsers.add_argument('--cfs_filter_multiplier', default=3, type=int)
     subparsers.add_argument('--cfs_filter_cosine_weight', default=0.0, type=float)

@@ -641,6 +641,7 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
         sampled_data = []
         sampled_label = []
         num_sampled_pcls = args.batch_size * 5
+        seen_classes = [cls_id for seen_task in range(task_id + 1) for cls_id in class_mask[seen_task]]
 
         metric_logger = utils.MetricLogger(delimiter="  ")
         metric_logger.add_meter('Lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
@@ -658,9 +659,9 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
                         projected_count = int(num_sampled_pcls * float(getattr(args, 'semantic_projection_ratio', 0.25)))
                         projected_count = max(0, min(num_sampled_pcls - 1, projected_count))
                     base_count = num_sampled_pcls - projected_count
-                    sampled_data_single = utils.sample_cfs_features(
-                        mean.float(), cov.float(), base_count, args, device,
-                        cfs_model=cls_cfs_model.get(c_id))
+                    sampled_data_single = utils.sample_boundary_aware_cfs_features(
+                        mean.float(), cov.float(), base_count, args, device, model,
+                        c_id, seen_classes, cfs_model=cls_cfs_model.get(c_id))
                     if projected_count > 0:
                         available_classes = []
                         for seen_task in range(task_id + 1):
@@ -694,9 +695,9 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
                            projected_count = int(num_sampled_pcls * float(getattr(args, 'semantic_projection_ratio', 0.25)))
                            projected_count = max(0, min(num_sampled_pcls - 1, projected_count))
                        base_count = num_sampled_pcls - projected_count
-                       sampled_data_single = utils.sample_cfs_features(
-                           mean.float(), cov, base_count, args, device,
-                           cfs_model=cls_cfs_model.get(c_id))
+                       sampled_data_single = utils.sample_boundary_aware_cfs_features(
+                           mean.float(), cov, base_count, args, device, model,
+                           c_id, seen_classes, cfs_model=cls_cfs_model.get(c_id))
                        if projected_count > 0:
                            available_classes = []
                            for seen_task in range(task_id + 1):
@@ -730,7 +731,12 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
         targets = targets[sf_indexes]
         # print(targets)
 
-        for _iter in range(crct_num):
+        replay_iterations = crct_num
+        if bool(getattr(args, 'crct_use_all_samples', False)):
+            replay_iterations = int(math.ceil(inputs.size(0) / float(num_sampled_pcls)))
+        print('CRCT replay iterations:', replay_iterations, 'of', int(math.ceil(inputs.size(0) / float(num_sampled_pcls))))
+
+        for _iter in range(replay_iterations):
             inp = inputs[_iter * num_sampled_pcls:(_iter + 1) * num_sampled_pcls]
             tgt = targets[_iter * num_sampled_pcls:(_iter + 1) * num_sampled_pcls]
             outputs = model(inp, fc_only=True)
@@ -828,10 +834,3 @@ def robust_loss(model, inputs, features, targets, devices, task_id, class_mask,i
     
     output = all_old_logits
     return output
-
-
-
-
-
-
-

@@ -1,19 +1,19 @@
-# Ti?n d? thí nghi?m HRM-PET + CFS + Semantic
+# Ti?n d? thï¿½ nghi?m HRM-PET + CFS + Semantic
 
-## 1. M?c tiêu
+## 1. M?c tiï¿½u
 
-M?c tiêu hi?n t?i là c?i ti?n HRM-PET b?ng hai hu?ng l?y ı tu?ng t? paper PMI-CFS:
+M?c tiï¿½u hi?n t?i lï¿½ c?i ti?n HRM-PET b?ng hai hu?ng l?y ï¿½ tu?ng t? paper PMI-CFS:
 
 - CFS, vi?t t?t c?a Contrastive Feature Selection.
 - Semantic-aware feature projection / semantic-aware relation distillation.
 
-Trong HRM-PET, ph?n phù h?p nh?t d? áp d?ng CFS là CRCT feature replay. Ph?n phù h?p nh?t d? áp d?ng semantic là CTIRD, vì CTIRD dang distill quan h? gi?a các sample/class qua feature similarity.
+Trong HRM-PET, ph?n phï¿½ h?p nh?t d? ï¿½p d?ng CFS lï¿½ CRCT feature replay. Ph?n phï¿½ h?p nh?t d? ï¿½p d?ng semantic lï¿½ CTIRD, vï¿½ CTIRD dang distill quan h? gi?a cï¿½c sample/class qua feature similarity.
 
-## 2. Nh?ng gì dã làm
+## 2. Nh?ng gï¿½ dï¿½ lï¿½m
 
-### 2.1. Thêm CFS vào CRCT
+### 2.1. Thï¿½m CFS vï¿½o CRCT
 
-Ğã thêm CFS vào bu?c sinh feature gi? cho CRCT ? c? hai engine:
+ï¿½ï¿½ thï¿½m CFS vï¿½o bu?c sinh feature gi? cho CRCT ? c? hai engine:
 
 - TII / HidePrompt engine.
 - LoRA HRM engine.
@@ -22,35 +22,35 @@ Logic m?i:
 
 ```text
 feature th?t theo class
--> tính mean/covariance
+-> tï¿½nh mean/covariance
 -> train MLP contrastive nh? cho t?ng class
 -> sample nhi?u Gaussian candidates
 -> dua candidates qua MLP CFS
 -> ch?n subset da d?ng hon
--> dùng subset dó cho CRCT
+-> dï¿½ng subset dï¿½ cho CRCT
 ```
 
-CFS có th? b?t/t?t b?ng:
+CFS cï¿½ th? b?t/t?t b?ng:
 
 ```bash
 --cfs_sampling
 ```
 
-### 2.2. Thêm semantic-aware CTIRD b?n d?u
+### 2.2. Thï¿½m semantic-aware CTIRD b?n d?u
 
-B?n d?u dùng tên class d? t?o semantic embedding b?ng hashing, sau dó nhân semantic similarity vào target relation c?a CTIRD.
+B?n d?u dï¿½ng tï¿½n class d? t?o semantic embedding b?ng hashing, sau dï¿½ nhï¿½n semantic similarity vï¿½o target relation c?a CTIRD.
 
-Cách này ch?y du?c, nhung dua semantic vào khá m?nh, nh?t là khi `semantic_alpha=1.0`.
+Cï¿½ch nï¿½y ch?y du?c, nhung dua semantic vï¿½o khï¿½ m?nh, nh?t lï¿½ khi `semantic_alpha=1.0`.
 
-### 2.3. Thêm semantic top-k theo hu?ng g?n paper hon
+### 2.3. Thï¿½m semantic top-k theo hu?ng g?n paper hon
 
 Sau khi d?c paper, semantic du?c s?a theo hu?ng:
 
-- ch? dùng top-5 class g?n nghia nh?t,
+- ch? dï¿½ng top-5 class g?n nghia nh?t,
 - gi?m `semantic_alpha` xu?ng `0.1`, gi?ng paper,
-- thêm superclass CIFAR100 d? similarity có ı nghia hon.
+- thï¿½m superclass CIFAR100 d? similarity cï¿½ ï¿½ nghia hon.
 
-Mode này là:
+Mode nï¿½y lï¿½:
 
 ```bash
 --semantic_mode topk_mix
@@ -60,15 +60,15 @@ Mode này là:
 
 ### 2.4. C?i ti?n ti?p: semantic adaptive gate
 
-K?t qu? top-k v?n chua t?t hon CFS-only. Vì v?y code ti?p t?c du?c s?a theo hu?ng an toàn hon: `adaptive_gate`.
+K?t qu? top-k v?n chua t?t hon CFS-only. Vï¿½ v?y code ti?p t?c du?c s?a theo hu?ng an toï¿½n hon: `adaptive_gate`.
 
-İ tu?ng:
+ï¿½ tu?ng:
 
-- Không t?o semantic target m?i thay th? CTIRD.
-- Không ép model h?c theo semantic prior d?c l?p.
-- Ch? tang nh? tr?ng s? c?a nh?ng quan h? mà CTIRD cu dã có, d?ng th?i hai class cung g?n nghia.
+- Khï¿½ng t?o semantic target m?i thay th? CTIRD.
+- Khï¿½ng ï¿½p model h?c theo semantic prior d?c l?p.
+- Ch? tang nh? tr?ng s? c?a nh?ng quan h? mï¿½ CTIRD cu dï¿½ cï¿½, d?ng th?i hai class cung g?n nghia.
 
-Công th?c ı tu?ng:
+Cï¿½ng th?c ï¿½ tu?ng:
 
 ```text
 gated_target = normalize(old_relation * (1 + alpha * semantic_weight_topk))
@@ -82,11 +82,11 @@ Mode m?i:
 --semantic_top_k 5
 ```
 
-Ğây là hu?ng ít phá k?t qu? CFS-only hon, vì semantic ch? dóng vai trò di?u ch?nh ph?.
+ï¿½ï¿½y lï¿½ hu?ng ï¿½t phï¿½ k?t qu? CFS-only hon, vï¿½ semantic ch? dï¿½ng vai trï¿½ di?u ch?nh ph?.
 
-## 3. K?t qu? dã ch?y
+## 3. K?t qu? dï¿½ ch?y
 
-### 3.1. Baseline không CFS
+### 3.1. Baseline khï¿½ng CFS
 
 ```text
 Acc@task: 87.0500
@@ -106,7 +106,7 @@ Forgetting: 3.8889
 Backward: -3.7000
 ```
 
-Nh?n xét: CFS-only là b?n t?t nh?t hi?n t?i.
+Nh?n xï¿½t: CFS-only lï¿½ b?n t?t nh?t hi?n t?i.
 
 ### 3.3. CFS + semantic b?n d?u alpha 1.0
 
@@ -119,7 +119,7 @@ Forgetting: 3.4222
 Backward: -3.0222
 ```
 
-Nh?n xét: t?t hon baseline m?t chút, nhung th?p hon CFS-only.
+Nh?n xï¿½t: t?t hon baseline m?t chï¿½t, nhung th?p hon CFS-only.
 
 ### 3.4. CFS + semantic top-k alpha 0.1
 
@@ -133,17 +133,17 @@ Backward: -3.4000
 Total training time: 0:38:34
 ```
 
-Nh?n xét: không c?i thi?n, g?n baseline và th?p hon CFS-only.
+Nh?n xï¿½t: khï¿½ng c?i thi?n, g?n baseline vï¿½ th?p hon CFS-only.
 
 ## 4. K?t lu?n t?m th?i
 
-CFS dang là ph?n c?i thi?n chính. Vi?c ch?n feature replay t?t hon cho CRCT giúp classifier ?n d?nh hon và gi?m loss rõ ràng.
+CFS dang lï¿½ ph?n c?i thi?n chï¿½nh. Vi?c ch?n feature replay t?t hon cho CRCT giï¿½p classifier ?n d?nh hon vï¿½ gi?m loss rï¿½ rï¿½ng.
 
-Semantic-aware CTIRD dã ch?y du?c nhung chua c?i thi?n trên CIFAR100. Kh? nang cao là vì semantic t? class name/superclass còn y?u so v?i CLIP text feature trong paper, và n?u dua semantic vào quá m?nh thì nó làm l?ch target relation c?a CTIRD.
+Semantic-aware CTIRD dï¿½ ch?y du?c nhung chua c?i thi?n trï¿½n CIFAR100. Kh? nang cao lï¿½ vï¿½ semantic t? class name/superclass cï¿½n y?u so v?i CLIP text feature trong paper, vï¿½ n?u dua semantic vï¿½o quï¿½ m?nh thï¿½ nï¿½ lï¿½m l?ch target relation c?a CTIRD.
 
-Vì v?y hu?ng c?i ti?n ti?p theo là dùng semantic r?t nh?, nhu m?t gate h? tr? CTIRD thay vì t?o target m?i. Ğây là lı do thêm mode `adaptive_gate`.
+Vï¿½ v?y hu?ng c?i ti?n ti?p theo lï¿½ dï¿½ng semantic r?t nh?, nhu m?t gate h? tr? CTIRD thay vï¿½ t?o target m?i. ï¿½ï¿½y lï¿½ lï¿½ do thï¿½m mode `adaptive_gate`.
 
-## 5. L?nh ch?y ti?p nên th?
+## 5. L?nh ch?y ti?p nï¿½n th?
 
 Ch?y l?i LoRA v?i CFS + semantic adaptive gate:
 
@@ -187,33 +187,33 @@ python -m torch.distributed.run \
   2>&1 | tee ~/Documents/truongnguyen/hrm-pet-output/cifar100_lora_cfs_semantic_gate_a005_seed42.log
 ```
 
-K? v?ng: n?u semantic có ích, mode này nên gi? du?c m?c g?n CFS-only và có th? c?i thi?n nh? loss/forgetting. N?u v?n th?p hon CFS-only, nên báo cáo r?ng semantic class-name chua d? m?nh và c?n CLIP text embedding th?t d? bám sát paper hon.
-## 6. Semantic projection sát ı tu?ng paper hon
+K? v?ng: n?u semantic cï¿½ ï¿½ch, mode nï¿½y nï¿½n gi? du?c m?c g?n CFS-only vï¿½ cï¿½ th? c?i thi?n nh? loss/forgetting. N?u v?n th?p hon CFS-only, nï¿½n bï¿½o cï¿½o r?ng semantic class-name chua d? m?nh vï¿½ c?n CLIP text embedding th?t d? bï¿½m sï¿½t paper hon.
+## 6. Semantic projection sï¿½t ï¿½ tu?ng paper hon
 
-Sau khi th? `semantic_mode=topk_mix` và th?y k?t qu? không vu?t CFS-only, code du?c c?i ti?n thêm m?t hu?ng sát ı tu?ng g?c c?a paper hon: `--semantic_projection`.
+Sau khi th? `semantic_mode=topk_mix` vï¿½ th?y k?t qu? khï¿½ng vu?t CFS-only, code du?c c?i ti?n thï¿½m m?t hu?ng sï¿½t ï¿½ tu?ng g?c c?a paper hon: `--semantic_projection`.
 
-İ tu?ng g?c trong paper:
+ï¿½ tu?ng g?c trong paper:
 
 ```text
 text feature class c -> text feature class d
 -> t?o projection/rotation c sang d
--> apply projection dó lên image feature c?a class c
+-> apply projection dï¿½ lï¿½n image feature c?a class c
 -> t?o pseudo feature cho class d
 ```
 
-B?n áp d?ng vào HRM-PET hi?n t?i:
+B?n ï¿½p d?ng vï¿½o HRM-PET hi?n t?i:
 
 ```text
 semantic embedding class ngu?n c
-semantic embedding class dích d
--> t?o phép xoay/reflection trong feature space
+semantic embedding class dï¿½ch d
+-> t?o phï¿½p xoay/reflection trong feature space
 -> sample feature t? Gaussian/CFS c?a class c
 -> xoay ph?n residual c?a feature c sang hu?ng semantic c?a class d
 -> d?t quanh mean c?a class d
--> dùng pseudo feature này trong CRCT c?a class d
+-> dï¿½ng pseudo feature nï¿½y trong CRCT c?a class d
 ```
 
-Công th?c ı tu?ng:
+Cï¿½ng th?c ï¿½ tu?ng:
 
 ```text
 x_c = sample_from_class_c
@@ -222,7 +222,7 @@ R_cd = semantic_rotation(text_c -> text_d)
 x_d_pseudo = mean_d + R_cd(r_c)
 ```
 
-Trong code, phép `R_cd` du?c tri?n khai b?ng m?t phép bi?n d?i tr?c giao ki?u Householder d? không c?n t?o ma tr?n 768 x 768 d?y d?. Ğây là cách nh? hon nhung v?n gi? tinh th?n: dùng quan h? semantic gi?a class d? project feature t? class ngu?n sang class dích.
+Trong code, phï¿½p `R_cd` du?c tri?n khai b?ng m?t phï¿½p bi?n d?i tr?c giao ki?u Householder d? khï¿½ng c?n t?o ma tr?n 768 x 768 d?y d?. ï¿½ï¿½y lï¿½ cï¿½ch nh? hon nhung v?n gi? tinh th?n: dï¿½ng quan h? semantic gi?a class d? project feature t? class ngu?n sang class dï¿½ch.
 
 Tham s? m?i:
 
@@ -233,28 +233,28 @@ Tham s? m?i:
 --semantic_projection_strength 1.0
 ```
 
-İ nghia:
+ï¿½ nghia:
 
 - `--semantic_projection`: b?t semantic feature projection trong CRCT.
-- `--semantic_projection_ratio`: t? l? feature CRCT c?a m?i class du?c l?y t? semantic projection. Ví d? `0.25` nghia là 25% projected feature, 75% Gaussian/CFS feature g?c.
-- `--semantic_projection_top_k`: s? class ngu?n g?n nghia nh?t dùng d? project sang class dích.
-- `--semantic_projection_strength`: m?c áp d?ng phép projection. `1.0` là dùng projection d?y d?, th?p hon thì tr?n nh? hon.
+- `--semantic_projection_ratio`: t? l? feature CRCT c?a m?i class du?c l?y t? semantic projection. Vï¿½ d? `0.25` nghia lï¿½ 25% projected feature, 75% Gaussian/CFS feature g?c.
+- `--semantic_projection_top_k`: s? class ngu?n g?n nghia nh?t dï¿½ng d? project sang class dï¿½ch.
+- `--semantic_projection_strength`: m?c ï¿½p d?ng phï¿½p projection. `1.0` lï¿½ dï¿½ng projection d?y d?, th?p hon thï¿½ tr?n nh? hon.
 
-Luu ı quan tr?ng:
+Luu ï¿½ quan tr?ng:
 
-- B?n này sát paper hon các b?n semantic CTIRD tru?c vì nó th?t s? có bu?c project feature t? class này sang class khác.
-- Tuy nhiên v?n chua ph?i b?n paper g?c tuy?t d?i, vì paper dùng CLIP text feature th?t và model inversion sinh ?nh. B?n hi?n t?i dùng semantic embedding nh? t? class name/superclass và áp d?ng tr?c ti?p trong HRM feature space.
-- Ğây là ablation dáng th? ti?p theo. N?u c?i thi?n, có th? trình bày là semantic-aware feature projection dã du?c chuy?n hóa thành semantic-projected CRCT replay trong HRM-PET.
+- B?n nï¿½y sï¿½t paper hon cï¿½c b?n semantic CTIRD tru?c vï¿½ nï¿½ th?t s? cï¿½ bu?c project feature t? class nï¿½y sang class khï¿½c.
+- Tuy nhiï¿½n v?n chua ph?i b?n paper g?c tuy?t d?i, vï¿½ paper dï¿½ng CLIP text feature th?t vï¿½ model inversion sinh ?nh. B?n hi?n t?i dï¿½ng semantic embedding nh? t? class name/superclass vï¿½ ï¿½p d?ng tr?c ti?p trong HRM feature space.
+- ï¿½ï¿½y lï¿½ ablation dï¿½ng th? ti?p theo. N?u c?i thi?n, cï¿½ th? trï¿½nh bï¿½y lï¿½ semantic-aware feature projection dï¿½ du?c chuy?n hï¿½a thï¿½nh semantic-projected CRCT replay trong HRM-PET.
 
-## 7. K?t qu? th? semantic projection trên CIFAR100
+## 7. K?t qu? th? semantic projection trï¿½n CIFAR100
 
-L?nh ch?y trên máy Ubuntu/RTX 4090 dùng output:
+L?nh ch?y trï¿½n mï¿½y Ubuntu/RTX 4090 dï¿½ng output:
 
 ```text
 ~/Documents/truongnguyen/hrm-pet-output/cifar100_lora_cfs_semantic_projection_seed42
 ```
 
-Thi?t l?p chính:
+Thi?t l?p chï¿½nh:
 
 ```text
 num_tasks = 10
@@ -283,28 +283,28 @@ Backward  -3.2556
 Total training time: 1:55:46
 ```
 
-So sánh nhanh:
+So sï¿½nh nhanh:
 
-| Phiên b?n | Acc@task | Acc@1 | Acc@5 | Loss | Nh?n xét |
+| Phiï¿½n b?n | Acc@task | Acc@1 | Acc@5 | Loss | Nh?n xï¿½t |
 |---|---:|---:|---:|---:|---|
 | Baseline chua CFS | 87.0500 | 86.9000 | 97.5900 | 0.5860 | M?c g?c d? so |
 | CFS-only | 88.0600 | 88.0000 | 97.9400 | 0.5232 | T?t nh?t hi?n t?i |
-| CFS + semantic top-k alpha 0.1 | 87.1700 | 86.8900 | 97.5700 | 0.5559 | Semantic top-k chua c?i thi?n rõ |
-| CFS + semantic projection | 87.5600 | 87.0100 | 97.5900 | 0.5508 | T?t hon semantic top-k và baseline nh?, nhung chua vu?t CFS-only |
+| CFS + semantic top-k alpha 0.1 | 87.1700 | 86.8900 | 97.5700 | 0.5559 | Semantic top-k chua c?i thi?n rï¿½ |
+| CFS + semantic projection | 87.5600 | 87.0100 | 97.5900 | 0.5508 | T?t hon semantic top-k vï¿½ baseline nh?, nhung chua vu?t CFS-only |
 
 K?t lu?n t?m th?i:
 
-- Semantic projection sát ı tu?ng g?c c?a paper hon semantic top-k vì có bu?c project feature t? class ngu?n sang class dích.
-- K?t qu? dã nhích lên so v?i semantic top-k và loss t?t hon baseline.
-- Tuy nhiên CFS-only v?n là c?u hình m?nh nh?t trong các l?n th? hi?n t?i.
-- Nguyên nhân h?p lı: semantic embedding hi?n t?i v?n là class-name/superclass embedding nh?, chua ph?i CLIP text embedding th?t nhu paper, nên tín hi?u semantic chua d? m?nh d? vu?t CFS-only.
-- Hu?ng ti?p theo n?u mu?n bám paper hon n?a: thay semantic embedding hi?n t?i b?ng CLIP text embedding th?t c?a class name, r?i dùng embedding dó cho c? `semantic_distill` và `semantic_projection`.
+- Semantic projection sï¿½t ï¿½ tu?ng g?c c?a paper hon semantic top-k vï¿½ cï¿½ bu?c project feature t? class ngu?n sang class dï¿½ch.
+- K?t qu? dï¿½ nhï¿½ch lï¿½n so v?i semantic top-k vï¿½ loss t?t hon baseline.
+- Tuy nhiï¿½n CFS-only v?n lï¿½ c?u hï¿½nh m?nh nh?t trong cï¿½c l?n th? hi?n t?i.
+- Nguyï¿½n nhï¿½n h?p lï¿½: semantic embedding hi?n t?i v?n lï¿½ class-name/superclass embedding nh?, chua ph?i CLIP text embedding th?t nhu paper, nï¿½n tï¿½n hi?u semantic chua d? m?nh d? vu?t CFS-only.
+- Hu?ng ti?p theo n?u mu?n bï¿½m paper hon n?a: thay semantic embedding hi?n t?i b?ng CLIP text embedding th?t c?a class name, r?i dï¿½ng embedding dï¿½ cho c? `semantic_distill` vï¿½ `semantic_projection`.
 
-## 8. B?n paper-style: áp d?ng sát paper PMI-CFS hon
+## 8. B?n paper-style: ï¿½p d?ng sï¿½t paper PMI-CFS hon
 
-Sau khi th? semantic projection ki?u nh?, code du?c b? sung thêm m?t ch? d? m?i d? bám sát paper hon.
+Sau khi th? semantic projection ki?u nh?, code du?c b? sung thï¿½m m?t ch? d? m?i d? bï¿½m sï¿½t paper hon.
 
-Các di?m thay d?i chính:
+Cï¿½c di?m thay d?i chï¿½nh:
 
 1. Semantic embedding chuy?n sang CLIP text embedding th?t khi b?t:
 
@@ -312,22 +312,22 @@ Các di?m thay d?i chính:
 --semantic_backend clip
 ```
 
-Thay vì dùng vector hash t? tên class, code s? dùng `open_clip_torch` ho?c `clip` d? encode prompt d?ng:
+Thay vï¿½ dï¿½ng vector hash t? tï¿½n class, code s? dï¿½ng `open_clip_torch` ho?c `clip` d? encode prompt d?ng:
 
 ```text
 a photo of a {class name}.
 ```
 
-Ği?u này sát paper hon vì paper do semantic similarity b?ng cosine similarity gi?a CLIP text features.
+ï¿½i?u nï¿½y sï¿½t paper hon vï¿½ paper do semantic similarity b?ng cosine similarity gi?a CLIP text features.
 
-2. Semantic-aware feature projection có mode m?i:
+2. Semantic-aware feature projection cï¿½ mode m?i:
 
 ```bash
 --semantic_projection_mode paper
 --semantic_projection_alpha 0.1
 ```
 
-Mode này mô ph?ng Eq. 7-9 trong paper:
+Mode nï¿½y mï¿½ ph?ng Eq. 7-9 trong paper:
 
 ```text
 Ft(td) = R_c,d Ft(tc)
@@ -335,9 +335,9 @@ o_L,d = R_c,d o_L,c
 o'_L,d = normalize((1 - alpha) o_L,d + alpha Ft(td))
 ```
 
-Trong code hi?n t?i, `R_c,d` du?c tri?n khai nhu m?t phép xoay tr?c giao t?i thi?u trong m?t ph?ng t?o b?i text feature class ngu?n và text feature class dích. Phép xoay này map hu?ng semantic c?a class ngu?n sang class dích.
+Trong code hi?n t?i, `R_c,d` du?c tri?n khai nhu m?t phï¿½p xoay tr?c giao t?i thi?u trong m?t ph?ng t?o b?i text feature class ngu?n vï¿½ text feature class dï¿½ch. Phï¿½p xoay nï¿½y map hu?ng semantic c?a class ngu?n sang class dï¿½ch.
 
-3. CFS có mode paper-style:
+3. CFS cï¿½ mode paper-style:
 
 ```bash
 --cfs_paper_style
@@ -348,16 +348,16 @@ Trong code hi?n t?i, `R_c,d` du?c tri?n khai nhu m?t phép xoay tr?c giao t?i thi
 --cfs_hidden_dim 512
 ```
 
-Mode này g?n Algorithm 2 hon: kh?i t?o m?t t?p feature dã ch?n, sau dó nhi?u bu?c sample candidate t? Gaussian và ch?n candidate có cosine similarity trung bình th?p nh?t v?i t?p dã ch?n trong không gian CFS MLP.
+Mode nï¿½y g?n Algorithm 2 hon: kh?i t?o m?t t?p feature dï¿½ ch?n, sau dï¿½ nhi?u bu?c sample candidate t? Gaussian vï¿½ ch?n candidate cï¿½ cosine similarity trung bï¿½nh th?p nh?t v?i t?p dï¿½ ch?n trong khï¿½ng gian CFS MLP.
 
-Luu ı r?t quan tr?ng:
+Luu ï¿½ r?t quan tr?ng:
 
-- Paper g?c dùng CLIP image encoder + CLIP text encoder, feature image và feature text cùng n?m trên unit hypersphere.
-- HRM-PET hi?n t?i dùng ViT/timm feature, không ph?i pipeline CLIP inversion d?y d?.
-- Vì v?y b?n này là b?n áp d?ng sát công th?c semantic/CFS c?a paper vào CRCT feature replay c?a HRM-PET, chua ph?i bê nguyên toàn b? PMI + full-model inversion sinh ?nh t? paper.
-- N?u mu?n y h?t tuy?t d?i paper, ph?i tích h?p thêm c? pipeline model inversion PMI/full-model inversion d? sinh ?nh synthetic, vi?c này l?n hon nhi?u so v?i s?a CRCT feature replay.
+- Paper g?c dï¿½ng CLIP image encoder + CLIP text encoder, feature image vï¿½ feature text cï¿½ng n?m trï¿½n unit hypersphere.
+- HRM-PET hi?n t?i dï¿½ng ViT/timm feature, khï¿½ng ph?i pipeline CLIP inversion d?y d?.
+- Vï¿½ v?y b?n nï¿½y lï¿½ b?n ï¿½p d?ng sï¿½t cï¿½ng th?c semantic/CFS c?a paper vï¿½o CRCT feature replay c?a HRM-PET, chua ph?i bï¿½ nguyï¿½n toï¿½n b? PMI + full-model inversion sinh ?nh t? paper.
+- N?u mu?n y h?t tuy?t d?i paper, ph?i tï¿½ch h?p thï¿½m c? pipeline model inversion PMI/full-model inversion d? sinh ?nh synthetic, vi?c nï¿½y l?n hon nhi?u so v?i s?a CRCT feature replay.
 
-B?n dáng ch?y ti?p theo trên CIFAR100:
+B?n dï¿½ng ch?y ti?p theo trï¿½n CIFAR100:
 
 ```bash
 --cfs_sampling \
@@ -381,12 +381,12 @@ B?n dáng ch?y ti?p theo trên CIFAR100:
 
 K? v?ng:
 
-- N?u CLIP text feature giúp ch?n class liên quan t?t hon hash/superclass, k?t qu? có th? t?t hon semantic projection cu.
-- N?u Acc v?n th?p hon CFS-only, có th? k?t lu?n r?ng ph?n semantic c?a paper c?n dúng CLIP image feature/model inversion m?i phát huy d?y d?, còn trong HRM feature space thì CFS replay v?n là thành ph?n có l?i nh?t.
+- N?u CLIP text feature giï¿½p ch?n class liï¿½n quan t?t hon hash/superclass, k?t qu? cï¿½ th? t?t hon semantic projection cu.
+- N?u Acc v?n th?p hon CFS-only, cï¿½ th? k?t lu?n r?ng ph?n semantic c?a paper c?n dï¿½ng CLIP image feature/model inversion m?i phï¿½t huy d?y d?, cï¿½n trong HRM feature space thï¿½ CFS replay v?n lï¿½ thï¿½nh ph?n cï¿½ l?i nh?t.
 
 ## 9. K?t qu? ch?y paper-style CLIP semantic projection
 
-L?nh ch?y dùng c?u hình sát paper hon:
+L?nh ch?y dï¿½ng c?u hï¿½nh sï¿½t paper hon:
 
 ```text
 cfs_paper_style = True
@@ -416,41 +416,41 @@ Backward  -2.9222
 Total training time: 0:46:48
 ```
 
-So sánh v?i các m?c tru?c:
+So sï¿½nh v?i cï¿½c m?c tru?c:
 
-| Phiên b?n | Acc@task | Acc@1 | Acc@5 | Loss | Nh?n xét |
+| Phiï¿½n b?n | Acc@task | Acc@1 | Acc@5 | Loss | Nh?n xï¿½t |
 |---|---:|---:|---:|---:|---|
 | Baseline chua CFS | 87.0500 | 86.9000 | 97.5900 | 0.5860 | M?c g?c |
 | CFS-only | 88.0600 | 88.0000 | 97.9400 | 0.5232 | T?t nh?t hi?n t?i |
 | CFS + semantic projection cu | 87.5600 | 87.0100 | 97.5900 | 0.5508 | T?t hon paper-style |
-| CFS + paper-style CLIP semantic | 87.1600 | 86.5500 | 97.3300 | 0.6142 | Ch?y dúng nhung chua c?i thi?n |
+| CFS + paper-style CLIP semantic | 87.1600 | 86.5500 | 97.3300 | 0.6142 | Ch?y dï¿½ng nhung chua c?i thi?n |
 
 K?t lu?n:
 
-- B?n paper-style dã ch?y du?c end-to-end, không còn l?i runtime.
-- Tuy nhiên k?t qu? không t?t hon CFS-only, và cung th?p hon semantic projection cu.
-- Nguyên nhân h?p lı: công th?c paper gi? d?nh CLIP image feature và CLIP text feature n?m chung không gian semantic dã normalize. HRM-PET hi?n t?i dùng ViT/timm feature trong CRCT, không ph?i CLIP image feature dúng nghia, nên vi?c xoay feature theo CLIP text có th? làm l?ch feature kh?i không gian mà classifier HRM dang dùng.
-- `semantic_projection_ratio = 0.5` có th? quá m?nh: 50% feature CRCT b? thay b?ng projected feature, trong khi feature space chua th?t s? align v?i CLIP.
-- Hu?ng th? ti?p h?p lı hon: gi? `semantic_backend=clip` nhung gi?m projection ratio v? `0.1` ho?c `0.25`, ho?c b?t CLIP semantic ch? cho ch?n top-k class liên quan, còn projection gi? ki?u mean_shift cu.
+- B?n paper-style dï¿½ ch?y du?c end-to-end, khï¿½ng cï¿½n l?i runtime.
+- Tuy nhiï¿½n k?t qu? khï¿½ng t?t hon CFS-only, vï¿½ cung th?p hon semantic projection cu.
+- Nguyï¿½n nhï¿½n h?p lï¿½: cï¿½ng th?c paper gi? d?nh CLIP image feature vï¿½ CLIP text feature n?m chung khï¿½ng gian semantic dï¿½ normalize. HRM-PET hi?n t?i dï¿½ng ViT/timm feature trong CRCT, khï¿½ng ph?i CLIP image feature dï¿½ng nghia, nï¿½n vi?c xoay feature theo CLIP text cï¿½ th? lï¿½m l?ch feature kh?i khï¿½ng gian mï¿½ classifier HRM dang dï¿½ng.
+- `semantic_projection_ratio = 0.5` cï¿½ th? quï¿½ m?nh: 50% feature CRCT b? thay b?ng projected feature, trong khi feature space chua th?t s? align v?i CLIP.
+- Hu?ng th? ti?p h?p lï¿½ hon: gi? `semantic_backend=clip` nhung gi?m projection ratio v? `0.1` ho?c `0.25`, ho?c b?t CLIP semantic ch? cho ch?n top-k class liï¿½n quan, cï¿½n projection gi? ki?u mean_shift cu.
 
 ## 10. Hu?ng c?i ti?n th?c d?ng: semantic-safe CRCT
 
-Sau khi b?n paper-style ch?y xong nhung không c?i thi?n, hu?ng ti?p theo không c? bê nguyên paper n?a. Lı do là công th?c paper gi? d?nh CLIP image feature và CLIP text feature n?m chung không gian, còn HRM-PET hi?n t?i dùng feature ViT/timm trong CRCT. Vì v?y n?u xoay feature quá m?nh theo CLIP text, feature có th? r?i kh?i phân ph?i mà classifier HRM dang h?c.
+Sau khi b?n paper-style ch?y xong nhung khï¿½ng c?i thi?n, hu?ng ti?p theo khï¿½ng c? bï¿½ nguyï¿½n paper n?a. Lï¿½ do lï¿½ cï¿½ng th?c paper gi? d?nh CLIP image feature vï¿½ CLIP text feature n?m chung khï¿½ng gian, cï¿½n HRM-PET hi?n t?i dï¿½ng feature ViT/timm trong CRCT. Vï¿½ v?y n?u xoay feature quï¿½ m?nh theo CLIP text, feature cï¿½ th? r?i kh?i phï¿½n ph?i mï¿½ classifier HRM dang h?c.
 
-İ tu?ng m?i: semantic ch? dùng d? g?i ı class ngu?n liên quan, còn feature cu?i cùng ph?i du?c ki?m tra b?ng th?ng kê feature HRM.
+ï¿½ tu?ng m?i: semantic ch? dï¿½ng d? g?i ï¿½ class ngu?n liï¿½n quan, cï¿½n feature cu?i cï¿½ng ph?i du?c ki?m tra b?ng th?ng kï¿½ feature HRM.
 
 Pipeline m?i:
 
 ```text
-1. Dùng semantic embedding d? ch?n top-k class ngu?n g?n class dích.
-2. Sample feature t? Gaussian/CFS c?a các class ngu?n dó.
-3. Project feature ngu?n sang class dích b?ng mode mean_shift nh?.
-4. Sinh nhi?u candidate hon s? c?n dùng.
-5. L?c candidate b?ng kho?ng cách t?i phân ph?i feature th?t c?a class dích.
-6. Ch? dua các projected feature g?n phân ph?i class dích nh?t vào CRCT.
+1. Dï¿½ng semantic embedding d? ch?n top-k class ngu?n g?n class dï¿½ch.
+2. Sample feature t? Gaussian/CFS c?a cï¿½c class ngu?n dï¿½.
+3. Project feature ngu?n sang class dï¿½ch b?ng mode mean_shift nh?.
+4. Sinh nhi?u candidate hon s? c?n dï¿½ng.
+5. L?c candidate b?ng kho?ng cï¿½ch t?i phï¿½n ph?i feature th?t c?a class dï¿½ch.
+6. Ch? dua cï¿½c projected feature g?n phï¿½n ph?i class dï¿½ch nh?t vï¿½o CRCT.
 ```
 
-Các tham s? m?i:
+Cï¿½c tham s? m?i:
 
 ```bash
 --semantic_projection_filter
@@ -458,19 +458,19 @@ Các tham s? m?i:
 --semantic_projection_filter_cosine_weight 0.1
 ```
 
-İ nghia:
+ï¿½ nghia:
 
-- `--semantic_projection_filter`: b?t l?c feature projected theo phân ph?i class dích.
-- `--semantic_projection_filter_multiplier`: sinh nhi?u candidate hon r?i ch?n l?i. Ví d? `3` nghia là c?n 100 feature thì sinh 300 candidate r?i l?c l?y 100 t?t nh?t.
-- `--semantic_projection_filter_cosine_weight`: thêm m?t ph?n nh? cosine distance t?i mean class dích khi x?p h?ng candidate.
+- `--semantic_projection_filter`: b?t l?c feature projected theo phï¿½n ph?i class dï¿½ch.
+- `--semantic_projection_filter_multiplier`: sinh nhi?u candidate hon r?i ch?n l?i. Vï¿½ d? `3` nghia lï¿½ c?n 100 feature thï¿½ sinh 300 candidate r?i l?c l?y 100 t?t nh?t.
+- `--semantic_projection_filter_cosine_weight`: thï¿½m m?t ph?n nh? cosine distance t?i mean class dï¿½ch khi x?p h?ng candidate.
 
-Khác v?i paper-style:
+Khï¿½c v?i paper-style:
 
-- Không normalize feature v? unit vector nhu Eq. 9 n?a, vì HRM classifier không nh?t thi?t ho?t d?ng trong cùng CLIP unit hypersphere.
-- Không dùng semantic d? ép toàn b? feature space.
-- Semantic ch? là prior d? ch?n ngu?n và t?o candidate; phân ph?i feature th?t c?a HRM m?i là b? l?c cu?i.
+- Khï¿½ng normalize feature v? unit vector nhu Eq. 9 n?a, vï¿½ HRM classifier khï¿½ng nh?t thi?t ho?t d?ng trong cï¿½ng CLIP unit hypersphere.
+- Khï¿½ng dï¿½ng semantic d? ï¿½p toï¿½n b? feature space.
+- Semantic ch? lï¿½ prior d? ch?n ngu?n vï¿½ t?o candidate; phï¿½n ph?i feature th?t c?a HRM m?i lï¿½ b? l?c cu?i.
 
-C?u hình nên th? d?u tiên:
+C?u hï¿½nh nï¿½n th? d?u tiï¿½n:
 
 ```bash
 --cfs_sampling
@@ -488,7 +488,7 @@ C?u hình nên th? d?u tiên:
 --semantic_projection_filter_cosine_weight 0.1
 ```
 
-Luu ı: c?u hình này c? ı không b?t `--semantic_distill` ban d?u, vì các l?n tru?c semantic CTIRD làm k?t qu? gi?m. Tru?c m?t ch? thêm semantic vào CRCT replay m?t cách có ki?m soát. N?u k?t qu? t?t hon CFS-only, sau dó m?i th? b?t semantic CTIRD r?t nh?.
+Luu ï¿½: c?u hï¿½nh nï¿½y c? ï¿½ khï¿½ng b?t `--semantic_distill` ban d?u, vï¿½ cï¿½c l?n tru?c semantic CTIRD lï¿½m k?t qu? gi?m. Tru?c m?t ch? thï¿½m semantic vï¿½o CRCT replay m?t cï¿½ch cï¿½ ki?m soï¿½t. N?u k?t qu? t?t hon CFS-only, sau dï¿½ m?i th? b?t semantic CTIRD r?t nh?.
 
 ## 11. Káº¿t quáº£ semantic-safe CRCT trÃªn CIFAR100
 
@@ -1064,3 +1064,185 @@ Ká»³ vá»ng:
 
 - Náº¿u random init lÃ  nguá»“n dao Ä‘á»™ng, mean init cÃ³ thá»ƒ giÃºp káº¿t quáº£ á»•n Ä‘á»‹nh hÆ¡n hoáº·c nhÃ­ch lÃªn.
 - Náº¿u khÃ´ng cáº£i thiá»‡n, váº«n cÃ³ thá»ƒ bá» flag nÃ y vÃ¬ máº·c Ä‘á»‹nh `random` giá»¯ nguyÃªn CFS gá»‘c.
+## 23. Káº¿t quáº£ CFS mean initialization
+
+Káº¿t quáº£ cháº¡y CFS-only vá»›i `--cfs_init_strategy mean`:
+
+```text
+[Average accuracy till task10]
+Acc@task 87.6000
+Acc@1    87.8600
+Acc@5    98.0800
+Loss     0.5219
+Forgetting 3.7333
+Backward  -3.4000
+```
+
+So sÃ¡nh vá»›i reproduce CFS-only cáº¥u hÃ¬nh cÅ©:
+
+| PhiÃªn báº£n | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|
+| CFS-only reproduce | 87.6200 | 87.8800 | 98.0800 | 0.5222 | 3.7222 | -3.3889 |
+| CFS mean init | 87.6000 | 87.8600 | 98.0800 | 0.5219 | 3.7333 | -3.4000 |
+
+Nháº­n xÃ©t:
+
+- Mean init khÃ´ng cáº£i thiá»‡n accuracy: Acc@task vÃ  Acc@1 Ä‘á»u giáº£m `0.02`.
+- Acc@5 giá»¯ nguyÃªn.
+- Loss tá»‘t hÆ¡n ráº¥t nháº¹ `0.5222 -> 0.5219`, nhÆ°ng má»©c cáº£i thiá»‡n quÃ¡ nhá».
+- Forgetting/Backward xáº¥u hÆ¡n ráº¥t nháº¹.
+- Káº¿t luáº­n: `cfs_init_strategy=mean` cháº¡y Ä‘Ãºng nhÆ°ng khÃ´ng Ä‘Ã¡ng giá»¯ lÃ m cáº£i tiáº¿n chÃ­nh. CFS random init gá»‘c váº«n tá»‘t tÆ°Æ¡ng Ä‘Æ°Æ¡ng hoáº·c nhá»‰nh hÆ¡n.
+## 24. Káº¿t quáº£ thÃªm semantic vÃ o cáº¥u hÃ¬nh CFS cÅ©
+
+Sau khi reproduce cáº¥u hÃ¬nh CFS-only cÅ©, Ä‘Ã£ thá»­ thÃªm semantic adapter + covariance transfer vÃ o Ä‘Ãºng ná»n CFS cÅ©:
+
+```text
+[Average accuracy till task10]
+Acc@task 87.7700
+Acc@1    87.8300
+Acc@5    97.9900
+Loss     0.5186
+Forgetting 3.7000
+Backward  -3.3778
+```
+
+So sÃ¡nh vá»›i CFS-only reproduce:
+
+| PhiÃªn báº£n | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|
+| CFS-only reproduce | 87.6200 | 87.8800 | 98.0800 | 0.5222 | 3.7222 | -3.3889 |
+| CFS cÅ© + semantic covariance transfer | 87.7700 | 87.8300 | 97.9900 | 0.5186 | 3.7000 | -3.3778 |
+
+Nháº­n xÃ©t:
+
+- Semantic cáº£i thiá»‡n Acc@task `+0.15`.
+- Loss tá»‘t hÆ¡n rÃµ hÆ¡n: `0.5222 -> 0.5186`.
+- Forgetting vÃ  Backward cÅ©ng tá»‘t hÆ¡n nháº¹.
+- NhÆ°ng Acc@1 giáº£m `0.05` vÃ  Acc@5 giáº£m `0.09`.
+- Káº¿t luáº­n: semantic trÃªn ná»n CFS cÅ© cÃ³ tÃ¡c dá»¥ng phá»¥ trá»£ tháº­t, nhÆ°ng chÆ°a tháº¯ng tuyá»‡t Ä‘á»‘i CFS-only theo Acc@1. Náº¿u má»¥c tiÃªu bÃ¡o cÃ¡o Æ°u tiÃªn Acc@task/loss/forgetting thÃ¬ báº£n semantic Ä‘Ã¡ng nháº¯c Ä‘áº¿n; náº¿u Æ°u tiÃªn Acc@1 thÃ¬ CFS-only reproduce váº«n nhá»‰nh hÆ¡n.
+
+HÆ°á»›ng thá»­ tiáº¿p há»£p lÃ½:
+
+- Giá»¯ semantic adapter + covariance transfer.
+- Giáº£m semantic ratio tá»« `0.03` xuá»‘ng `0.02` Ä‘á»ƒ cá»‘ láº¥y láº¡i Acc@1.
+- Giá»¯ `epochs=10`, `crct_epochs=3`, `cfs_epochs=20`, `candidate_multiplier=2`, vÃ  checkpoint TII cÅ©.
+## 25. Káº¿t quáº£ semantic ratio 0.02 trÃªn ná»n CFS cÅ©
+
+ÄÃ£ thá»­ giáº£m semantic projection ratio tá»« `0.03` xuá»‘ng `0.02`, giá»¯ nguyÃªn ná»n CFS cÅ©.
+
+Káº¿t quáº£:
+
+```text
+[Average accuracy till task10]
+Acc@task 87.7600
+Acc@1    87.8600
+Acc@5    97.9900
+Loss     0.5184
+Forgetting 3.6667
+Backward  -3.3444
+```
+
+So sÃ¡nh ba má»‘c gáº§n nháº¥t:
+
+| PhiÃªn báº£n | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|
+| CFS-only reproduce | 87.6200 | 87.8800 | 98.0800 | 0.5222 | 3.7222 | -3.3889 |
+| CFS + semantic ratio 0.03 | 87.7700 | 87.8300 | 97.9900 | 0.5186 | 3.7000 | -3.3778 |
+| CFS + semantic ratio 0.02 | 87.7600 | 87.8600 | 97.9900 | 0.5184 | 3.6667 | -3.3444 |
+
+Nháº­n xÃ©t:
+
+- Ratio `0.02` tá»‘t hÆ¡n ratio `0.03` á»Ÿ Acc@1, loss, forgetting vÃ  backward.
+- So vá»›i CFS-only, ratio `0.02` tÄƒng Acc@task `+0.14`, loss tá»‘t hÆ¡n `0.0038`, forgetting/backward tá»‘t hÆ¡n.
+- Acc@1 váº«n tháº¥p hÆ¡n CFS-only ráº¥t nháº¹ `0.02`, Acc@5 tháº¥p hÆ¡n `0.09`.
+- ÄÃ¢y lÃ  báº£n cÃ¢n báº±ng tá»‘t nháº¥t hiá»‡n táº¡i náº¿u xÃ©t nhiá»u chá»‰ sá»‘ cÃ¹ng lÃºc: gáº§n nhÆ° giá»¯ Ä‘Æ°á»£c Acc@1 cá»§a CFS-only, Ä‘á»“ng thá»i cáº£i thiá»‡n Acc@task/loss/forgetting.
+
+Káº¿t luáº­n táº¡m thá»i:
+
+- Náº¿u chá»n theo Acc@1 tuyá»‡t Ä‘á»‘i: CFS-only reproduce váº«n nhá»‰nh hÆ¡n ráº¥t nhá».
+- Náº¿u chá»n theo cÃ¢n báº±ng Acc@task + loss + forgetting: CFS + semantic covariance transfer ratio `0.02` lÃ  cáº¥u hÃ¬nh Ä‘Ã¡ng chá»n nháº¥t.
+## 26. Káº¿t quáº£ semantic ratio 0.015 trÃªn ná»n CFS cÅ©
+
+ÄÃ£ thá»­ giáº£m semantic projection ratio tiáº¿p tá»« `0.02` xuá»‘ng `0.015`.
+
+Káº¿t quáº£:
+
+```text
+[Average accuracy till task10]
+Acc@task 87.7300
+Acc@1    87.8400
+Acc@5    97.9900
+Loss     0.5184
+Forgetting 3.6667
+Backward  -3.3667
+```
+
+So sÃ¡nh:
+
+| PhiÃªn báº£n | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|
+| CFS-only reproduce | 87.6200 | 87.8800 | 98.0800 | 0.5222 | 3.7222 | -3.3889 |
+| Semantic ratio 0.02 | 87.7600 | 87.8600 | 97.9900 | 0.5184 | 3.6667 | -3.3444 |
+| Semantic ratio 0.015 | 87.7300 | 87.8400 | 97.9900 | 0.5184 | 3.6667 | -3.3667 |
+
+Nháº­n xÃ©t:
+
+- Ratio `0.015` khÃ´ng cáº£i thiá»‡n so vá»›i `0.02`.
+- Acc@task giáº£m `0.03`, Acc@1 giáº£m `0.02`, loss vÃ  forgetting giá»¯ nguyÃªn.
+- Ratio `0.02` váº«n lÃ  Ä‘iá»ƒm cÃ¢n báº±ng tá»‘t nháº¥t trong cÃ¡c báº£n semantic trÃªn ná»n CFS cÅ©.
+
+Káº¿t luáº­n hiá»‡n táº¡i:
+
+- CFS-only reproduce tá»‘t nháº¥t náº¿u chá»‰ Æ°u tiÃªn Acc@1/Acc@5.
+- CFS + semantic covariance transfer ratio `0.02` tá»‘t nháº¥t náº¿u Æ°u tiÃªn cÃ¢n báº±ng nhiá»u chá»‰ sá»‘: Acc@task, loss, forgetting/backward.
+## 27. HÆ°á»›ng cáº£i tiáº¿n má»›i: full CRCT replay vÃ  boundary-aware CFS
+
+### 27.1. VÃ¬ sao dá»«ng tinh chá»‰nh semantic ratio
+
+CÃ¡c má»©c semantic ratio `0.03`, `0.02` vÃ  `0.015` chá»‰ lÃ m káº¿t quáº£ dao Ä‘á»™ng ráº¥t nhá». Semantic ratio `0.02` cáº£i thiá»‡n loss vÃ  forgetting, nhÆ°ng Acc@1 váº«n khÃ´ng vÆ°á»£t CFS-only. Äiá»u nÃ y cho tháº¥y nÃºt tháº¯t hiá»‡n táº¡i khÃ´ng cÃ²n náº±m chá»§ yáº¿u á»Ÿ há»‡ sá»‘ semantic.
+
+### 27.2. PhÃ¡t hiá»‡n trong classifier correction
+
+á» má»—i epoch CRCT, code sinh cÃ¹ng sá»‘ máº«u cho táº¥t cáº£ lá»›p Ä‘Ã£ tháº¥y, nhÆ°ng sá»‘ vÃ²ng tá»‘i Æ°u `crct_num` chá»‰ báº±ng sá»‘ lá»›p cá»§a cÃ¡c task trÆ°á»›c task hiá»‡n táº¡i. Sau khi trá»™n ngáº«u nhiÃªn, pháº§n dá»¯ liá»‡u cÃ²n láº¡i khÃ´ng Ä‘Æ°á»£c dÃ¹ng:
+
+- Sau task 2: sinh máº«u cho 20 lá»›p nhÆ°ng chá»‰ dÃ¹ng lÆ°á»£ng tÆ°Æ¡ng Ä‘Æ°Æ¡ng 10 lá»›p, tá»©c bá» khoáº£ng 50%.
+- Sau task 10: sinh máº«u cho 100 lá»›p nhÆ°ng chá»‰ dÃ¹ng lÆ°á»£ng tÆ°Æ¡ng Ä‘Æ°Æ¡ng 90 lá»›p, tá»©c bá» khoáº£ng 10%.
+- Máº«u bá»‹ bá» sau khi shuffle nÃªn thÃ nh pháº§n lá»›p thay Ä‘á»•i ngáº«u nhiÃªn giá»¯a cÃ¡c epoch.
+
+ÄÃ£ thÃªm cá»:
+
+```text
+--crct_use_all_samples
+```
+
+Khi báº­t, CRCT dÃ¹ng toÃ n bá»™ replay Ä‘Ã£ sinh. Khi khÃ´ng báº­t, hÃ nh vi cÅ© Ä‘Æ°á»£c giá»¯ nguyÃªn Ä‘á»ƒ váº«n reproduce Ä‘Æ°á»£c baseline.
+
+### 27.3. Boundary-aware CFS
+
+CFS gá»‘c Æ°u tiÃªn diversity trong feature space nhÆ°ng khÃ´ng biáº¿t classifier Ä‘ang nháº§m á»Ÿ Ä‘Ã¢u. ÄÃ£ thÃªm má»™t cháº¿ Ä‘á»™ tÃ¹y chá»n:
+
+```text
+--cfs_boundary_replay
+--cfs_boundary_ratio 0.5
+--cfs_boundary_multiplier 3
+--cfs_boundary_density_quantile 0.9
+```
+
+CÃ¡ch hoáº¡t Ä‘á»™ng:
+
+1. Má»™t pháº§n replay váº«n Ä‘Æ°á»£c chá»n báº±ng CFS diversity nhÆ° cÅ©.
+2. Pháº§n cÃ²n láº¡i Ä‘Æ°á»£c láº¥y tá»« Gaussian candidate gáº§n ranh giá»›i giá»¯a logit cá»§a lá»›p Ä‘Ãºng vÃ  lá»›p cáº¡nh tranh máº¡nh nháº¥t.
+3. Loáº¡i 10% candidate náº±m xa phÃ¢n phá»‘i lá»›p nháº¥t trÆ°á»›c khi chá»n hard samples, trÃ¡nh huáº¥n luyá»‡n vÃ o outlier.
+4. Ranh giá»›i Ä‘Æ°á»£c tÃ­nh láº¡i á»Ÿ má»—i epoch CRCT, nÃªn máº«u khÃ³ thay Ä‘á»•i theo classifier hiá»‡n táº¡i.
+
+Äiá»ƒm khÃ¡c semantic projection: semantic táº¡o feature dá»±a trÃªn quan há»‡ tÃªn lá»›p; boundary-aware CFS dÃ¹ng lá»—i/Ä‘á»™ khÃ´ng cháº¯c cháº¯n tháº­t cá»§a classifier. VÃ¬ váº­y nÃ³ chá»‰ táº­p trung vÃ o nhá»¯ng vÃ¹ng áº£nh hÆ°á»Ÿng trá»±c tiáº¿p tá»›i Acc@1.
+
+### 27.4. Thá»© tá»± thÃ­ nghiá»‡m
+
+KhÃ´ng báº­t hai thay Ä‘á»•i cÃ¹ng lÃºc ngay tá»« Ä‘áº§u:
+
+1. Cháº¡y CFS cÅ© + `--crct_use_all_samples`, khÃ´ng semantic, khÃ´ng boundary replay. ÄÃ¢y lÃ  thá»­ nghiá»‡m Æ°u tiÃªn Ä‘á»ƒ Ä‘o tÃ¡c Ä‘á»™ng cá»§a viá»‡c dÃ¹ng Ä‘á»§ replay.
+2. Náº¿u bÆ°á»›c 1 tá»‘t hÆ¡n, giá»¯ full replay vÃ  thÃªm boundary replay vá»›i ratio `0.25` trÆ°á»›c. Ratio tháº¥p giÃºp giá»¯ pháº§n lá»›n CFS diversity.
+3. Chá»‰ sau khi tÃ¬m Ä‘Æ°á»£c cáº¥u hÃ¬nh CFS + boundary tá»‘t má»›i thÃªm semantic ratio `0.02` Ä‘á»ƒ xem loss/forgetting cÃ³ tiáº¿p tá»¥c tá»‘t lÃªn mÃ  khÃ´ng máº¥t Acc@1 hay khÃ´ng.
+
+KhÃ´ng ká»³ vá»ng hoáº·c cam káº¿t má»™t má»©c tÄƒng cá»¥ thá»ƒ trÆ°á»›c khi cháº¡y. Tuy nhiÃªn Ä‘Ã¢y lÃ  thay Ä‘á»•i tÃ¡c Ä‘á»™ng Ä‘Ãºng vÃ o lÆ°á»£ng dá»¯ liá»‡u correction vÃ  decision boundary, nÃªn cÃ³ cÆ¡ sá»Ÿ táº¡o chÃªnh lá»‡ch lá»›n hÆ¡n cÃ¡c láº§n chá»‰nh semantic ratio gáº§n Ä‘Ã¢y.

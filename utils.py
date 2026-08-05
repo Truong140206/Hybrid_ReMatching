@@ -290,6 +290,9 @@ def use_cfs_sampling(args):
 
 
 
+def use_cfs_boundary_replay(args):
+    return use_cfs_sampling(args) and bool(getattr(args, 'cfs_boundary_replay', False))
+
 def use_semantic_distillation(args):
     return bool(getattr(args, 'semantic_distill', False))
 
@@ -1079,6 +1082,58 @@ def sample_cfs_features(mean, cov, num_samples, args, device, cfs_model=None):
     return candidates[torch.tensor(selected, device=device)]
 
 
+@torch.no_grad()
+def sample_boundary_aware_cfs_features(mean, cov, num_samples, args, device, model,
+                                       target_cls, seen_classes, cfs_model=None):
+    """Mix diverse CFS replay with in-distribution samples near the decision boundary."""
+    if not use_cfs_boundary_replay(args) or num_samples <= 1:
+        return sample_cfs_features(mean, cov, num_samples, args, device, cfs_model=cfs_model)
+
+    boundary_ratio = float(getattr(args, 'cfs_boundary_ratio', 0.5))
+    boundary_ratio = max(0.0, min(1.0, boundary_ratio))
+    hard_count = min(num_samples, int(round(num_samples * boundary_ratio)))
+    diverse_count = num_samples - hard_count
+    if hard_count <= 0:
+        return sample_cfs_features(mean, cov, num_samples, args, device, cfs_model=cfs_model)
+
+    diverse = sample_cfs_features(
+        mean, cov, diverse_count, args, device, cfs_model=cfs_model)
+    seen_classes = sorted({int(cls_id) for cls_id in seen_classes})
+    if int(target_cls) not in seen_classes or len(seen_classes) < 2:
+        fallback = sample_cfs_features(
+            mean, cov, hard_count, args, device, cfs_model=cfs_model)
+        return torch.cat([diverse, fallback], dim=0)
+
+    multiplier = max(1, int(getattr(args, 'cfs_boundary_multiplier', 3)))
+    candidate_count = max(hard_count, num_samples * multiplier)
+    distribution = torch.distributions.MultivariateNormal(mean.float(), cov.float())
+    candidates = distribution.sample(sample_shape=(candidate_count,)).float().to(device)
+
+    outputs = model(candidates, fc_only=True)
+    logits = outputs['logits'].float()
+    seen_ids = torch.tensor(seen_classes, dtype=torch.long, device=device)
+    seen_logits = logits.index_select(1, seen_ids)
+    target_pos = seen_classes.index(int(target_cls))
+    target_logits = seen_logits[:, target_pos]
+    competitor_logits = seen_logits.clone()
+    competitor_logits[:, target_pos] = float('-inf')
+    margins = target_logits - competitor_logits.max(dim=1).values
+
+    # Exclude only the extreme Gaussian tail before selecting boundary samples.
+    cov_tensor = torch.as_tensor(cov).float().to(device)
+    diag_var = torch.diag(cov_tensor) if cov_tensor.dim() == 2 else cov_tensor
+    diag_var = diag_var.clamp_min(1e-5)
+    centered = candidates - mean.float().to(device).unsqueeze(0)
+    mahalanobis = (centered.pow(2) / diag_var.unsqueeze(0)).mean(dim=1)
+    density_quantile = float(getattr(args, 'cfs_boundary_density_quantile', 0.9))
+    density_quantile = max(0.5, min(1.0, density_quantile))
+    density_limit = torch.quantile(mahalanobis, density_quantile)
+    boundary_score = margins.abs().masked_fill(mahalanobis > density_limit, float('inf'))
+
+    hard_ids = torch.topk(boundary_score, k=hard_count, largest=False).indices
+    boundary = candidates.index_select(0, hard_ids)
+    return torch.cat([diverse.float().to(device), boundary], dim=0)
+
 def init_distributed_mode(args):
     if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
         args.rank = int(os.environ["RANK"])
@@ -1112,4 +1167,3 @@ def task_inference_accuracy(prompt_idx, target, target_task_map,filtered_index_t
     prompt_idx = prompt_idx.t()
     correct = prompt_idx.eq(target_2_task.reshape(1, -1).expand_as(prompt_idx))
     return correct.reshape(-1).float().sum(0) * 100. / batch_size
-
