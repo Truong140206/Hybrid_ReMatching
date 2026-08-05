@@ -35,6 +35,15 @@ def compute_task_energy_scores(logits, class_mask, num_tasks, temperature=0.1):
         task_scores.append(temperature * torch.logsumexp(task_logits / temperature, dim=1))
     return torch.stack(task_scores, dim=1)
 
+def compute_ctird_rank_weights(top_values, args):
+    temperature = max(float(getattr(args, 'ctird_weight_temperature', 1.0)), 1e-6)
+    weights = F.softmax(top_values.float() / temperature, dim=1)
+    floor = float(getattr(args, 'ctird_weight_floor', 0.2))
+    floor = max(0.0, min(1.0, floor))
+    uniform = torch.full_like(weights, 1.0 / weights.shape[1])
+    weights = (1.0 - floor) * weights + floor * uniform
+    return weights.mean(dim=0) * weights.shape[1]
+
 def get_old_features(model: torch.nn.Module, original_model: torch.nn.Module,
                     criterion, data_loader: Iterable, optimizer: torch.optim.Optimizer,
                     device: torch.device, epoch: int, max_norm: float = 0,
@@ -72,6 +81,7 @@ def get_old_features(model: torch.nn.Module, original_model: torch.nn.Module,
 
         # here is the trick to mask out classes of non-current tasks
         top_indices=None
+        ctird_rank_weights = None
         
         if task_id>0:
 
@@ -82,7 +92,9 @@ def get_old_features(model: torch.nn.Module, original_model: torch.nn.Module,
                 task_scores = compute_task_energy_scores(
                     temp, class_mask, task_id,
                     temperature=getattr(args, 'ctird_task_temperature', 0.1))
-                top5_id = torch.topk(task_scores, k=m, dim=1, largest=True).indices
+                top_values, top5_id = torch.topk(task_scores, k=m, dim=1, largest=True)
+                if str(getattr(args, 'ctird_task_weighting', 'uniform')).lower() == 'energy':
+                    ctird_rank_weights = compute_ctird_rank_weights(top_values, args)
             else:
                 _, top_indices = torch.topk(probabilities, k=m, dim=1, largest=False)
                 top5_id = []
@@ -104,7 +116,10 @@ def get_old_features(model: torch.nn.Module, original_model: torch.nn.Module,
                     old_similarity_matrix = old_similarity_matrix / old_similarity_matrix.sum(1, keepdim=True)
                     all_old_logits.append(old_similarity_matrix)
 
-            all_res.append(all_old_logits)
+            if ctird_rank_weights is None:
+                all_res.append(all_old_logits)
+            else:
+                all_res.append((all_old_logits, ctird_rank_weights.detach()))
                 
     return all_res
 
@@ -150,6 +165,7 @@ def train_one_epoch(model: torch.nn.Module, original_model: torch.nn.Module,
         logits = output['logits']
         # here is the trick to mask out classes of non-current tasks
         top_indices=None
+        ctird_rank_weights = None
         
         if task_id>0:
 
@@ -160,7 +176,9 @@ def train_one_epoch(model: torch.nn.Module, original_model: torch.nn.Module,
                 task_scores = compute_task_energy_scores(
                     temp, class_mask, task_id,
                     temperature=getattr(args, 'ctird_task_temperature', 0.1))
-                top5_id = torch.topk(task_scores, k=m, dim=1, largest=True).indices
+                top_values, top5_id = torch.topk(task_scores, k=m, dim=1, largest=True)
+                if str(getattr(args, 'ctird_task_weighting', 'uniform')).lower() == 'energy':
+                    ctird_rank_weights = compute_ctird_rank_weights(top_values, args)
             else:
                 _, top_indices = torch.topk(probabilities, k=m, dim=1, largest=False)
                 top5_id = []
@@ -170,7 +188,12 @@ def train_one_epoch(model: torch.nn.Module, original_model: torch.nn.Module,
         
         if task_id>0:
             #robust_logits = robust_loss(model, input, output['features'], target,device,task_id,class_mask,top5_id)
-            robust_logits = old_features[global_index]
+            robust_bundle = old_features[global_index]
+            ctird_rank_weights = None
+            if isinstance(robust_bundle, tuple):
+                robust_logits, ctird_rank_weights = robust_bundle
+            else:
+                robust_logits = robust_bundle
         
         if args.train_mask and class_mask is not None:
             mask = class_mask[task_id]
@@ -194,7 +217,8 @@ def train_one_epoch(model: torch.nn.Module, original_model: torch.nn.Module,
                 relation_target = utils.apply_semantic_relation_distillation(robust_logits[k], target, args, device)
                 loss_ctird = F.kl_div(torch.log(similarity_matrix.clamp_min(1e-12)), relation_target, reduction='batchmean')
                 
-                loss = loss + args.con*loss_ctird
+                ctird_weight = 1.0 if ctird_rank_weights is None else ctird_rank_weights[k]
+                loss = loss + args.con * ctird_weight * loss_ctird
         else:
             loss = criterion(logits, target)+args.con*loss_ctird
             

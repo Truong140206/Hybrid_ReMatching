@@ -1420,3 +1420,113 @@ Khi bật:
 - CTIRD distill quan hệ từ những adapter cũ liên quan nhất tới batch hiện tại.
 
 Mặc định vẫn là `legacy`, nên baseline không thay đổi. Thay đổi này tác động lúc train LoRA và vì vậy cần chạy LoRA mới; TII checkpoint vẫn được tái sử dụng.
+## 33. Kết quả CTIRD top-K task-energy
+
+Giữ cấu hình tốt nhất `full CRCT + boundary 0.25`, routing đánh giá mặc định `class`, và thêm CTIRD chọn top-K source task bằng task energy.
+
+```text
+[Average accuracy till task10]
+Acc@task 88.0500
+Acc@1    88.3100
+Acc@5    98.0700
+Loss     0.4675
+Forgetting 4.5111
+Backward  -4.4111
+```
+
+So sánh với cấu hình tốt nhất trước đó:
+
+| Phiên bản | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|
+| Full CRCT + boundary 0.25 | 88.0400 | 88.1700 | 98.0800 | 0.4704 | 4.4778 | -4.3444 |
+| Thêm CTIRD task-energy | 88.0500 | 88.3100 | 98.0700 | 0.4675 | 4.5111 | -4.4111 |
+
+Thay đổi:
+
+- Acc@1 tăng `+0.14`, đạt mốc tốt nhất mới `88.31`.
+- Acc@task tăng `+0.01`.
+- Loss giảm `0.0029`.
+- Acc@5 giảm rất nhẹ `0.01`.
+- Forgetting tăng `0.0333`; Backward giảm `0.0667`.
+
+Kết luận:
+
+- Việc CTIRD legacy chọn bottom-class là một nút thắt thật.
+- Chọn các source adapter cũ liên quan nhất bằng task energy cải thiện classification rõ hơn các lần chỉnh boundary hoặc semantic ratio nhỏ.
+- Cấu hình này hiện tốt nhất theo Acc@1 và loss.
+- Bước tiếp theo nên kiểm tra tiến trình task 1-10, sau đó thử giảm `K` từ 5 xuống 3 để CTIRD tập trung vào các task liên quan nhất và giảm nhiễu từ source thứ 4-5. Giữ mọi tham số khác nguyên.
+### 33.1. Phân tích CTIRD task-energy theo từng task
+
+Mỗi task từ task 2 có dòng pre-CRCT và post-CRCT. Mức thay đổi Acc@1:
+
+| Task | Trước CRCT | Sau CRCT | Thay đổi |
+|---:|---:|---:|---:|
+| 2 | 96.1000 | 96.1000 | +0.0000 |
+| 3 | 93.7667 | 93.8333 | +0.0666 |
+| 4 | 91.4750 | 92.6750 | +1.2000 |
+| 5 | 90.6200 | 91.4000 | +0.7800 |
+| 6 | 88.6167 | 90.1167 | +1.5000 |
+| 7 | 88.1429 | 89.6714 | +1.5285 |
+| 8 | 87.7375 | 89.2000 | +1.4625 |
+| 9 | 87.7667 | 89.2778 | +1.5111 |
+| 10 | 85.9400 | 88.3100 | +2.3700 |
+
+Nhận xét:
+
+- Lợi ích lớn nhất vẫn đến từ CRCT ở các task muộn; task 10 tăng `2.37` Acc@1.
+- So với full CRCT trước đó, mức correction tại task 10 tăng từ `2.08` lên `2.37`.
+- Forgetting post-CRCT đạt cao nhất `4.90` tại task 6 rồi ổn định quanh `4.1-4.5`.
+- CTIRD task-energy chủ yếu có giá trị từ giai đoạn nhiều task, đúng nơi legacy bottom-class selection gây nhiễu.
+- Thử nghiệm kế tiếp là giữ nguyên toàn bộ cấu hình và đổi `K=5` thành `K=3`. Từ task 5 trở đi, cách này loại source task thứ 4-5 và tập trung CTIRD vào ba task liên quan nhất.
+## 34. Kết quả CTIRD task-energy K=3
+
+Đã giữ toàn bộ cấu hình tốt nhất và giảm số source task CTIRD từ `K=5` xuống `K=3`.
+
+```text
+[Average accuracy till task10]
+Acc@task 87.8000
+Acc@1    88.1600
+Acc@5    98.1500
+Loss     0.4720
+Forgetting 4.6333
+Backward  -4.6000
+```
+
+So với `K=5`:
+
+| K | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---:|---:|---:|---:|---:|---:|---:|
+| 5 | 88.0500 | 88.3100 | 98.0700 | 0.4675 | 4.5111 | -4.4111 |
+| 3 | 87.8000 | 88.1600 | 98.1500 | 0.4720 | 4.6333 | -4.6000 |
+
+Kết luận:
+
+- K=3 giảm Acc@1 `0.15` và Acc@task `0.25`.
+- Loss tăng `0.0045`, forgetting/backward đều xấu hơn.
+- Acc@5 tăng `0.08` nhưng không bù được các chỉ số chính.
+- Giữ K=5 làm cấu hình tốt nhất.
+- Giảm K đồng thời làm tổng số KL loss giảm từ 5 xuống 3, nên không chỉ loại nhiễu mà còn làm yếu CTIRD.
+- Hướng tiếp theo: giữ đủ K=5 nhưng dùng task-energy để gán trọng số theo hạng, sau đó chuẩn hóa trọng số có trung bình bằng 1 để tổng cường độ CTIRD không đổi.
+## 35. Cải tiến CTIRD: energy-weighted K=5
+
+Sau khi K=3 làm kết quả giảm, hướng mới giữ đủ K=5 nhưng phân bổ trọng số KL theo mức liên quan của từng source rank.
+
+Cờ mới:
+
+```text
+--ctird_task_weighting energy
+--ctird_weight_temperature 1.0
+--ctird_weight_floor 0.2
+```
+
+Cách tính:
+
+1. Lấy task-energy của năm source task đã chọn.
+2. Softmax task-energy để tạo trọng số theo batch.
+3. Trộn thêm `20%` trọng số đều để source hạng thấp không bị triệt tiêu.
+4. Lấy trung bình trọng số theo batch.
+5. Nhân toàn bộ trọng số với K, làm trọng số trung bình bằng 1 và tổng bằng K.
+
+Nhờ bước chuẩn hóa cuối, tổng cường độ CTIRD giữ tương đương K=5 uniform hiện tại. Thay đổi chỉ chuyển lực distillation từ source ít liên quan sang source liên quan hơn, không làm yếu regularization như thí nghiệm K=3.
+
+Mặc định `ctird_task_weighting=uniform`, nên baseline cũ không thay đổi.
