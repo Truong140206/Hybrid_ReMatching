@@ -1809,3 +1809,29 @@ Kết luận:
 - Acc@5 tăng nhẹ `0.03`, nhưng loss, forgetting và backward đều xấu hơn rõ rệt.
 - Energy-weighted CTIRD bị quá mạnh ở `0.25`, làm giảm khả năng thích nghi với task mới mà vẫn không giữ task cũ tốt hơn.
 - Không dùng `con=0.25`; thử phía ngược lại `con=0.15` để xác định liệu mức tối ưu nằm dưới `0.2` hay không.
+
+## 45. Kết quả CTIRD con=0.15
+
+Thử phía thấp hơn của hệ số relation distillation với `con=0.15`.
+
+```text
+[Average accuracy till task10]
+Acc@task 88.1100
+Acc@1    88.4000
+Acc@5    98.0100
+Loss     0.4658
+Forgetting 4.7556
+Backward  -4.6889
+```
+
+| con | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0.15 | 88.1100 | 88.4000 | 98.0100 | 0.4658 | 4.7556 | -4.6889 |
+| 0.20 | 88.3000 | 88.5600 | 98.0700 | 0.4627 | 4.2778 | -4.0778 |
+| 0.25 | 87.9700 | 88.3500 | 98.1000 | 0.4635 | 4.6778 | -4.6444 |
+
+Kết luận:
+
+- Cả `0.15` và `0.25` đều không vượt `0.20`; mức `0.20` tốt nhất ở Acc@task, Acc@1, loss, forgetting và backward.
+- Dừng sweep `con` và cố định lại `con=0.20`.
+- Hướng tiếp theo là giảm `ca_lr` từ `0.005` xuống `0.004`, vẫn giữ CRCT 3 epochs. Mục tiêu là làm classifier correction mềm hơn sau khi CRCT 4 epochs đã cho dấu hiệu over-correction.
