@@ -1783,3 +1783,29 @@ Hướng tiếp theo:
 - Giữ nguyên cấu hình tốt nhất và sweep hệ số CTIRD `con`, vì mọi lần chạy trước đều dùng `0.2`.
 - Thử `con=0.25` trước: energy weighting đã chọn lọc source task tốt hơn nên tăng vừa phải lực relation distillation có thể cải thiện ổn định giữa task.
 - Không bật balanced batches, target-side boundary hoặc semantic để đo riêng tác động của `con`.
+
+## 44. Kết quả CTIRD con=0.25
+
+Giữ cấu hình tốt nhất và tăng hệ số relation distillation từ `con=0.2` lên `con=0.25`.
+
+```text
+[Average accuracy till task10]
+Acc@task 87.9700
+Acc@1    88.3500
+Acc@5    98.1000
+Loss     0.4635
+Forgetting 4.6778
+Backward  -4.6444
+```
+
+| con | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0.20 | 88.3000 | 88.5600 | 98.0700 | 0.4627 | 4.2778 | -4.0778 |
+| 0.25 | 87.9700 | 88.3500 | 98.1000 | 0.4635 | 4.6778 | -4.6444 |
+
+Kết luận:
+
+- `con=0.25` giảm Acc@task `0.33` và Acc@1 `0.21`.
+- Acc@5 tăng nhẹ `0.03`, nhưng loss, forgetting và backward đều xấu hơn rõ rệt.
+- Energy-weighted CTIRD bị quá mạnh ở `0.25`, làm giảm khả năng thích nghi với task mới mà vẫn không giữ task cũ tốt hơn.
+- Không dùng `con=0.25`; thử phía ngược lại `con=0.15` để xác định liệu mức tối ưu nằm dưới `0.2` hay không.
