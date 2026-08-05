@@ -1530,3 +1530,158 @@ Cách tính:
 Nhờ bước chuẩn hóa cuối, tổng cường độ CTIRD giữ tương đương K=5 uniform hiện tại. Thay đổi chỉ chuyển lực distillation từ source ít liên quan sang source liên quan hơn, không làm yếu regularization như thí nghiệm K=3.
 
 Mặc định `ctird_task_weighting=uniform`, nên baseline cũ không thay đổi.
+## 36. Kết quả CTIRD energy-weighted K=5
+
+Giữ K=5 và task-energy source selection, sau đó gán trọng số KL theo task energy với `weight_temperature=1.0`, `weight_floor=0.2`. Tổng trọng số vẫn bằng K.
+
+```text
+[Average accuracy till task10]
+Acc@task 88.3000
+Acc@1    88.5600
+Acc@5    98.0700
+Loss     0.4627
+Forgetting 4.2778
+Backward  -4.0778
+```
+
+So sánh với K=5 uniform:
+
+| Phiên bản | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|
+| CTIRD task-energy K=5 uniform | 88.0500 | 88.3100 | 98.0700 | 0.4675 | 4.5111 | -4.4111 |
+| CTIRD task-energy K=5 weighted | 88.3000 | 88.5600 | 98.0700 | 0.4627 | 4.2778 | -4.0778 |
+
+Thay đổi:
+
+- Acc@task tăng `+0.25`.
+- Acc@1 tăng `+0.25`, đạt mốc tốt nhất mới `88.56`.
+- Acc@5 giữ nguyên.
+- Loss giảm `0.0048`.
+- Forgetting giảm `0.2333`.
+- Backward tốt hơn `0.3333`.
+
+So với CFS-only reproduce ban đầu:
+
+- Acc@1 tăng tổng cộng `87.88 -> 88.56`, tức `+0.68`.
+- Acc@task tăng `87.62 -> 88.30`, tức `+0.68`.
+- Loss giảm `0.5222 -> 0.4627`, tức `-0.0595`.
+
+Kết luận:
+
+- Energy weighting giải quyết đúng nhược điểm của K=3: vẫn giữ thông tin từ đủ năm source task nhưng tập trung lực distillation vào source liên quan hơn.
+- Đây là cấu hình tốt nhất hiện tại trên tất cả chỉ số chính, ngoại trừ Acc@5 bằng bản K=5 uniform.
+- Bước tinh chỉnh tiếp theo có thể hạ `ctird_weight_temperature` từ `1.0` xuống `0.5` để tăng độ tập trung, giữ `weight_floor=0.2` và mọi tham số khác nguyên.
+## 37. Kết quả CTIRD weight temperature 0.5
+
+Đã giữ K=5, energy weighting và giảm `ctird_weight_temperature` từ `1.0` xuống `0.5` để làm trọng số tập trung hơn.
+
+```text
+[Average accuracy till task10]
+Acc@task 87.8800
+Acc@1    88.2700
+Acc@5    98.0200
+Loss     0.4771
+Forgetting 4.5000
+Backward  -4.4222
+```
+
+So với temperature `1.0`:
+
+| Temperature | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1.0 | 88.3000 | 88.5600 | 98.0700 | 0.4627 | 4.2778 | -4.0778 |
+| 0.5 | 87.8800 | 88.2700 | 98.0200 | 0.4771 | 4.5000 | -4.4222 |
+
+Kết luận:
+
+- Temperature 0.5 giảm Acc@1 `0.29` và Acc@task `0.42`.
+- Loss tăng `0.0144`; forgetting/backward đều xấu hơn.
+- Trọng số quá tập trung làm mất lợi ích từ source task hạng thấp, phù hợp với kết quả K=3 cũng bị giảm.
+- Giữ temperature `1.0` làm cấu hình tốt nhất.
+- Có thể thử phía ngược lại là temperature `1.5`, giúp phân bố mềm hơn nhưng vẫn giữ energy weighting. Nếu không vượt 1.0 thì dừng dò temperature và chuyển sang adaptive weighting.
+## 38. Kết quả CTIRD weight temperature 1.5
+
+Đã thử làm phân bố trọng số mềm hơn bằng cách tăng `ctird_weight_temperature` từ `1.0` lên `1.5`.
+
+```text
+[Average accuracy till task10]
+Acc@task 88.1400
+Acc@1    88.5200
+Acc@5    98.1600
+Loss     0.4645
+Forgetting 4.4444
+Backward  -4.4000
+```
+
+So với temperature `1.0`:
+
+| Temperature | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1.0 | 88.3000 | 88.5600 | 98.0700 | 0.4627 | 4.2778 | -4.0778 |
+| 1.5 | 88.1400 | 88.5200 | 98.1600 | 0.4645 | 4.4444 | -4.4000 |
+
+Kết luận:
+
+- Temperature 1.5 giảm Acc@1 `0.04`, Acc@task `0.16` và làm loss/forgetting/backward xấu hơn.
+- Acc@5 tăng `0.09`, đạt `98.16`.
+- Temperature 1.0 vẫn là cấu hình cân bằng tốt nhất.
+- Dừng dò weight temperature; cả phía nhọn hơn (0.5) và mềm hơn (1.5) đều không vượt 1.0.
+- Hướng tiếp theo: giữ toàn bộ cấu hình 88.56 và tăng `crct_epochs` từ 3 lên 4 để thử tăng mức classifier correction trên full replay.
+## 39. Kết quả CRCT 4 epochs
+
+Giữ cấu hình CTIRD weighted tốt nhất và tăng `crct_epochs` từ 3 lên 4.
+
+```text
+[Average accuracy till task10]
+Acc@task 87.9600
+Acc@1    88.3400
+Acc@5    98.1200
+Loss     0.4721
+Forgetting 4.5444
+Backward  -4.4444
+```
+
+So với CRCT 3 epochs:
+
+| CRCT epochs | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---:|---:|---:|---:|---:|---:|---:|
+| 3 | 88.3000 | 88.5600 | 98.0700 | 0.4627 | 4.2778 | -4.0778 |
+| 4 | 87.9600 | 88.3400 | 98.1200 | 0.4721 | 4.5444 | -4.4444 |
+
+Kết luận:
+
+- Epoch 4 giảm Acc@1 `0.22` và Acc@task `0.34`.
+- Loss tăng `0.0094`; forgetting/backward xấu hơn.
+- Acc@5 tăng nhẹ `0.05` nhưng không bù được.
+- CRCT 3 epochs vẫn là cấu hình tốt nhất; 4 epochs gây over-correction trên replay tổng hợp.
+- Hướng tiếp theo là giữ 3 epochs nhưng tạo mini-batch CRCT gần cân bằng lớp thay vì shuffle toàn bộ ngẫu nhiên.
+## 40. Cân bằng lớp trong từng mini-batch CRCT
+
+Sau khi `crct_epochs=4` gây over-correction, giữ lại cấu hình tốt nhất với `crct_epochs=3` và thay đổi cách xếp thứ tự replay.
+
+Vấn đề của bản trước:
+
+- Tập replay tổng thể đã cân bằng vì mỗi lớp có cùng số mẫu tổng hợp.
+- Tuy nhiên, toàn bộ tập được shuffle ngẫu nhiên rồi cắt liên tiếp thành các mini-batch.
+- Do đó từng mini-batch chỉ cân bằng theo kỳ vọng; một batch có thể thiếu nhiều lớp và lặp lại một số lớp khác.
+- Gradient của classifier correction vì vậy có thể dao động và tạm thời thiên về các lớp xuất hiện nhiều trong batch đó.
+
+Thay đổi mới:
+
+- Thêm cờ `--crct_balanced_batches`.
+- Mẫu trong từng lớp vẫn được shuffle ngẫu nhiên.
+- Các hàng đợi theo lớp sau đó được đan xen theo vòng: mỗi lượt lấy một mẫu của từng lớp.
+- Với CIFAR-100 ở task 10, batch 120 mẫu sẽ chứa ít nhất một mẫu của cả 100 lớp trước khi lớp nào được lặp lại.
+- Nếu dữ liệu đầu vào bất ngờ có số mẫu mỗi lớp không bằng nhau, mã tự quay về global random shuffle để tránh lỗi.
+- Áp dụng nhất quán cho cả engine LoRA và TII.
+- Script Kaggle có thể bật bằng `CRCT_BALANCED_BATCHES=1`.
+
+Phạm vi kiểm soát thí nghiệm:
+
+- Giữ `crct_epochs=3`.
+- Giữ full replay, boundary CFS ratio 0.25, CTIRD task-energy K=5 và energy weighting temperature 1.0/floor 0.2.
+- Không bật semantic và không đổi evaluation routing.
+- Không đổi tổng số mẫu replay hoặc hàm loss.
+- Khi không truyền cờ mới, mã chạy đúng cách shuffle cũ.
+
+Mục tiêu của thử nghiệm kế tiếp là kiểm tra xem giảm nhiễu gradient giữa các batch có vượt mốc tốt nhất hiện tại `Acc@1=88.56` và `Acc@task=88.30` hay không.

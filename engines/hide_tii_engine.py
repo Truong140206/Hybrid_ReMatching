@@ -399,7 +399,10 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
         inputs = sampled_data
         targets = sampled_label
 
-        sf_indexes = torch.randperm(inputs.size(0))
+        if bool(getattr(args, 'crct_balanced_batches', False)):
+            sf_indexes = utils.class_balanced_replay_order(targets)
+        else:
+            sf_indexes = torch.randperm(inputs.size(0))
         inputs = inputs[sf_indexes]
         targets = targets[sf_indexes]
         #print(targets)

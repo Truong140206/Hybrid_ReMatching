@@ -104,6 +104,7 @@ def get_args_parser(subparsers):
 
     subparsers.add_argument('--crct_epochs', default=30, type=int)
     subparsers.add_argument('--crct_use_all_samples', action='store_true', help='use every balanced synthetic replay sample during classifier correction')
+    subparsers.add_argument('--crct_balanced_batches', action='store_true', help='interleave classes so each classifier-correction batch is approximately balanced')
     subparsers.add_argument('--train_inference_task_only', action='store_true')
     subparsers.add_argument('--original_model_mlp_structure', default=[2], type=int)
     subparsers.add_argument('--ca_lr', default=0.005, type=float)

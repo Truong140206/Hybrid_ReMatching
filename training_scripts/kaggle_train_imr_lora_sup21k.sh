@@ -17,6 +17,9 @@ CRCT_ARGS=()
 if [ "${CRCT_USE_ALL_SAMPLES:-0}" = "1" ]; then
   CRCT_ARGS+=(--crct_use_all_samples)
 fi
+if [ "${CRCT_BALANCED_BATCHES:-0}" = "1" ]; then
+  CRCT_ARGS+=(--crct_balanced_batches)
+fi
 CFS_ARGS=()
 if [ "${CFS_SAMPLING:-0}" = "1" ]; then
   CFS_ARGS+=(--cfs_sampling)

@@ -1083,6 +1083,28 @@ def sample_cfs_features(mean, cov, num_samples, args, device, cfs_model=None):
 
 
 @torch.no_grad()
+def class_balanced_replay_order(labels):
+    """Interleave shuffled per-class queues to keep replay batches balanced."""
+    labels = labels.flatten()
+    if labels.numel() == 0:
+        return torch.empty(0, dtype=torch.long, device=labels.device)
+
+    class_ids = torch.unique(labels, sorted=True)
+    per_class = []
+    samples_per_class = None
+    for class_id in class_ids:
+        indexes = torch.nonzero(labels == class_id, as_tuple=False).flatten()
+        if samples_per_class is None:
+            samples_per_class = indexes.numel()
+        elif indexes.numel() != samples_per_class:
+            return torch.randperm(labels.numel(), device=labels.device)
+        permutation = torch.randperm(indexes.numel(), device=labels.device)
+        per_class.append(indexes.index_select(0, permutation))
+
+    return torch.stack(per_class, dim=0).transpose(0, 1).reshape(-1)
+
+
+@torch.no_grad()
 def sample_boundary_aware_cfs_features(mean, cov, num_samples, args, device, model,
                                        target_cls, seen_classes, cfs_model=None):
     """Mix diverse CFS replay with in-distribution samples near the decision boundary."""
