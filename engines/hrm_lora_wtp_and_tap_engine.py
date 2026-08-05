@@ -26,6 +26,15 @@ def generalized_entropy(softmax_id_val, gamma, M):
            
         return -scores 
 
+def compute_task_energy_scores(logits, class_mask, num_tasks, temperature=0.1):
+    temperature = max(float(temperature), 1e-6)
+    task_scores = []
+    for task_idx in range(num_tasks):
+        class_ids = torch.tensor(class_mask[task_idx], dtype=torch.long, device=logits.device)
+        task_logits = logits.index_select(1, class_ids)
+        task_scores.append(temperature * torch.logsumexp(task_logits / temperature, dim=1))
+    return torch.stack(task_scores, dim=1)
+
 def get_old_features(model: torch.nn.Module, original_model: torch.nn.Module,
                     criterion, data_loader: Iterable, optimizer: torch.optim.Optimizer,
                     device: torch.device, epoch: int, max_norm: float = 0,
@@ -269,20 +278,24 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 not_mask = torch.tensor(not_mask, dtype=torch.int64).to(device)
                 logits = logits.index_fill(dim=1, index=not_mask, value=float('-inf'))
                 #print(logits[0])
-            prompt_id = torch.max(logits, dim=1)[1]
-            
-            
-            
             id_logits = logits
-            top_5_values, top_5_indices = torch.topk(id_logits, 2, dim=1)
-
-            task_map_keys = list(target_task_map.keys())
-            task_map_values = torch.tensor([target_task_map[k] for k in task_map_keys], device=device)
-            task_map_tensor = torch.zeros((max(task_map_keys) + 1,), dtype=torch.long, device=device)
-            task_map_tensor[task_map_keys] = task_map_values
-            # Use the task_map_tensor to index and gather new values directly
-            top5_id = torch.index_select(task_map_tensor, 0, top_5_indices.view(-1)).view_as(top_5_indices)
-
+            routing_mode = str(getattr(args, 'task_routing_mode', 'class')).lower()
+            if routing_mode == 'task_energy':
+                task_scores = compute_task_energy_scores(
+                    id_logits, class_mask, task_id + 1,
+                    temperature=getattr(args, 'task_routing_temperature', 0.1))
+                candidate_count = min(2, task_scores.shape[1])
+                top5_id = torch.topk(task_scores, k=candidate_count, dim=1, largest=True).indices
+                prompt_id = top5_id[:, 0]
+            else:
+                prompt_class = torch.max(id_logits, dim=1)[1]
+                _, top_5_indices = torch.topk(id_logits, 2, dim=1)
+                task_map_keys = list(target_task_map.keys())
+                task_map_values = torch.tensor([target_task_map[k] for k in task_map_keys], device=device)
+                task_map_tensor = torch.zeros((max(task_map_keys) + 1,), dtype=torch.long, device=device)
+                task_map_tensor[task_map_keys] = task_map_values
+                top5_id = torch.index_select(task_map_tensor, 0, top_5_indices.view(-1)).view_as(top_5_indices)
+                prompt_id = torch.tensor([target_task_map[v.item()] for v in prompt_class], device=device)
             ##############
             # target_id = torch.tensor([target_task_map[v.item()] for v in target], device=device)
 
@@ -306,20 +319,17 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
             filtered_index_tensor = low_confidence_indices    
 
             
-            #translate cls to task_id
-            prompt_id = torch.tensor([target_task_map[v.item()] for v in prompt_id], device=device)
-
             equal_drm = torch.nonzero(prompt_id != lora_id).flatten()
             output_drm = model(input[equal_drm], task_id=prompt_id[equal_drm])
-            # print(prompt_id)
-            logits[equal_drm] = output_drm['logits']
+            output_drm_logits = output_drm['logits']
+            if routing_mode == 'task_energy' and args.train_mask and class_mask is not None:
+                output_drm_logits = output_drm_logits.index_fill(dim=1, index=not_mask, value=float('-inf'))
+            logits[equal_drm] = output_drm_logits
             #promtp_idx = output['prompt_idx']  # tensor B x topk
             
             corr_id=None
             re_id = None
             if task_id>0:
-                    error_prompt_id = prompt_id[filtered_index_tensor]
-                    error_prompt_id = torch.tensor([target_task_map[v.item()] for v in error_prompt_id], device=device)
                     error_input = input[filtered_index_tensor]
                     # error_target = target[filtered_index_tensor]
                     ensemble_id = top5_id[filtered_index_tensor,:2]
@@ -328,9 +338,10 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     error_output.append(logits[filtered_index_tensor,:])
                     # for i in range(ensemble_id.shape[1]):
                     out = model(error_input, task_id=ensemble_id[:,1])
-                    #out = F.softmax(out['logits'],dim=1)
-                    error_output.append(out['logits'])
-                        
+                    alternative_logits = out['logits']
+                    if routing_mode == 'task_energy' and args.train_mask and class_mask is not None:
+                        alternative_logits = alternative_logits.index_fill(dim=1, index=not_mask, value=float('-inf'))
+                    error_output.append(alternative_logits)
                     error_output = torch.stack(error_output,dim=1)
                    
                     entropy = (0.1*torch.logsumexp( error_output/ 0.1, dim=2))
@@ -341,7 +352,10 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
 
                     result = result.squeeze(1)
                     logits[filtered_index_tensor]=result
-                    #prompt_id[filtered_index_tensor] = corr_id
+                    if routing_mode == 'task_energy':
+                        selected_tasks = torch.gather(ensemble_id, 1, corr_id.unsqueeze(1)).squeeze(1)
+                        prompt_id[filtered_index_tensor] = selected_tasks
+                        re_id = selected_tasks
                     # re_id = []
                     # for k in range(len(corr_id)):
                     #     #print(corr_id[k].item())

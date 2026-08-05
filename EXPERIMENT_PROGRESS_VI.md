@@ -1246,3 +1246,129 @@ Không bật hai thay đổi cùng lúc ngay từ đầu:
 3. Chỉ sau khi tìm được cấu hình CFS + boundary tốt mới thêm semantic ratio `0.02` để xem loss/forgetting có tiếp tục tốt lên mà không mất Acc@1 hay không.
 
 Không kỳ vọng hoặc cam kết một mức tăng cụ thể trước khi chạy. Tuy nhiên đây là thay đổi tác động đúng vào lượng dữ liệu correction và decision boundary, nên có cơ sở tạo chênh lệch lớn hơn các lần chỉnh semantic ratio gần đây.
+## 28. Kết quả full CRCT replay
+
+Đã chạy lại cấu hình CFS cũ, chỉ thêm `--crct_use_all_samples`; không bật semantic và không bật boundary-aware replay.
+
+```text
+[Average accuracy till task10]
+Acc@task 88.0100
+Acc@1    88.1300
+Acc@5    98.0800
+Loss     0.4696
+Forgetting 4.5222
+Backward  -4.4111
+```
+
+So sánh với CFS-only reproduce trên cùng máy ảo:
+
+| Phiên bản | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|
+| CFS-only reproduce | 87.6200 | 87.8800 | 98.0800 | 0.5222 | 3.7222 | -3.3889 |
+| CFS + full CRCT replay | 88.0100 | 88.1300 | 98.0800 | 0.4696 | 4.5222 | -4.4111 |
+
+Thay đổi:
+
+- Acc@task tăng `+0.39`.
+- Acc@1 tăng `+0.25` và vượt mốc CFS cũ trong full log (`88.00`) thêm `+0.13`.
+- Acc@5 giữ nguyên.
+- Loss giảm mạnh `0.5222 -> 0.4696`, tốt hơn `0.0526`.
+- Forgetting tăng `+0.80`; Backward giảm thêm `-1.0222`, tức độ suy giảm so với accuracy tại thời điểm từng task vừa học lớn hơn.
+
+Kết luận:
+
+- Phát hiện CRCT bỏ một phần replay là nút thắt thật, không phải dao động ngẫu nhiên cỡ `0.01-0.05` như các lần tinh chỉnh semantic ratio.
+- Full replay hiện là cấu hình tốt nhất theo Acc@1, Acc@task và loss cuối.
+- Trade-off forgetting/backward cần được xử lý ở bước tiếp theo.
+- Thí nghiệm kế tiếp nên giữ full replay và thêm boundary-aware CFS ở ratio thấp `0.25`, nhằm tăng chất lượng mẫu gần decision boundary mà vẫn giữ phần lớn CFS diversity. Không thêm semantic trong lần này để đo riêng tác động.
+### 28.1. Phân tích theo từng task
+
+Log in hai dòng từ task 2 trở đi:
+
+- Dòng thứ nhất là đánh giá trước classifier correction (pre-CRCT).
+- Dòng thứ hai là đánh giá sau CRCT.
+- Các giá trị Backward dương rất lớn ở dòng pre-CRCT không hợp lệ để diễn giải, vì `pre_ca_acc_matrix` không có diagonal của task 1. Đây là vấn đề ở phần báo cáo metric pre-CRCT, không ảnh hưởng huấn luyện hoặc kết quả post-CRCT.
+
+Mức thay đổi Acc@1 do full CRCT ở từng task:
+
+| Task | Trước CRCT | Sau CRCT | Thay đổi |
+|---:|---:|---:|---:|
+| 2 | 96.1000 | 96.1000 | +0.0000 |
+| 3 | 93.6667 | 94.0000 | +0.3333 |
+| 4 | 91.3000 | 92.7000 | +1.4000 |
+| 5 | 90.6000 | 91.5200 | +0.9200 |
+| 6 | 88.6333 | 90.2167 | +1.5834 |
+| 7 | 88.1429 | 89.6286 | +1.4857 |
+| 8 | 87.8000 | 89.0000 | +1.2000 |
+| 9 | 87.5556 | 89.0889 | +1.5333 |
+| 10 | 86.0500 | 88.1300 | +2.0800 |
+
+Nhận xét:
+
+- Lợi ích của CRCT tăng dần khi số task/lớp tăng; task 10 được cộng `2.08` Acc@1.
+- Loss sau CRCT thấp hơn trước CRCT ở mọi task.
+- Không có điểm sụp đổ đột ngột. Forgetting post-CRCT dao động khoảng `4.28-4.70` từ task 6 đến task 10.
+- Full replay sửa đúng vấn đề classifier ngày càng mất cân bằng khi số lớp tăng.
+- Có thể tiếp tục thử boundary-aware CFS ratio thấp `0.25` trên nền full replay.
+## 29. Kết quả boundary-aware CFS ratio 0.25
+
+Giữ full CRCT replay và thêm boundary-aware CFS với `boundary_ratio=0.25`, không dùng semantic.
+
+```text
+[Average accuracy till task10]
+Acc@task 88.0400
+Acc@1    88.1700
+Acc@5    98.0800
+Loss     0.4704
+Forgetting 4.4778
+Backward  -4.3444
+```
+
+So sánh:
+
+| Phiên bản | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|
+| CFS + full CRCT | 88.0100 | 88.1300 | 98.0800 | 0.4696 | 4.5222 | -4.4111 |
+| Full CRCT + boundary 0.25 | 88.0400 | 88.1700 | 98.0800 | 0.4704 | 4.4778 | -4.3444 |
+
+Thay đổi:
+
+- Acc@task tăng `+0.03`.
+- Acc@1 tăng `+0.04`.
+- Acc@5 giữ nguyên.
+- Forgetting giảm `0.0444` và Backward tốt hơn `0.0667`.
+- Loss tăng nhẹ `0.0008`.
+
+Kết luận:
+
+- Đây là cấu hình tốt nhất hiện tại theo Acc@1 (`88.17`) và Acc@task (`88.04`).
+- Boundary-aware CFS có tín hiệu tích cực, nhưng mức tăng `0.04` vẫn nhỏ và cần coi là kết quả một seed, chưa đủ khẳng định chắc chắn vượt nhiễu.
+- Có thể thử ratio `0.5` tiếp theo vì ratio `0.25` không phá CFS và còn cải thiện forgetting/backward. Giữ mọi tham số khác nguyên để đo riêng liều boundary replay.
+## 30. Cải tiến routing: task-energy top-2
+
+Sau khi boundary-aware CFS ratio `0.25` chỉ tăng thêm `0.04` Acc@1, hướng tiếp theo chuyển sang task/LoRA routing.
+
+Vấn đề trong routing cũ:
+
+- Top-2 ứng viên được lấy theo hai class có logit cao nhất, không phải hai task.
+- Hai class top đầu có thể thuộc cùng một task, khiến lần chạy adapter thứ hai bị trùng và không bổ sung thông tin.
+- Khi nhánh adapter thứ hai được chọn, `prompt_id` không được cập nhật; do đó Acc@task có thể không phản ánh adapter thực sự tạo ra logits cuối.
+- Logits sau khi reroute chưa được mask lại ở các task trung gian.
+
+Đã thêm chế độ tùy chọn:
+
+```text
+--task_routing_mode task_energy
+--task_routing_temperature 0.1
+```
+
+Cách mới:
+
+1. Gom logits của các class theo từng task.
+2. Tính task energy bằng temperature-scaled log-sum-exp.
+3. Chọn hai task có energy cao nhất; hai ứng viên luôn là hai task phân biệt.
+4. Reroute qua adapter của task thứ nhất.
+5. Với mẫu uncertainty, so sánh adapter thứ nhất và thứ hai như cơ chế cũ.
+6. Cập nhật `prompt_id` theo adapter thực sự được chọn và mask lại class chưa thấy.
+
+Đây là thay đổi ở pha đánh giá. Có thể dùng `--eval` với checkpoint tốt nhất hiện tại mà không cần train lại. Mặc định vẫn là `task_routing_mode=class`, nên baseline cũ không thay đổi.

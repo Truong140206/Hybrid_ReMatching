@@ -82,6 +82,8 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--K', default=5, type=int,)
     subparsers.add_argument('--En', default='gen', choices=['msp', 'gen'])
     subparsers.add_argument('--tau', default=-10, type=float)
+    subparsers.add_argument('--task_routing_mode', default='class', choices=['class', 'task_energy'], type=str, help='route evaluation samples by top class or aggregated task energy')
+    subparsers.add_argument('--task_routing_temperature', default=0.1, type=float)
 
 
     # lora parameters
