@@ -36,6 +36,9 @@ if [ "${CFS_SAMPLING:-0}" = "1" ]; then
     CFS_ARGS+=(--cfs_boundary_ratio "${CFS_BOUNDARY_RATIO:-0.5}")
     CFS_ARGS+=(--cfs_boundary_multiplier "${CFS_BOUNDARY_MULTIPLIER:-3}")
     CFS_ARGS+=(--cfs_boundary_density_quantile "${CFS_BOUNDARY_DENSITY_QUANTILE:-0.9}")
+    if [ "${CFS_BOUNDARY_TARGET_SIDE:-0}" = "1" ]; then
+      CFS_ARGS+=(--cfs_boundary_target_side)
+    fi
   fi
   if [ "${CFS_DISTRIBUTION_FILTER:-0}" = "1" ]; then
     CFS_ARGS+=(--cfs_distribution_filter)

@@ -127,6 +127,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--cfs_boundary_ratio', default=0.5, type=float)
     subparsers.add_argument('--cfs_boundary_multiplier', default=3, type=int)
     subparsers.add_argument('--cfs_boundary_density_quantile', default=0.9, type=float)
+    subparsers.add_argument('--cfs_boundary_target_side', action='store_true', help='prefer in-distribution boundary samples still classified on the target side')
     subparsers.add_argument('--cfs_distribution_filter', action='store_true', help='filter CFS Gaussian candidates by class feature distribution before diversity selection')
     subparsers.add_argument('--cfs_filter_multiplier', default=3, type=int)
     subparsers.add_argument('--cfs_filter_cosine_weight', default=0.0, type=float)

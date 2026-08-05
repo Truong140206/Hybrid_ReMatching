@@ -1721,3 +1721,31 @@ Cải tiến tiếp theo:
 - Mỗi batch vẫn chứa số mẫu mỗi lớp lệch tối đa một, nhưng lớp được lấy thêm không còn bị cố định theo nhãn/task.
 - Không thêm tham số mới; cờ `--crct_balanced_batches` dùng thuật toán class-order ngẫu nhiên đã sửa.
 - Mọi thành phần CFS, CTIRD, số epoch, số replay sample và loss tiếp tục được giữ nguyên để đo riêng tác động này.
+
+## 42. Xác nhận random class-order và target-side boundary CFS
+
+Máy chạy đã được xác nhận ở đúng commit `5785c5f`. Bản random class-order cho kết quả giống hoàn toàn bản class-order cố định:
+
+```text
+[Average accuracy till task10]
+Acc@task 88.2400
+Acc@1    88.3100
+Acc@5    98.2400
+Loss     0.4638
+Forgetting 4.4333
+Backward  -4.2889
+```
+
+Kết luận về cân bằng batch:
+
+- Hoán vị thứ tự lớp không tạo cải thiện đo được.
+- Cross-entropy không phụ thuộc thứ tự phần tử bên trong batch; full replay qua ba epoch cũng làm khác biệt về các lớp dư ở biên batch trở nên rất nhỏ.
+- Dừng hướng `--crct_balanced_batches` và quay lại global shuffle của cấu hình tốt nhất `Acc@1=88.56`.
+
+Cải tiến tiếp theo tập trung vào chất lượng boundary replay:
+
+- Bản cũ xếp hạng bằng trị tuyệt đối của margin nên có thể chọn cả mẫu đã nằm ở phía lớp đối thủ, sau đó vẫn gán hard label của lớp nguồn.
+- Thêm cờ `--cfs_boundary_target_side` để ưu tiên margin dương nhỏ nhất trong vùng mật độ hợp lệ: mẫu khó, sát biên nhưng classifier vẫn nhận đúng phía lớp nguồn.
+- Nếu số mẫu target-side không đủ, phần thiếu quay về cách chọn trị tuyệt đối margin cũ, không làm giảm số replay sample.
+- Mặc định cờ tắt nên mọi cấu hình cũ giữ nguyên.
+- Thử nghiệm mới bỏ `--crct_balanced_batches`, giữ full replay, CRCT 3 epochs, boundary ratio 0.25 và CTIRD weighted tốt nhất.

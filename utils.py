@@ -1155,9 +1155,27 @@ def sample_boundary_aware_cfs_features(mean, cov, num_samples, args, device, mod
     density_quantile = float(getattr(args, 'cfs_boundary_density_quantile', 0.9))
     density_quantile = max(0.5, min(1.0, density_quantile))
     density_limit = torch.quantile(mahalanobis, density_quantile)
-    boundary_score = margins.abs().masked_fill(mahalanobis > density_limit, float('inf'))
+    in_distribution = mahalanobis <= density_limit
+    if bool(getattr(args, 'cfs_boundary_target_side', False)):
+        target_side = in_distribution & margins.ge(0)
+        target_count = min(hard_count, int(target_side.sum().item()))
+        selected_parts = []
+        if target_count > 0:
+            target_scores = margins.masked_fill(~target_side, float('inf'))
+            selected_parts.append(torch.topk(
+                target_scores, k=target_count, largest=False).indices)
 
-    hard_ids = torch.topk(boundary_score, k=hard_count, largest=False).indices
+        remaining = hard_count - target_count
+        if remaining > 0:
+            fallback_scores = margins.abs().masked_fill(~in_distribution, float('inf'))
+            if selected_parts:
+                fallback_scores[selected_parts[0]] = float('inf')
+            selected_parts.append(torch.topk(
+                fallback_scores, k=remaining, largest=False).indices)
+        hard_ids = torch.cat(selected_parts, dim=0)
+    else:
+        boundary_score = margins.abs().masked_fill(~in_distribution, float('inf'))
+        hard_ids = torch.topk(boundary_score, k=hard_count, largest=False).indices
     boundary = candidates.index_select(0, hard_ids)
     return torch.cat([diverse.float().to(device), boundary], dim=0)
 
