@@ -1749,3 +1749,37 @@ Cải tiến tiếp theo tập trung vào chất lượng boundary replay:
 - Nếu số mẫu target-side không đủ, phần thiếu quay về cách chọn trị tuyệt đối margin cũ, không làm giảm số replay sample.
 - Mặc định cờ tắt nên mọi cấu hình cũ giữ nguyên.
 - Thử nghiệm mới bỏ `--crct_balanced_batches`, giữ full replay, CRCT 3 epochs, boundary ratio 0.25 và CTIRD weighted tốt nhất.
+
+## 43. Kết quả target-side boundary CFS và kế hoạch sweep CTIRD
+
+Kết quả khi chỉ thêm `--cfs_boundary_target_side` trên cấu hình tốt nhất:
+
+```text
+[Average accuracy till task10]
+Acc@task 88.2900
+Acc@1    88.5600
+Acc@5    98.0700
+Loss     0.4630
+Forgetting 4.2778
+Backward  -4.1000
+```
+
+So với boundary CFS cũ:
+
+| Cấu hình | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|
+| Boundary cũ | 88.3000 | 88.5600 | 98.0700 | 0.4627 | 4.2778 | -4.0778 |
+| Target-side boundary | 88.2900 | 88.5600 | 98.0700 | 0.4630 | 4.2778 | -4.1000 |
+
+Kết luận:
+
+- Acc@1, Acc@5 và forgetting giữ nguyên.
+- Acc@task giảm `0.01`, loss tăng `0.0003` và backward kém `0.0222`.
+- Target-side boundary gần như trung tính nhưng không vượt cấu hình cũ; không dùng cờ này cho mốc tốt nhất.
+- Các thay đổi nhỏ ở boundary replay hiện đã bão hòa quanh `Acc@1=88.56`.
+
+Hướng tiếp theo:
+
+- Giữ nguyên cấu hình tốt nhất và sweep hệ số CTIRD `con`, vì mọi lần chạy trước đều dùng `0.2`.
+- Thử `con=0.25` trước: energy weighting đã chọn lọc source task tốt hơn nên tăng vừa phải lực relation distillation có thể cải thiện ổn định giữa task.
+- Không bật balanced batches, target-side boundary hoặc semantic để đo riêng tác động của `con`.
