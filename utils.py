@@ -1101,7 +1101,12 @@ def class_balanced_replay_order(labels):
         permutation = torch.randperm(indexes.numel(), device=labels.device)
         per_class.append(indexes.index_select(0, permutation))
 
-    return torch.stack(per_class, dim=0).transpose(0, 1).reshape(-1)
+    per_class = torch.stack(per_class, dim=0).transpose(0, 1)
+    class_orders = torch.stack([
+        torch.randperm(class_ids.numel(), device=labels.device)
+        for _ in range(samples_per_class)
+    ], dim=0)
+    return per_class.gather(1, class_orders).reshape(-1)
 
 
 @torch.no_grad()

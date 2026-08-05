@@ -1685,3 +1685,39 @@ Phạm vi kiểm soát thí nghiệm:
 - Khi không truyền cờ mới, mã chạy đúng cách shuffle cũ.
 
 Mục tiêu của thử nghiệm kế tiếp là kiểm tra xem giảm nhiễu gradient giữa các batch có vượt mốc tốt nhất hiện tại `Acc@1=88.56` và `Acc@task=88.30` hay không.
+
+## 41. Kết quả class-balanced CRCT và cải tiến thứ tự lớp
+
+Kết quả của bản cân bằng lớp cứng trong từng mini-batch:
+
+```text
+[Average accuracy till task10]
+Acc@task 88.2400
+Acc@1    88.3100
+Acc@5    98.2400
+Loss     0.4638
+Forgetting 4.4333
+Backward  -4.2889
+```
+
+So với cấu hình tốt nhất chưa cân bằng batch:
+
+| Cấu hình | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|
+| CTIRD weighted, shuffle cũ | 88.3000 | 88.5600 | 98.0700 | 0.4627 | 4.2778 | -4.0778 |
+| Class-balanced CRCT | 88.2400 | 88.3100 | 98.2400 | 0.4638 | 4.4333 | -4.2889 |
+
+Nhận xét:
+
+- `Acc@1` giảm `0.25` và `Acc@task` giảm `0.06`, nên bản này chưa thay thế cấu hình tốt nhất.
+- `Acc@5` tăng `0.17` lên `98.24`, là mức cao nhất trong các lần thử hiện tại.
+- Điều này cho thấy cân bằng batch giúp giữ các lớp đúng trong nhóm dự đoán đầu, nhưng lịch batch quá cứng làm giảm khả năng chọn đúng top-1.
+- Nguyên nhân có thể kiểm soát được: thứ tự lớp trong mỗi vòng luôn cố định từ nhãn nhỏ tới nhãn lớn. Khi batch 120 cắt chu kỳ 100 lớp, các lớp được lặp thêm tạo thành cụm nhãn liên tiếp và cũng có thể tạo thành cụm task liên tiếp.
+
+Cải tiến tiếp theo:
+
+- Vẫn shuffle mẫu bên trong từng lớp.
+- Mỗi chu kỳ đi qua tất cả lớp dùng một hoán vị lớp ngẫu nhiên độc lập.
+- Mỗi batch vẫn chứa số mẫu mỗi lớp lệch tối đa một, nhưng lớp được lấy thêm không còn bị cố định theo nhãn/task.
+- Không thêm tham số mới; cờ `--crct_balanced_batches` dùng thuật toán class-order ngẫu nhiên đã sửa.
+- Mọi thành phần CFS, CTIRD, số epoch, số replay sample và loss tiếp tục được giữ nguyên để đo riêng tác động này.
