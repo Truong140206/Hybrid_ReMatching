@@ -1835,3 +1835,30 @@ Kết luận:
 - Cả `0.15` và `0.25` đều không vượt `0.20`; mức `0.20` tốt nhất ở Acc@task, Acc@1, loss, forgetting và backward.
 - Dừng sweep `con` và cố định lại `con=0.20`.
 - Hướng tiếp theo là giảm `ca_lr` từ `0.005` xuống `0.004`, vẫn giữ CRCT 3 epochs. Mục tiêu là làm classifier correction mềm hơn sau khi CRCT 4 epochs đã cho dấu hiệu over-correction.
+
+## 46. Kết quả classifier-correction ca_lr=0.004
+
+Giữ cấu hình CTIRD tốt nhất và giảm learning rate của classifier correction từ `0.005` xuống `0.004`.
+
+```text
+[Average accuracy till task10]
+Acc@task 88.3400
+Acc@1    88.5600
+Acc@5    98.0700
+Loss     0.4606
+Forgetting 4.1889
+Backward  -3.9444
+```
+
+| ca_lr | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0.005 | 88.3000 | 88.5600 | 98.0700 | 0.4627 | 4.2778 | -4.0778 |
+| 0.004 | 88.3400 | 88.5600 | 98.0700 | 0.4606 | 4.1889 | -3.9444 |
+
+Kết luận:
+
+- Giữ nguyên Acc@1 và Acc@5.
+- Acc@task tăng `0.04`.
+- Loss giảm `0.0021`, forgetting giảm `0.0889`, backward cải thiện `0.1334`.
+- `ca_lr=0.004` thay thế `0.005` làm cấu hình tốt nhất mới theo cân bằng nhiều chỉ số.
+- Kết quả xác nhận classifier correction trước đó hơi mạnh; tiếp tục tinh chỉnh xuống `ca_lr=0.0035` để tìm điểm tối ưu gần vùng này.
