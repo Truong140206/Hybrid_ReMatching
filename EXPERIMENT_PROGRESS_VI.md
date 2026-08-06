@@ -1917,3 +1917,30 @@ Kết luận:
 - Nếu ưu tiên Acc@1, chọn `0.0045`; nếu ưu tiên cân bằng loss/forgetting, `0.004` vẫn tốt hơn rất nhẹ.
 - Chốt `0.0045` làm nền accuracy cho thử nghiệm tiếp theo.
 - Task-energy temperature `0.1` chưa từng được sweep. Thử `0.2` để energy score bớt phụ thuộc duy nhất vào class logit lớn nhất trong mỗi task.
+
+## 49. Kết quả CTIRD task-energy temperature=0.2
+
+Giữ `ca_lr=0.0045` và tăng task-energy temperature từ `0.1` lên `0.2`.
+
+```text
+[Average accuracy till task10]
+Acc@task 88.0100
+Acc@1    88.2800
+Acc@5    98.1000
+Loss     0.4676
+Forgetting 4.5111
+Backward  -4.4667
+```
+
+| Task temperature | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0.1 | 88.3200 | 88.6000 | 98.0700 | 0.4607 | 4.2000 | -3.9444 |
+| 0.2 | 88.0100 | 88.2800 | 98.1000 | 0.4676 | 4.5111 | -4.4667 |
+
+Kết luận:
+
+- Temperature `0.2` giảm Acc@task `0.31` và Acc@1 `0.32`.
+- Loss tăng `0.0069`, forgetting xấu thêm `0.3111`, backward xấu thêm `0.5223`.
+- Acc@5 tăng nhẹ `0.03` nhưng không bù được suy giảm còn lại.
+- Energy score mềm hơn đã đưa quá nhiều class logit phụ vào task score; giữ `0.1` làm mốc.
+- Thử phía ngược lại `0.05`, gần phép chọn max-logit hơn. Nếu không vượt `0.1` thì dừng sweep task temperature.
