@@ -736,7 +736,8 @@ def _crct_old_class_distillation_loss(student_logits, teacher_logits, targets,
 
 def _crct_replay_reliability_weights(teacher_logits, targets, seen_classes,
                                      old_classes, floor=0.25, power=1.0,
-                                     preserve_mass=False):
+                                     preserve_mass=False,
+                                     preserve_class_mass=False):
     """Weight uncertain old-class synthetic samples without weakening new-class learning."""
     weights = teacher_logits.new_ones(targets.shape, dtype=torch.float32)
     if teacher_logits.numel() == 0 or not old_classes or not seen_classes:
@@ -763,7 +764,17 @@ def _crct_replay_reliability_weights(teacher_logits, targets, seen_classes,
         floor = min(1.0, max(0.0, float(floor)))
         power = max(0.0, float(power))
         old_weights = floor + (1.0 - floor) * target_confidence.pow(power)
-        if bool(preserve_mass):
+        if bool(preserve_class_mass):
+            old_targets = targets[old_sample_mask]
+            normalized_weights = old_weights.clone()
+            for class_id in torch.unique(old_targets):
+                class_sample_mask = old_targets == class_id
+                class_weights = old_weights[class_sample_mask]
+                normalized_weights[class_sample_mask] = (
+                    class_weights / class_weights.mean().clamp_min(1e-12)
+                )
+            old_weights = normalized_weights
+        elif bool(preserve_mass):
             old_weights = old_weights / old_weights.mean().clamp_min(1e-12)
         weights[old_sample_mask] = old_weights
 
@@ -849,6 +860,8 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
         0.0, float(getattr(args, 'crct_reliability_power', 1.0)))
     reliability_preserve_mass = bool(
         getattr(args, 'crct_reliability_preserve_mass', False))
+    reliability_preserve_class_mass = bool(
+        getattr(args, 'crct_reliability_preserve_class_mass', False))
     old_row_lr_scale = min(
         1.0, max(0.0, float(getattr(args, 'crct_old_row_lr_scale', 1.0))))
 
@@ -877,6 +890,7 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
             'reliability_floor=', reliability_floor,
             'reliability_power=', reliability_power,
             'reliability_preserve_mass=', reliability_preserve_mass,
+            'reliability_preserve_class_mass=', reliability_preserve_class_mass,
             'old_row_lr_scale=', old_row_lr_scale,
         )
 
@@ -1017,6 +1031,7 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
                         floor=reliability_floor,
                         power=reliability_power,
                         preserve_mass=reliability_preserve_mass,
+                        preserve_class_mass=reliability_preserve_class_mass,
                     )
                 )
                 per_sample_ce = F.cross_entropy(logits, tgt, reduction='none')

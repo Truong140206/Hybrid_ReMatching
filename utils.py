@@ -1110,6 +1110,20 @@ def class_balanced_replay_order(labels):
 
 
 @torch.no_grad()
+def _sample_gaussian_core_features(mean, cov, num_samples, args, device):
+    """Select high-density Gaussian samples to anchor each class replay distribution."""
+    if num_samples <= 0:
+        return mean.new_empty((0, mean.numel())).to(device)
+
+    multiplier = max(1, int(getattr(args, 'cfs_core_multiplier', 4)))
+    candidate_count = max(num_samples, num_samples * multiplier)
+    distribution = torch.distributions.MultivariateNormal(mean.float(), cov.float())
+    candidates = distribution.sample(sample_shape=(candidate_count,)).float().to(device)
+    return _filter_cfs_candidate_features(
+        candidates, mean, cov, num_samples, args, device)
+
+
+@torch.no_grad()
 def sample_boundary_aware_cfs_features(mean, cov, num_samples, args, device, model,
                                        target_cls, seen_classes, cfs_model=None):
     """Mix diverse CFS replay with in-distribution samples near the decision boundary."""
@@ -1118,18 +1132,25 @@ def sample_boundary_aware_cfs_features(mean, cov, num_samples, args, device, mod
 
     boundary_ratio = float(getattr(args, 'cfs_boundary_ratio', 0.5))
     boundary_ratio = max(0.0, min(1.0, boundary_ratio))
-    hard_count = min(num_samples, int(round(num_samples * boundary_ratio)))
-    diverse_count = num_samples - hard_count
-    if hard_count <= 0:
-        return sample_cfs_features(mean, cov, num_samples, args, device, cfs_model=cfs_model)
-
+    core_ratio = float(getattr(args, 'cfs_core_replay_ratio', 0.0))
+    core_ratio = max(0.0, min(1.0, core_ratio))
+    core_count = min(num_samples, int(round(num_samples * core_ratio)))
+    hard_count = min(
+        num_samples - core_count,
+        int(round(num_samples * boundary_ratio)),
+    )
+    diverse_count = num_samples - core_count - hard_count
+    core = _sample_gaussian_core_features(
+        mean, cov, core_count, args, device)
     diverse = sample_cfs_features(
         mean, cov, diverse_count, args, device, cfs_model=cfs_model)
+    if hard_count <= 0:
+        return torch.cat([core, diverse], dim=0)
     seen_classes = sorted({int(cls_id) for cls_id in seen_classes})
     if int(target_cls) not in seen_classes or len(seen_classes) < 2:
         fallback = sample_cfs_features(
             mean, cov, hard_count, args, device, cfs_model=cfs_model)
-        return torch.cat([diverse, fallback], dim=0)
+        return torch.cat([core, diverse, fallback], dim=0)
 
     multiplier = max(1, int(getattr(args, 'cfs_boundary_multiplier', 3)))
     candidate_count = max(hard_count, num_samples * multiplier)
@@ -1177,7 +1198,7 @@ def sample_boundary_aware_cfs_features(mean, cov, num_samples, args, device, mod
         boundary_score = margins.abs().masked_fill(~in_distribution, float('inf'))
         hard_ids = torch.topk(boundary_score, k=hard_count, largest=False).indices
     boundary = candidates.index_select(0, hard_ids)
-    return torch.cat([diverse.float().to(device), boundary], dim=0)
+    return torch.cat([core, diverse.float().to(device), boundary], dim=0)
 
 def init_distributed_mode(args):
     if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:

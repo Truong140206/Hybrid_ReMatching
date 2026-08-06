@@ -28,7 +28,7 @@ case "${MODE}" in
     CRCT_EPOCHS=1
     CFS_EPOCHS=1
     MASTER_PORT="${MASTER_PORT:-29525}"
-    RUN_NAME="cifar100_spcrct_v2_smoke_seed${SEED}"
+    RUN_NAME="cifar100_spcrct_v3_smoke_seed${SEED}"
     ;;
   full)
     NUM_TASKS=10
@@ -36,7 +36,7 @@ case "${MODE}" in
     CRCT_EPOCHS=3
     CFS_EPOCHS=20
     MASTER_PORT="${MASTER_PORT:-29526}"
-    RUN_NAME="cifar100_spcrct_v2_massrel_norm05_seed${SEED}"
+    RUN_NAME="cifar100_spcrct_v3_classmass_core25_seed${SEED}"
     ;;
   *)
     echo "Usage: $0 [smoke|full]" >&2
@@ -89,6 +89,8 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --cfs_boundary_ratio 0.25 \
   --cfs_boundary_multiplier 3 \
   --cfs_boundary_density_quantile 0.9 \
+  --cfs_core_replay_ratio 0.25 \
+  --cfs_core_multiplier 4 \
   --crct_use_all_samples \
   --ctird_task_selection task_energy \
   --ctird_task_temperature 0.1 \
@@ -99,10 +101,8 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --crct_reliability_weighting \
   --crct_reliability_floor 0.5 \
   --crct_reliability_power 1.0 \
-  --crct_reliability_preserve_mass \
+  --crct_reliability_preserve_class_mass \
   --crct_old_row_lr_scale 1.0 \
-  --continual_norm_blend \
-  --continual_norm_update_ratio 0.5 \
   --output_dir "${OUTPUT_DIR}" \
   2>&1 | tee "${LOG_PATH}"
 

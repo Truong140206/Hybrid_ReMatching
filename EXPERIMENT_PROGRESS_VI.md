@@ -2018,3 +2018,47 @@ Thiết kế v2:
 4. Giữ `crct_head_only`, CFS, boundary replay và CTIRD không đổi để so sánh trực tiếp với v1.
 
 Tiêu chí vẫn giữ nguyên: chỉ coi là cải thiện thành công khi Acc@task cao hơn `88.01` và forgetting thấp hơn `3.5889` trên cùng seed và thiết lập.
+
+## 52. Kết quả SP-CRCT v2 và thiết kế core replay v3
+
+Kết quả v2:
+
+```text
+Acc@task 88.5400 | Acc@1 88.3400 | Acc@5 98.0000
+Loss 0.4709 | Forgetting 4.4444 | Backward -4.4000
+```
+
+V2 giảm forgetting `0.8112` so với v1 và tăng Acc@1 `0.10`, nhưng vẫn chưa thắng bản gốc về forgetting. Accuracy cuối theo từng task:
+
+```text
+Task 1..10 Acc@1:
+90.8, 85.9, 88.6, 86.9, 86.2, 89.4, 87.8, 88.9, 91.8, 87.1
+```
+
+Các task yếu phân bố rải rác ở task 2, 4, 5 và 10; task 1 và 9 vẫn cao. Đây không phải mẫu suy giảm đơn điệu theo tuổi task, mà phù hợp hơn với sai lệch phân phối theo lớp/task.
+
+Log CRCT cuối cho thấy:
+
+```text
+ReplayW = 1.0000
+OldConf ≈ 0.883
+Synthetic CRCT Acc@1 ≈ 98.76
+Real final Acc@1 = 88.34
+fc_norm delta_before = 0.0
+```
+
+Kết luận:
+
+- Mass preservation v2 hoạt động đúng.
+- `fc_norm` không có cập nhật trong cấu hình ViT này, nên norm consolidation không tạo tác dụng và được bỏ khỏi v3.
+- Khoảng cách gần 10 điểm giữa synthetic CRCT accuracy và real accuracy cho thấy nút thắt là synthetic-real feature mismatch, không phải thiếu khả năng fit replay.
+- Chuẩn hóa reliability toàn cục vẫn có thể chuyển loss từ lớp khó confidence thấp sang lớp dễ confidence cao, làm một số task bị bảo vệ kém.
+
+Thiết kế v3:
+
+1. `--crct_reliability_preserve_class_mass`: chuẩn hóa reliability riêng trong từng lớp cũ, giữ tổng CE của mỗi lớp thay vì chỉ giữ tổng toàn bộ lớp cũ.
+2. `--cfs_core_replay_ratio 0.25`: mỗi lớp dùng 25% mẫu Gaussian mật độ cao gần lõi phân phối thật.
+3. Giữ 50% mẫu CFS đa dạng để bao phủ feature space và 25% mẫu sát decision boundary để duy trì khả năng phân biệt.
+4. Bỏ continual norm blend; giữ old-row scale `1.0`, head-only CRCT, CTIRD và tổng số replay sample không đổi.
+
+V3 kiểm tra trực tiếp giả thuyết rằng replay quá thiên về mẫu đa dạng/biên làm classifier fit synthetic rất cao nhưng tổng quát hóa kém lên feature thật.
