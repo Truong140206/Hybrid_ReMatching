@@ -1,0 +1,911 @@
+% Bản slide tự học chi tiết về quá trình cải tiến HRM-PET.
+% Biên dịch bằng XeLaTeX, chạy hai lần:
+% xelatex -interaction=nonstopmode BAO_CAO_HRM_PET_TU_HOC_CHI_TIET.tex
+\documentclass[aspectratio=169,11pt]{beamer}
+
+\usepackage{fontspec}
+\usepackage{amsmath,amssymb}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,fit}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{booktabs,tabularx,array,colortbl}
+\usepackage{ragged2e}
+
+\setsansfont{TeX Gyre Heros}
+\renewcommand{\familydefault}{\sfdefault}
+
+\definecolor{HRMBlue}{HTML}{2563EB}
+\definecolor{HRMCyan}{HTML}{DDF4FF}
+\definecolor{HRMDark}{HTML}{111827}
+\definecolor{HRMGray}{HTML}{6B7280}
+\definecolor{HRMLight}{HTML}{F3F4F6}
+\definecolor{HRMOrange}{HTML}{F59E0B}
+\definecolor{HRMGreen}{HTML}{059669}
+\definecolor{HRMRed}{HTML}{DC2626}
+
+\setbeamercolor{normal text}{fg=HRMDark,bg=white}
+\setbeamercolor{frametitle}{fg=HRMDark,bg=white}
+\setbeamercolor{structure}{fg=HRMBlue}
+\setbeamercolor{alerted text}{fg=HRMBlue}
+\setbeamercolor{block title}{fg=HRMDark,bg=HRMCyan}
+\setbeamercolor{block body}{fg=HRMDark,bg=HRMLight}
+\setbeamerfont{frametitle}{size=\LARGE,series=\mdseries}
+\setbeamerfont{title}{size=\Huge,series=\mdseries}
+\setbeamerfont{subtitle}{size=\large}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{itemize item}{\color{HRMBlue}\raise0.15ex\hbox{\small$\bullet$}}
+\setbeamertemplate{itemize subitem}{\color{HRMGray}\raise0.15ex\hbox{\scriptsize$\bullet$}}
+\setbeamertemplate{frametitle}{%
+  \vspace{0.25cm}\hspace{0.1cm}\insertframetitle\par
+  \vspace{0.05cm}\hspace{0.1cm}\color{HRMBlue}\rule{1.15cm}{1.5pt}
+}
+\setbeamertemplate{footline}{%
+  \leavevmode
+  \hbox{%
+    \begin{beamercolorbox}[wd=.86\paperwidth,ht=2.8ex,dp=1.2ex,leftskip=.4cm]{normal text}
+      \color{HRMGray}\scriptsize Tài liệu tự học · Cải tiến HRM-PET
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=.14\paperwidth,ht=2.8ex,dp=1.2ex,rightskip=.4cm plus1fil]{normal text}
+      \color{HRMGray}\scriptsize\insertframenumber/\inserttotalframenumber
+    \end{beamercolorbox}%
+  }
+}
+
+\tikzset{
+  flow/.style={draw=HRMGray!35,fill=HRMLight,rounded corners=2pt,
+    minimum width=1.9cm,minimum height=0.95cm,align=center,font=\small,inner sep=4pt},
+  flownew/.style={flow,draw=HRMBlue,fill=HRMCyan,line width=0.9pt,font=\small\bfseries},
+  flowwarn/.style={flow,draw=HRMOrange,fill=HRMOrange!12,line width=0.9pt},
+  arrow/.style={-{Latex[length=2.1mm]},draw=HRMGray,line width=0.8pt},
+  dashedarrow/.style={arrow,dashed},
+  smalllabel/.style={font=\scriptsize\bfseries,text=HRMGray},
+  newlabel/.style={font=\scriptsize\bfseries,text=HRMBlue}
+}
+
+\newcommand{\sourceNote}[1]{\note{[Sources]\par #1\par[/Sources]}}
+\newcommand{\remember}[1]{%
+  \vfill
+  \begin{beamercolorbox}[wd=\textwidth,sep=0.22cm,rounded=true]{block body}
+    \textbf{Ý cần nhớ:} #1
+  \end{beamercolorbox}
+}
+\newcommand{\term}[2]{\textbf{#1}: #2}
+\newcommand{\sectionframe}[2]{%
+  \begin{frame}[plain]
+    \vfill
+    {\large\color{HRMBlue}#1}\par\vspace{0.35cm}
+    {\Huge\color{HRMDark}#2}\par
+    \vfill
+  \end{frame}
+}
+
+\title{Cải tiến HRM-PET\\Từ cơ chế gốc đến cấu hình Acc@1 88.60\%}
+\subtitle{Tài liệu tự học chi tiết · Split-CIFAR100 · 10 task · seed 42}
+\author{}
+\date{}
+
+\begin{document}
+
+% 1
+\begin{frame}[plain]
+  \vspace{0.35cm}
+  {\large\color{HRMGray}BÁO CÁO TỰ HỌC CHI TIẾT}\par
+  \vspace{0.85cm}
+  {\usebeamerfont{title}\color{HRMDark}\inserttitle}\par
+  \vspace{0.7cm}
+  {\usebeamerfont{subtitle}\color{HRMGray}\insertsubtitle}
+  \sourceNote{Báo cáo tổng kết, nhật ký thí nghiệm và hai paper nguồn.}
+\end{frame}
+
+% 2
+\begin{frame}{Đọc tài liệu này theo bốn câu hỏi cố định}
+  \vspace{0.35cm}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.23\textwidth}
+      {\Large\bfseries\color{HRMBlue}1}\par\vspace{0.15cm}
+      \textbf{Bản gốc làm gì?}\par
+      Hiểu đúng HRM-PET, CTIRD và CRCT trước khi nói đến cải tiến.
+    \end{column}
+    \begin{column}{0.23\textwidth}
+      {\Large\bfseries\color{HRMBlue}2}\par\vspace{0.15cm}
+      \textbf{Vấn đề ở đâu?}\par
+      Xác định hạn chế từ paper, code thực tế và kết quả chạy.
+    \end{column}
+    \begin{column}{0.23\textwidth}
+      {\Large\bfseries\color{HRMBlue}3}\par\vspace{0.15cm}
+      \textbf{Ta sửa thế nào?}\par
+      Giải thích CFS, full/boundary replay và task-energy CTIRD.
+    \end{column}
+    \begin{column}{0.23\textwidth}
+      {\Large\bfseries\color{HRMBlue}4}\par\vspace{0.15cm}
+      \textbf{Tác dụng ra sao?}\par
+      Phân biệt kỳ vọng lý thuyết với kết quả ablation thực tế.
+    \end{column}
+  \end{columns}
+  \remember{Không xem đây là một mô hình hoàn toàn mới. Đây là các cải tiến có chủ đích trên hai vị trí cụ thể của HRM-PET.}
+\end{frame}
+
+\sectionframe{PHẦN I}{Hiểu HRM-PET gốc trước khi cải tiến}
+
+% 4
+\begin{frame}{Bài toán: học lớp mới mà không quên lớp cũ}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+      {\large\bfseries Thiết lập Split-CIFAR100}\par\vspace{0.25cm}
+      \begin{itemize}\setlength\itemsep{0.35cm}
+        \item 100 lớp được chia thành 10 task liên tiếp.
+        \item Mỗi task đưa vào 10 lớp mới.
+        \item Khi học task sau, dữ liệu ảnh của task trước không còn được dùng trực tiếp.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      {\large\bfseries Hai khó khăn chính}\par\vspace{0.25cm}
+      \begin{itemize}\setlength\itemsep{0.35cm}
+        \item \textbf{Forgetting}: cập nhật theo lớp mới làm hiệu năng lớp cũ giảm.
+        \item \textbf{Task mismatch}: model có nhiều LoRA; chọn sai LoRA làm dự đoán sai dù backbone tốt.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+  \remember{HRM-PET xử lý đồng thời hai chuyện: giữ tri thức qua các task và sửa việc chọn nhầm tham số LoRA.}
+  \sourceNote{HRM-PET paper, problem formulation and experiments.}
+\end{frame}
+
+% 5
+\begin{frame}{Từ điển nhanh: các thành phần cần nhớ}
+  \small
+  \begin{tabularx}{\textwidth}{>{\bfseries}p{2.5cm} X}
+    \toprule
+    Thuật ngữ & Ý nghĩa trong hệ thống \\
+    \midrule
+    ViT backbone & Mô hình thị giác tiền huấn luyện, phần lớn được đóng băng. \\
+    LoRA/PET & Khối tham số nhỏ cho từng task; giúp thích nghi mà không fine-tune toàn bộ ViT. \\
+    TII & Task Identity Inference: dự đoán mẫu thuộc task nào để chọn LoRA tương ứng. \\
+    DRM/CRM & Hai cơ chế re-matching ở lúc suy luận để sửa trường hợp chọn nhầm task/LoRA. \\
+    CTIRD & Distillation quan hệ giữa các mẫu qua LoRA hiện tại và LoRA cũ. \\
+    Feature replay & Feature tổng hợp đại diện lớp cũ; không phải ảnh gốc. \\
+    CRCT & Classifier correction: học lại classifier bằng feature replay để cân bằng lớp cũ/mới. \\
+    \bottomrule
+  \end{tabularx}
+  \remember{CFS tác động lên feature replay/CRCT; task energy tác động lên CTIRD. DRM/CRM và backbone được giữ nguyên.}
+\end{frame}
+
+% 6
+\begin{frame}{HRM-PET gốc khi suy luận: chọn LoRA rồi re-match}
+  \centering
+  \vspace{0.35cm}
+  \begin{tikzpicture}[node distance=0.38cm]
+    \node[flow] (a) {Ảnh kiểm tra\\$x$};
+    \node[flow] (b) [right=of a] {TII dự đoán\\task $\hat t_f$};
+    \node[flow] (c) [right=of b] {Gắn LoRA\\$p_{\hat t_f}$};
+    \node[flow] (d) [right=of c] {Classifier\\dự đoán lớp};
+    \node[flownew] (e) [right=of d] {DRM/CRM\\re-match};
+    \node[flow] (f) [right=of e] {Kết quả\\cuối};
+    \foreach \x/\y in {a/b,b/c,c/d,d/e,e/f} \draw[arrow] (\x)--(\y);
+  \end{tikzpicture}
+
+  \vspace{0.7cm}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+      \term{DRM}{dùng nhãn lớp dự đoán để suy ra lại task, sau đó thử LoRA tương ứng.}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \term{CRM}{khi dự đoán thiếu tin cậy, so sánh confidence của một số LoRA ứng viên.}
+    \end{column}
+  \end{columns}
+  \remember{Các cải tiến của chúng ta không thay luồng suy luận này.}
+  \sourceNote{HRM-PET paper, Section 3.2: Direct and Confidence-based Re-matching.}
+\end{frame}
+
+% 7
+\begin{frame}{HRM-PET gốc khi huấn luyện: hai nhánh bù dữ liệu cũ}
+  \centering
+  \vspace{0.25cm}
+  \begin{tikzpicture}[node distance=0.42cm]
+    \node[flow] (a) {Dữ liệu\\task mới};
+    \node[flow] (b) [right=of a] {ViT + LoRA\\task hiện tại};
+    \node[flownew] (c) [above right=0.25cm and 0.55cm of b] {CTIRD\\giữ quan hệ};
+    \node[flownew] (d) [below right=0.25cm and 0.55cm of b] {Lưu thống kê\\feature/lớp};
+    \node[flow] (e) [right=1.0cm of d] {Gaussian\\feature replay};
+    \node[flow] (f) [right=of e] {CRCT sửa\\classifier};
+    \draw[arrow] (a)--(b);
+    \draw[arrow] (b)--(c);
+    \draw[arrow] (b)--(d);
+    \draw[arrow] (d)--(e);
+    \draw[arrow] (e)--(f);
+  \end{tikzpicture}
+
+  \vspace{0.55cm}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+      \textbf{Nhánh CTIRD}\par
+      Ép LoRA mới học quan hệ giữa các mẫu tương thích với tri thức chia sẻ từ LoRA cũ.
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Nhánh replay + CRCT}\par
+      Mô phỏng feature lớp cũ rồi dùng chúng để cân lại classifier sau mỗi task.
+    \end{column}
+  \end{columns}
+  \remember{Hai nhánh độc lập về vai trò: CTIRD định hình feature; CRCT sửa quyết định phân lớp.}
+\end{frame}
+
+% 8
+\begin{frame}{CTIRD gốc: giữ cấu trúc quan hệ giữa các mẫu}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.52\textwidth}
+      Với batch $\{x_i\}_{i=1}^{B}$, LoRA hiện tại tạo feature $e_t(x_i)$ và ma trận quan hệ:
+      \[
+        W_t^{ij}=\langle \bar e_t(x_i),\bar e_t(x_j)\rangle.
+      \]
+      Một LoRA cũ $p_k$ tạo ma trận $W_k$ tương tự. CTIRD căn chỉnh các phân phối quan hệ:
+      \[
+        \mathcal L_{\mathrm{CTIRD}}
+        =\sum_{k\in\mathcal S}\mathrm{KL}
+        \bigl(\mathrm{Norm}(W_t)\,\|\,\mathrm{Norm}(W_k)\bigr).
+      \]
+    \end{column}
+    \begin{column}{0.44\textwidth}
+      \begin{block}{Trực giác}
+        Không bắt feature mới giống hệt feature cũ. Chỉ yêu cầu các mẫu gần/xa nhau theo cấu trúc tương tự.
+      \end{block}
+      \vspace{0.25cm}
+      \begin{block}{Mục tiêu}
+        Học tri thức dùng chung giữa task, để khi gắn nhầm LoRA model vẫn giữ được vùng chú ý và quan hệ hữu ích.
+      \end{block}
+    \end{column}
+  \end{columns}
+  \remember{CTIRD mạnh hay nhiễu phụ thuộc trực tiếp vào việc tập source LoRA $\mathcal S$ có liên quan hay không.}
+  \sourceNote{HRM-PET paper, Section 3.3 and Eq. 8--11.}
+\end{frame}
+
+% 9
+\begin{frame}{Feature replay gốc: lưu phân phối, không lưu ảnh}
+  Với feature lớp $c$, code lưu trung bình và covariance:
+  \[
+    \mu_c=\frac{1}{N_c}\sum_i z_i,
+    \qquad
+    \Sigma_c=\frac{1}{N_c-1}\sum_i(z_i-\mu_c)(z_i-\mu_c)^\top.
+  \]
+  Khi correction, feature giả được lấy mẫu:
+  \[
+    \tilde z_c\sim\mathcal N(\mu_c,\Sigma_c).
+  \]
+
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Ưu điểm}
+        Nhẹ hơn lưu ảnh; không cần chạy backbone cho replay; phù hợp data-free/replay-free ở cấp ảnh.
+      \end{block}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Giới hạn}
+        Mean/covariance chỉ mô tả thô phân phối. Nhiều mẫu Gaussian có thể gần nhau và cung cấp gradient lặp lại.
+      \end{block}
+    \end{column}
+  \end{columns}
+  \remember{CFS không thay Gaussian; nó chọn tốt hơn trong số các mẫu Gaussian có thể sinh.}
+  \sourceNote{HRM-PET code: hide\_tii\_engine.py and hrm\_lora\_wtp\_and\_tap\_engine.py.}
+\end{frame}
+
+% 10
+\begin{frame}{CRCT gốc: học lại classifier bằng feature tổng hợp}
+  \centering
+  \begin{tikzpicture}[node distance=0.55cm]
+    \node[flow] (a) {Thống kê\\từng lớp};
+    \node[flow] (b) [right=of a] {Sinh $5\times$ batch\\mẫu/lớp};
+    \node[flow] (c) [right=of b] {Trộn tất cả\\lớp đã thấy};
+    \node[flow] (d) [right=of c] {Chỉ mở\\classifier head};
+    \node[flow] (e) [right=of d] {Cross-entropy\\correction};
+    \foreach \x/\y in {a/b,b/c,c/d,d/e} \draw[arrow] (\x)--(\y);
+  \end{tikzpicture}
+
+  \vspace{0.6cm}
+  \begin{itemize}\setlength\itemsep{0.3cm}
+    \item Mỗi lớp sinh \texttt{num\_sampled\_pcls = batch\_size $\times$ 5} feature.
+    \item Backbone/LoRA không cần cập nhật ở bước này; CRCT tập trung sửa classifier bị thiên về lớp mới.
+    \item Code cũ đặt số vòng replay theo \texttt{crct\_num}, không bảo đảm đi qua toàn bộ tensor replay đã sinh.
+  \end{itemize}
+  \remember{Full replay sau này sửa đúng điểm cuối: số vòng phải phủ hết số batch thực tế trong replay tensor.}
+\end{frame}
+
+% 11
+\begin{frame}{Ba nút thắt dẫn đến toàn bộ phần cải tiến}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.31\textwidth}
+      {\Large\bfseries\color{HRMBlue}1}\par
+      \textbf{Replay chưa chọn lọc}\par\vspace{0.25cm}
+      Gaussian sample hợp lệ nhưng có thể trùng nhau, ít đại diện cho chi tiết phân phối.
+    \end{column}
+    \begin{column}{0.31\textwidth}
+      {\Large\bfseries\color{HRMBlue}2}\par
+      \textbf{Replay chưa dùng hết}\par\vspace{0.25cm}
+      CRCT đã sinh nhiều feature nhưng số vòng cũ có thể bỏ lại phần cuối.
+    \end{column}
+    \begin{column}{0.31\textwidth}
+      {\Large\bfseries\color{HRMBlue}3}\par
+      \textbf{CTIRD chọn nguồn nhiễu}\par\vspace{0.25cm}
+      Code baseline chọn class logit thấp rồi map sang task; source có thể ít liên quan hoặc trùng.
+    \end{column}
+  \end{columns}
+  \remember{CFS giải quyết nút 1; full/boundary replay giải quyết nút 2; task-energy CTIRD giải quyết nút 3.}
+\end{frame}
+
+\sectionframe{PHẦN II}{Cải thiện feature replay và CRCT}
+
+% 13
+\begin{frame}{CFS trong paper nguồn xuất phát từ vấn đề gì?}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+      {\large\bfseries Pipeline paper nguồn}\par\vspace{0.3cm}
+      \begin{enumerate}
+        \item Mô hình hóa feature thật theo Gaussian.
+        \item Dùng CFS chọn feature mục tiêu đa dạng.
+        \item Dùng model inversion sinh ảnh có feature khớp mục tiêu.
+      \end{enumerate}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      {\large\bfseries Ý tưởng cốt lõi}\par\vspace{0.3cm}
+      Gaussian chỉ giữ mean/variance. Một MLP contrastive được học từ feature thật để tạo không gian mà diversity dễ đo hơn; sau đó chọn candidate trải đều trong không gian đó.
+    \end{column}
+  \end{columns}
+  \remember{Ta chuyển giao phần ``contrastive feature selection'', không bê nguyên model inversion hay sinh ảnh.}
+  \sourceNote{Model Inversion with Layer-wise Optimization, Section 3.3.}
+\end{frame}
+
+% 14
+\begin{frame}{Bước 1 của CFS: học một MLP contrastive cho từng lớp}
+  Với feature thật $z_i$ của lớp $c$, MLP hai tầng tạo embedding chuẩn hóa:
+  \[
+    u_i=\frac{f_{\mathrm{CFS}}(z_i)}{\|f_{\mathrm{CFS}}(z_i)\|_2}.
+  \]
+  Code tối thiểu hóa mức tương đồng với các feature khác trong batch:
+  \[
+    \mathcal L_{\mathrm{CFS}}
+    =\frac{1}{B}\sum_i
+    \log\sum_{j\ne i}\exp\left(\frac{u_i^\top u_j}{\tau}\right).
+  \]
+
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+      \textbf{Khi tối thiểu hóa loss}\par
+      Embedding của các feature trong cùng lớp bị đẩy ra xa nhau trên hypersphere.
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Thông số triển khai}\par
+      MLP hai tầng, LeakyReLU, hidden tối đa 512, SGD; có thể giới hạn tối đa 1024 feature/lớp.
+    \end{column}
+  \end{columns}
+  \remember{MLP không phải classifier. Nó chỉ tạo một thước đo diversity tốt hơn để chọn replay.}
+  \sourceNote{utils.py: CFSContrastiveMLP and train\_cfs\_model; paper CFS Eq. 6.}
+\end{frame}
+
+% 15
+\begin{frame}{Bước 2 của CFS: chọn tham lam các candidate ít giống nhau}
+  \centering
+  \begin{tikzpicture}[node distance=0.42cm]
+    \node[flow] (a) {Sinh $M$ candidate\\từ Gaussian};
+    \node[flow] (b) [right=of a] {Chiếu candidate\\qua MLP CFS};
+    \node[flow] (c) [right=of b] {Khởi tạo\\một mẫu};
+    \node[flownew] (d) [right=of c] {Chọn mẫu có\\similarity TB nhỏ nhất};
+    \node[flownew] (e) [right=of d] {Lặp đến đủ\\số replay};
+    \foreach \x/\y in {a/b,b/c,c/d,d/e} \draw[arrow] (\x)--(\y);
+  \end{tikzpicture}
+
+  \vspace{0.55cm}
+  Nếu tập đã chọn là $S$, candidate tiếp theo thỏa:
+  \[
+    z^*=\arg\min_{z\in C\setminus S}
+    \frac{1}{|S|}\sum_{s\in S}
+    \exp\left(\frac{f(z)^\top f(s)}{\tau}\right).
+  \]
+  \begin{itemize}\setlength\itemsep{0.2cm}
+    \item \texttt{candidate\_multiplier} điều khiển số candidate so với số replay cần chọn.
+    \item Bản tốt nhất dùng khởi tạo ngẫu nhiên; mean initialization và distribution filter không cải thiện.
+  \end{itemize}
+  \remember{CFS không tạo thêm nhãn hay lớp mới; nó chỉ chọn subset đa dạng hơn trong cùng phân phối lớp.}
+\end{frame}
+
+% 16
+\begin{frame}{CFS được gắn vào HRM-PET ở đâu?}
+  \centering
+  \vspace{0.35cm}
+  \begin{tikzpicture}[node distance=0.38cm]
+    \node[flow] (a) {Feature thật\\theo lớp};
+    \node[flow] (b) [right=of a] {Mean +\\covariance};
+    \node[flow] (c) [right=of b] {Nhiều Gaussian\\candidate};
+    \node[flownew] (d) [right=of c] {CFS chọn\\subset đa dạng};
+    \node[flow] (e) [right=of d] {Replay tensor\\có nhãn lớp};
+    \node[flow] (f) [right=of e] {CRCT sửa\\classifier};
+    \foreach \x/\y in {a/b,b/c,c/d,d/e,e/f} \draw[arrow] (\x)--(\y);
+  \end{tikzpicture}
+
+  \vspace{0.65cm}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+      \textbf{Áp dụng trong cả hai engine}\par
+      TII engine và LoRA engine đều có bước thống kê feature và classifier correction, nên cùng gọi hàm sampling CFS.
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Không thay đổi}\par
+      Không đổi ViT, LoRA, dữ liệu ảnh, DRM/CRM và không thêm chi phí CFS khi inference.
+    \end{column}
+  \end{columns}
+  \remember{Đây là ``áp dụng ý tưởng CFS vào feature replay'', không nên trình bày là sao chép nguyên pipeline paper nguồn.}
+\end{frame}
+
+% 17
+\begin{frame}{Full replay: sửa việc CRCT sinh nhiều nhưng dùng chưa hết}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.47\textwidth}
+      {\large\bfseries Code cũ}\par\vspace{0.25cm}
+      \[
+        \texttt{replay\_iterations}=\texttt{crct\_num}.
+      \]
+      Số vòng gắn với số lớp cũ, trong khi tensor replay chứa feature của toàn bộ lớp đã thấy. Phần cuối tensor có thể không được đưa qua optimizer.
+    \end{column}
+    \begin{column}{0.47\textwidth}
+      {\large\bfseries Sau cải tiến}\par\vspace{0.25cm}
+      \[
+        \texttt{replay\_iterations}
+        =\left\lceil\frac{N_{\mathrm{replay}}}{N_{\mathrm{batch}}}\right\rceil.
+      \]
+      Flag \texttt{--crct\_use\_all\_samples} bảo đảm mỗi epoch correction đi qua toàn bộ replay tensor.
+    \end{column}
+  \end{columns}
+  \vspace{0.4cm}
+  \begin{block}{Tác dụng thực tế}
+    Đây là bước tăng rõ đầu tiên: Acc@1 từ 87.88 lên 88.13 và loss giảm từ 0.5222 xuống 0.4696.
+  \end{block}
+  \remember{CFS tăng chất lượng replay; full replay bảo đảm chất lượng đó thực sự được optimizer sử dụng.}
+\end{frame}
+
+% 18
+\begin{frame}{Boundary-aware replay: thêm một tỷ lệ nhỏ mẫu khó}
+  \small
+  Với candidate $z$ của lớp mục tiêu $c$, classifier cho margin:
+  \[
+    m(z)=\ell_c(z)-\max_{j\ne c}\ell_j(z).
+  \]
+  Mẫu gần biên có $|m(z)|$ nhỏ. Trước khi chọn, code bỏ phần đuôi Gaussian quá xa bằng điểm Mahalanobis xấp xỉ:
+  \[
+    d(z)=\operatorname{mean}\left(\frac{(z-\mu_c)^2}{\operatorname{diag}(\Sigma_c)}\right).
+  \]
+
+  \begin{enumerate}\setlength\itemsep{0.16cm}
+    \item Giữ $75\%$ replay theo CFS diversity.
+    \item Sinh thêm candidate từ Gaussian.
+    \item Giữ candidate còn nằm trong vùng phân phối lớp.
+    \item Chọn $25\%$ có margin gần 0 nhất để classifier học vùng dễ nhầm.
+  \end{enumerate}
+  \remember{Boundary replay không thay CFS; nó bổ sung độ khó có kiểm soát. Tỷ lệ lớn quá có thể làm mất diversity.}
+  \sourceNote{utils.py: sample\_boundary\_aware\_cfs\_features; báo cáo ablation boundary ratio.}
+\end{frame}
+
+% 19
+\begin{frame}{Ba thay đổi replay bổ sung nhau, không thay thế nhau}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.31\textwidth}
+      {\Large\bfseries CFS}\par\vspace{0.2cm}
+      \textbf{Câu hỏi:} chọn mẫu nào?\par\vspace{0.2cm}
+      Ưu tiên feature ít trùng và đại diện nhiều vùng của phân phối.
+    \end{column}
+    \begin{column}{0.31\textwidth}
+      {\Large\bfseries Full replay}\par\vspace{0.2cm}
+      \textbf{Câu hỏi:} dùng bao nhiêu?\par\vspace{0.2cm}
+      Đi qua toàn bộ feature đã sinh trong mỗi epoch CRCT.
+    \end{column}
+    \begin{column}{0.31\textwidth}
+      {\Large\bfseries Boundary}\par\vspace{0.2cm}
+      \textbf{Câu hỏi:} có đủ mẫu khó chưa?\par\vspace{0.2cm}
+      Dành một phần replay cho vùng classifier dễ nhầm.
+    \end{column}
+  \end{columns}
+  \remember{Chất lượng, mức sử dụng và độ khó là ba trục khác nhau; vì vậy ba cải tiến có thể cùng bật.}
+\end{frame}
+
+\sectionframe{PHẦN III}{Sửa cách CTIRD chọn và dùng source task}
+
+% 21
+\begin{frame}{Ý định trong paper đúng, nhưng code baseline chọn khác}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+      {\large\bfseries Paper mô tả}\par\vspace{0.25cm}
+      Dùng task classifier để lấy top-K task identity có confidence cao cho mỗi mẫu; chạy các LoRA đó để tạo relation target cho CTIRD.
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      {\large\bfseries Code baseline thực tế}\par\vspace{0.25cm}
+      \texttt{torch.topk(..., largest=False)} trên class logits cũ, rồi map từng class sang task. Hệ quả:
+      \begin{itemize}
+        \item chọn phía logit thấp;
+        \item nhiều class có thể map trùng một task;
+        \item source LoRA có thể ít liên quan.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+  \remember{Ta không bỏ CTIRD. Ta sửa nguồn distillation để CTIRD thực hiện đúng mục tiêu hơn.}
+  \sourceNote{HRM-PET paper, Section 3.3; engine code legacy branch in get\_old\_features/train\_one\_epoch.}
+\end{frame}
+
+% 22
+\begin{frame}{Task energy: xếp hạng trực tiếp ở cấp task}
+  Với task $t$ gồm tập class $\mathcal C_t$, energy được gộp bằng log-sum-exp:
+  \[
+    E_t(x)=T\log\sum_{c\in\mathcal C_t}
+    \exp\left(\frac{\ell_c(x)}{T}\right).
+  \]
+
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+      \textbf{Vì sao log-sum-exp?}\par
+      Nó tổng hợp bằng chứng của tất cả class trong task nhưng vẫn nhấn mạnh class có logit lớn. Nhiệt độ $T$ điều khiển độ sắc.
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Cách chọn}\par
+      Tính một score cho mỗi task cũ, sau đó lấy top-K với \texttt{largest=True}. Mỗi phần tử top-K là một task riêng biệt.
+    \end{column}
+  \end{columns}
+  \vspace{0.35cm}
+  Cấu hình tốt nhất: $K=5$, task temperature $T=0.1$.
+  \remember{Thay vì hỏi ``class cũ nào có logit thấp?'', code mới hỏi ``task cũ nào giải thích mẫu này tốt nhất?''.}
+\end{frame}
+
+% 23
+\begin{frame}{Energy weighting: task liên quan hơn nhận lực distillation lớn hơn}
+  Nếu $E_{ik}$ là energy của source task hạng $k$ cho mẫu $i$:
+  \[
+    q_{ik}=\operatorname{softmax}_k(E_{ik}/\tau_w).
+  \]
+  Để tránh một task chiếm toàn bộ trọng số, trộn thêm uniform floor $\rho$:
+  \[
+    \tilde q_{ik}=(1-\rho)q_{ik}+\rho/K.
+  \]
+  Code lấy trung bình theo batch và nhân $K$:
+  \[
+    w_k=K\cdot\frac{1}{B}\sum_i\tilde q_{ik},
+    \qquad \sum_k w_k\approx K.
+  \]
+  Loss cuối:
+  \[
+    \mathcal L=\mathcal L_{CE}+\lambda_{CT}\sum_{k=1}^{K}w_k\mathcal L_{CTIRD}^{(k)}.
+  \]
+  \remember{Tổng lực CTIRD gần như giữ nguyên; ta chỉ chuyển lực từ source ít liên quan sang source liên quan hơn.}
+\end{frame}
+
+% 24
+\begin{frame}{CFS và task-energy CTIRD không xung đột nhau}
+  \centering
+  \begin{tikzpicture}
+    \node[flownew,minimum width=4.8cm,minimum height=1.25cm] (a) {CFS + full/boundary replay\\Sửa dữ liệu dùng để correction classifier};
+    \node[flownew,minimum width=4.8cm,minimum height=1.25cm,right=1.2cm of a] (b) {Task-energy CTIRD\\Sửa nguồn quan hệ dùng khi train LoRA};
+    \node[flow,minimum width=5.2cm,minimum height=1.2cm,below=1.0cm of $(a)!0.5!(b)$] (c) {Feature tốt hơn + classifier cân bằng hơn\\$\Rightarrow$ dự đoán cuối tốt hơn};
+    \draw[arrow] (a)--(c);
+    \draw[arrow] (b)--(c);
+  \end{tikzpicture}
+
+  \vspace{0.45cm}
+  \begin{itemize}\setlength\itemsep{0.25cm}
+    \item CFS chạy ở pha thống kê/replay; CTIRD chạy khi học LoRA trên ảnh task hiện tại.
+    \item Hai nhánh có thể tác động gián tiếp qua chất lượng feature, nhưng không tối ưu cùng một tensor hay cùng một loss.
+    \item Xung đột chỉ xuất hiện nếu replay/semantic ép feature lệch quá mạnh, không phải do CFS và CTIRD vốn đối nghịch.
+  \end{itemize}
+  \remember{Một nhánh sửa ``dữ liệu nhớ'', nhánh kia sửa ``nguồn tri thức''.}
+\end{frame}
+
+\sectionframe{PHẦN IV}{Semantic-aware: đã thử nhưng không giữ trong bản cuối}
+
+% 26
+\begin{frame}{Semantic-aware projection trong paper nguồn hoạt động thế nào?}
+  Paper dùng CLIP, nơi text và image feature cùng nằm trên hypersphere. Với lớp cũ $c$ và lớp mới $d$:
+  \[
+    F_t(t_d)=R_{c,d}F_t(t_c),
+    \qquad
+    \tilde z_d=R_{c,d}z_c.
+  \]
+  Trong đó $R_{c,d}$ là phép quay đưa text embedding lớp $c$ sang lớp $d$, rồi áp dụng cùng phép quay lên image feature.
+
+  \begin{block}{Tại sao hấp dẫn?}
+    Nếu chỉ có feature lớp cũ, semantic class name có thể gợi ý cách tạo pseudo-feature mang nghĩa của lớp mới hoặc cách xác định lớp liên quan.
+  \end{block}
+  \remember{Giả định quan trọng của paper là text và image feature đã được CLIP căn chỉnh. HRM-PET không tự động có giả định này.}
+  \sourceNote{Model Inversion with Layer-wise Optimization, Section 3.4 and Appendix I.3.}
+\end{frame}
+
+% 27
+\begin{frame}{Ta đã thử semantic ở hai vị trí}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+      {\large\bfseries 1 · Semantic cho replay/CRCT}\par\vspace{0.25cm}
+      \begin{itemize}
+        \item mean shift và paper-style rotation;
+        \item covariance transfer;
+        \item top-5 lớp semantic gần nhất;
+        \item filter theo phân phối target;
+        \item feature adapter căn semantic vào HRM mean.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      {\large\bfseries 2 · Semantic cho CTIRD}\par\vspace{0.25cm}
+      \begin{itemize}
+        \item semantic top-k;
+        \item adaptive semantic gate;
+        \item điều chỉnh relation target theo quan hệ nhãn;
+        \item thử backend hash và CLIP.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+  \remember{Semantic đã được triển khai thành một nhánh ablation đầy đủ, không phải chỉ là đề xuất trên giấy.}
+\end{frame}
+
+% 28
+\begin{frame}{Vì sao semantic chưa được đưa vào cấu hình tốt nhất?}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.46\textwidth}
+      {\large\bfseries Quan sát thực nghiệm}\par\vspace{0.25cm}
+      \begin{itemize}\setlength\itemsep{0.25cm}
+        \item Một số bản giảm loss hoặc forgetting nhẹ.
+        \item Acc@1 dao động quanh 87.14--87.86 tùy biến thể.
+        \item Không vượt CFS-only một cách ổn định.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.50\textwidth}
+      {\large\bfseries Giải thích hợp lý}\par\vspace{0.25cm}
+      \begin{itemize}\setlength\itemsep{0.25cm}
+        \item HRM ViT feature và text embedding không cùng không gian như CLIP.
+        \item Class name không đủ mô tả biến thiên thị giác trong CIFAR100.
+        \item Prior semantic mạnh có thể kéo replay/relation target lệch khỏi phân phối thật.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+  \remember{Quyết định tắt semantic là kết luận từ ablation, không có nghĩa semantic vô ích trong mọi thiết lập.}
+\end{frame}
+
+\sectionframe{PHẦN V}{Thiết kế thí nghiệm và kết quả}
+
+% 30
+\begin{frame}{Thiết lập đánh giá và nguyên tắc so sánh}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+      {\large\bfseries Thiết lập chính}\par\vspace{0.2cm}
+      \begin{itemize}\setlength\itemsep{0.22cm}
+        \item Dataset: Split-CIFAR100, 10 task.
+        \item Backbone: ViT-B/16, LoRA rank 5.
+        \item Seed: 42; máy chính RTX 4090 24GB.
+        \item Cùng TII checkpoint cho chuỗi ablation LoRA/CRCT.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      {\large\bfseries Mức độ tin cậy}\par\vspace{0.2cm}
+      \begin{itemize}\setlength\itemsep{0.22cm}
+        \item Baseline gốc đã được chạy lại trên cùng RTX 4090: Acc@1 87.81.
+        \item Log Kaggle 86.90 chỉ còn dùng như kết quả lịch sử tham chiếu.
+        \item Mới có một seed nên chưa được tuyên bố ý nghĩa thống kê.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+  \remember{So sánh chính hiện nay là bản gốc 87.81 với bản cải tiến 88.60 trên cùng máy: tăng 0.79 điểm Acc@1.}
+\end{frame}
+
+% 31
+\begin{frame}{Các chỉ số trong log nên được đọc thế nào?}
+  \small
+  \begin{tabularx}{\textwidth}{>{\bfseries}p{2.25cm} X p{4.2cm}}
+    \toprule
+    Chỉ số & Ý nghĩa & Hướng mong muốn \\
+    \midrule
+    Acc@1 & Tỷ lệ nhãn đúng đứng đầu dự đoán lớp cuối. & Càng cao càng tốt; đây là mục tiêu chính. \\
+    Acc@5 & Nhãn đúng nằm trong năm dự đoán đầu. & Càng cao càng tốt; ít nhạy hơn Acc@1. \\
+    Acc@task & Chỉ số task-aware/task matching do pipeline HRM-PET báo cáo. & Càng cao càng tốt, phản ánh chất lượng xác định/re-match task. \\
+    Loss & Cross-entropy đánh giá cuối. & Càng thấp càng tốt nếu accuracy không giảm. \\
+    Forgetting & Mức giảm trung bình của task cũ so với thời điểm tốt nhất của chúng. & Càng thấp càng tốt. \\
+    Backward & Ảnh hưởng của việc học task sau lên task trước. Giá trị âm biểu thị suy giảm. & Gần 0 hoặc dương tốt hơn. \\
+    \bottomrule
+  \end{tabularx}
+  \remember{Không nên chỉ nhìn Acc@1; cấu hình cuối tăng accuracy nhưng forgetting vẫn là trade-off cần xử lý.}
+\end{frame}
+
+\begin{frame}{Baseline gốc chạy lại: đây là mốc so sánh chính}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.47\textwidth}
+      {\large\bfseries HRM-PET gốc, task 10}\par\vspace{0.2cm}
+      \begin{tabular}{lr}
+        Acc@task & 88.01 \\
+        Acc@1 & 87.81 \\
+        Acc@5 & 98.05 \\
+        Loss & 0.5228 \\
+        Forgetting & 3.5889 \\
+        Backward & $-3.2556$ \\
+      \end{tabular}
+    \end{column}
+    \begin{column}{0.49\textwidth}
+      {\large\bfseries Cách hiểu}\par\vspace{0.2cm}
+      \begin{itemize}\setlength\itemsep{0.24cm}
+        \item Đây là dòng đánh giá cuối sau classifier correction, không phải kết quả trung gian 78.27 trước đó.
+        \item Vì được chạy lại trên cùng máy, dataset và seed, mốc này phù hợp hơn log Kaggle để đánh giá cải tiến.
+        \item Baseline đã khá mạnh; mức tăng tiếp theo vì vậy cần được đọc theo cả accuracy, loss và forgetting.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+  \remember{Từ đây, mọi tuyên bố \emph{tăng bao nhiêu} trong báo cáo dùng 87.81 làm Acc@1 gốc.}
+\end{frame}
+
+% 32
+\begin{frame}{Ablation: mỗi thay đổi đóng góp từng phần}
+  \centering
+  \renewcommand{\arraystretch}{1.23}
+  \setlength{\tabcolsep}{4pt}
+  \small
+  \begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{2.45cm} X >{\centering\arraybackslash}p{1.2cm} >{\centering\arraybackslash}p{1.2cm} >{\centering\arraybackslash}p{1.25cm}}
+    \toprule
+    \textbf{Giai đoạn} & \textbf{Thay đổi chính} & \textbf{Acc@task} & \textbf{Acc@1} & \textbf{Loss} \\
+    \midrule
+    HRM-PET gốc (Kaggle) & Gaussian replay + CTIRD baseline & 87.05 & 86.90 & 0.5860 \\
+    HRM-PET gốc (4090) & Chạy lại code gốc cùng máy & 88.01 & 87.81 & 0.5228 \\
+    CFS-only (4090) & Chọn replay đa dạng hơn & 87.62 & 87.88 & 0.5222 \\
+    + Full CRCT & Dùng toàn bộ replay & 88.01 & 88.13 & 0.4696 \\
+    + Boundary + task energy & Mẫu khó + top-5 task liên quan & 88.05 & 88.31 & 0.4675 \\
+    + Energy weighting & Gán trọng số theo source energy & 88.30 & 88.56 & 0.4627 \\
+    \rowcolor{HRMCyan} + CRCT tuning & \texttt{ca\_lr=0.0045} & \textbf{88.32} & \textbf{88.60} & \textbf{0.4607} \\
+    \bottomrule
+  \end{tabularx}
+  \vspace{0.2cm}
+  {\scriptsize\color{HRMGray}Hàng Kaggle chỉ tham chiếu lịch sử; hàng HRM-PET gốc (4090) là baseline chính cho so sánh cuối.}
+\end{frame}
+
+% 33
+\begin{frame}{Cấu hình tốt nhất hiện tại gồm những gì?}
+  \small
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+      {\large\bfseries LoRA và CTIRD}\par\vspace{0.18cm}
+      \begin{tabular}{ll}
+        LoRA epochs & 10 \\
+        LoRA lr / rank & 0.03 / 5 \\
+        Momentum & 0.4 \\
+        CTIRD $\lambda$ (con) & 0.2 \\
+        K source tasks & 5 \\
+        Selection & task energy \\
+        Task temperature & 0.1 \\
+        Weighting / floor & energy / 0.2 \\
+      \end{tabular}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      {\large\bfseries Replay và CRCT}\par\vspace{0.18cm}
+      \begin{tabular}{ll}
+        CFS epochs & 20 \\
+        Candidate multiplier & 2 \\
+        Full replay & bật \\
+        Boundary ratio & 0.25 \\
+        CRCT epochs & 3 \\
+        CRCT lr & 0.0045 \\
+        Semantic & tắt \\
+        Balanced batches & tắt \\
+      \end{tabular}
+    \end{column}
+  \end{columns}
+  \remember{Cấu hình cuối ưu tiên Acc@1. Nếu ưu tiên cân bằng forgetting/loss, \texttt{ca\_lr=0.004} là phương án gần tương đương.}
+\end{frame}
+
+% 34
+\begin{frame}{Kết quả cuối: accuracy tăng, loss giảm}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.58\textwidth}
+      \centering
+      \begin{tikzpicture}
+        \begin{axis}[
+          ybar,ymin=84.5,ymax=100,width=8.2cm,height=5.2cm,bar width=12pt,
+          symbolic x coords={Acc@task,Acc@1,Acc@5},xtick=data,
+          ylabel={Điểm (\%)},tick label style={font=\scriptsize},label style={font=\scriptsize},
+          nodes near coords,nodes near coords style={font=\tiny},
+          ymajorgrids=true,grid style={draw=HRMGray!18},
+          legend style={at={(0.5,-0.18)},anchor=north,legend columns=2,draw=none,font=\scriptsize}]
+          \addplot[fill=HRMGray!45,draw=none] coordinates {(Acc@task,88.01) (Acc@1,87.81) (Acc@5,98.05)};
+          \addplot[fill=HRMBlue!85,draw=none] coordinates {(Acc@task,88.32) (Acc@1,88.60) (Acc@5,98.07)};
+          \legend{HRM-PET gốc cùng máy,Cấu hình cuối}
+        \end{axis}
+      \end{tikzpicture}
+    \end{column}
+    \begin{column}{0.38\textwidth}
+      \begin{block}{Acc@1}
+        \LARGE\bfseries 87.81 $\rightarrow$ 88.60\\
+        \normalsize +0.79 điểm
+      \end{block}
+      \begin{block}{Acc@task}
+        \LARGE\bfseries 88.01 $\rightarrow$ 88.32\\
+        \normalsize +0.31 điểm
+      \end{block}
+      \begin{block}{Loss}
+        \LARGE\bfseries 0.5228 $\rightarrow$ 0.4607\\
+        \normalsize giảm khoảng 11.9\%
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% 35
+\begin{frame}{Kết quả tốt hơn nhưng vẫn có trade-off}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+      {\large\bfseries Điều đã cải thiện}\par\vspace{0.25cm}
+      \begin{itemize}\setlength\itemsep{0.3cm}
+        \item Final Acc@1 và Acc@task đều tăng.
+        \item Loss giảm rõ, cho thấy classifier tự tin và phù hợp hơn.
+        \item Energy weighting tốt hơn uniform ở cả accuracy và forgetting so với bước ngay trước.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      {\large\bfseries Điều chưa giải quyết}\par\vspace{0.25cm}
+      \begin{itemize}\setlength\itemsep{0.3cm}
+        \item Forgetting tăng từ 3.5889 lên 4.20: bản cuối quên task cũ nhiều hơn baseline.
+        \item Backward giảm từ $-3.2556$ xuống $-3.9444$: tác động lên task cũ kém hơn.
+        \item Một seed chưa chứng minh tính ổn định thống kê.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+  \remember{Cấu hình hiện tại tối ưu final accuracy tốt hơn, nhưng chưa phải nghiệm tối ưu cho stability--plasticity trade-off.}
+\end{frame}
+
+% 36
+\begin{frame}{Những thử nghiệm không được giữ lại và bài học}
+  \small
+  \begin{tabularx}{\textwidth}{>{\bfseries}p{3.25cm} X}
+    \toprule
+    Thử nghiệm & Kết luận \\
+    \midrule
+    Semantic top-k/gate/projection & Có ích nhẹ ở một vài metric nhưng không tăng Acc@1 ổn định. \\
+    CFS distribution filter & Lọc quá chặt làm mất diversity, accuracy giảm. \\
+    CFS mean initialization & Không tốt hơn khởi tạo ngẫu nhiên. \\
+    CTIRD $K=3$ & Thiếu source task, kém $K=5$. \\
+    Task temperature 0.2 & Kém temperature 0.1. \\
+    CRCT 4 epochs & Có dấu hiệu over-correction, kém 3 epochs. \\
+    Class-balanced replay batches & Acc@5 có thể tăng nhưng Acc@1 giảm. \\
+    CTIRD con 0.15/0.25 & Đều kém con 0.20. \\
+    \bottomrule
+  \end{tabularx}
+  \remember{Ablation âm cũng quan trọng: nó cho biết cải tiến nào thực sự đóng góp và tránh kể câu chuyện chỉ dựa trên lần chạy tốt.}
+\end{frame}
+
+% 37
+\begin{frame}{Hạn chế và kế hoạch tiếp theo}
+  \begin{enumerate}\setlength\itemsep{0.35cm}
+    \item \textbf{Lặp lại baseline và cấu hình cuối}: xác nhận hai kết quả không phụ thuộc một lần chạy ngẫu nhiên.
+    \item \textbf{Chạy nhiều seed}: ít nhất 3 seed để báo mean $\pm$ std và kiểm tra mức tăng 0.79 có ổn định không.
+    \item \textbf{Benchmark thứ hai}: ImageNet-R hoặc 5-Datasets để kiểm tra khả năng tổng quát.
+    \item \textbf{Giảm forgetting}: thử schedule/regularization CRCT mà không làm mất Acc@1 88.60.
+    \item \textbf{Đo chi phí}: thời gian huấn luyện CFS, VRAM và số tham số MLP tạm thời.
+    \item \textbf{Semantic thế hệ sau}: học alignment bằng visual training feature thay vì chỉ dựa class name.
+  \end{enumerate}
+  \remember{Kết quả hiện tại là bằng chứng thực nghiệm tốt cho một seed, chưa phải kết luận cuối cùng của nghiên cứu.}
+\end{frame}
+
+% 38
+\begin{frame}{Tóm tắt toàn bộ công việc trong một trang}
+  \small
+  \begin{enumerate}\setlength\itemsep{0.22cm}
+    \item HRM-PET gốc dùng CTIRD để giữ quan hệ liên task và Gaussian replay + CRCT để sửa classifier.
+    \item Gaussian replay chưa chọn lọc; CRCT chưa dùng hết replay; code CTIRD legacy chọn source task chưa đúng mức liên quan.
+    \item Ta chuyển ý tưởng CFS sang feature replay: học MLP contrastive theo lớp và chọn candidate ít giống nhau.
+    \item Ta bật full replay và dành 25\% replay cho mẫu gần decision boundary.
+    \item Ta thay class-level bottom-logit selection bằng top-5 task energy và weight KL theo energy nhưng giữ tổng lực CTIRD.
+    \item Semantic-aware projection/gating đã được triển khai và ablation, nhưng không giữ vì chưa tăng Acc@1 ổn định.
+    \item So với HRM-PET gốc cùng máy: Acc@1 $87.81\rightarrow88.60$, Acc@task $88.01\rightarrow88.32$, loss $0.5228\rightarrow0.4607$.
+    \item Hạn chế còn lại: một seed; forgetting $3.5889\rightarrow4.20$ và Backward $-3.2556\rightarrow-3.9444$ kém hơn baseline.
+  \end{enumerate}
+  \remember{Thông điệp chính: cải thiện chất lượng/sử dụng replay và chọn đúng source task cho CTIRD tạo ra mức tăng đáng tin cậy nhất.}
+\end{frame}
+
+% 39
+\appendix
+\begin{frame}{Nguồn và file cần đọc lại}
+  \small
+  \begin{itemize}\setlength\itemsep{0.28cm}
+    \item \textbf{Hybrid Re-matching for Continual Learning with Parameter-Efficient Tuning}: HRM-PET, DRM, CRM và CTIRD gốc.
+    \item \textbf{Model Inversion with Layer-wise Optimization}: CFS và semantic-aware feature projection.
+    \item \texttt{BAO\_CAO\_TOM\_TAT\_CAI\_TIEN\_HRM\_PET\_VI.md}: báo cáo tổng kết thay đổi và kết quả.
+    \item \texttt{EXPERIMENT\_PROGRESS\_VI.md}: nhật ký từng ablation, tham số và kết luận.
+    \item \texttt{CFS\_IMPLEMENTATION\_NOTE\_VI.md}: giải thích triển khai CFS.
+    \item \texttt{SEMANTIC\_TOPK\_NOTE\_VI.md}: nhánh semantic và các biến thể.
+    \item Code chính: \texttt{utils.py}, \texttt{hide\_tii\_engine.py}, \texttt{hrm\_lora\_wtp\_and\_tap\_engine.py}.
+  \end{itemize}
+\end{frame}
+
+\end{document}

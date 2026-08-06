@@ -1,3 +1,4 @@
+import copy
 import math
 import sys
 import os
@@ -662,6 +663,48 @@ def _compute_mean(model: torch.nn.Module, data_loader: Iterable, device: torch.d
             cls_cov[cls_id] = cluster_vars
 
 
+def _crct_old_class_distillation_loss(student_logits, teacher_logits, targets,
+                                      seen_classes, old_classes, temperature=2.0,
+                                      confidence_threshold=0.6):
+    """Distill confident old-class replay samples while leaving boundary samples plastic."""
+    zero = student_logits.new_zeros(())
+    if student_logits.numel() == 0 or not old_classes or not seen_classes:
+        return zero, 0
+
+    seen_index = torch.as_tensor(seen_classes, dtype=torch.long, device=student_logits.device)
+    old_index = torch.as_tensor(old_classes, dtype=torch.long, device=student_logits.device)
+    old_sample_mask = (targets.unsqueeze(1) == old_index.unsqueeze(0)).any(dim=1)
+    if not bool(old_sample_mask.any()):
+        return zero, 0
+
+    student_seen = student_logits[old_sample_mask].index_select(1, seen_index)
+    teacher_seen = teacher_logits[old_sample_mask].index_select(1, seen_index)
+    temperature = max(float(temperature), 1e-6)
+
+    with torch.no_grad():
+        teacher_probs = F.softmax(teacher_seen / temperature, dim=1)
+        teacher_confidence_probs = F.softmax(teacher_seen, dim=1)
+        class_positions = torch.full(
+            (student_logits.shape[1],), -1, dtype=torch.long, device=student_logits.device)
+        class_positions[seen_index] = torch.arange(
+            seen_index.numel(), dtype=torch.long, device=student_logits.device)
+        target_positions = class_positions[targets[old_sample_mask]]
+        target_confidence = teacher_confidence_probs.gather(
+            1, target_positions.unsqueeze(1)).squeeze(1)
+        keep_mask = target_confidence >= float(confidence_threshold)
+
+    kept_samples = int(keep_mask.sum().item())
+    if kept_samples == 0:
+        return zero, 0
+
+    per_sample_kl = F.kl_div(
+        F.log_softmax(student_seen[keep_mask] / temperature, dim=1),
+        teacher_probs[keep_mask],
+        reduction='none',
+    ).sum(dim=1)
+    return per_sample_kl.mean() * (temperature ** 2), kept_samples
+
+
 def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_mask=None, task_id=-1):
     model.train()
     run_epochs = args.crct_epochs
@@ -676,8 +719,44 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, T_max=run_epochs)
     criterion = torch.nn.CrossEntropyLoss().to(device)
 
-    for i in range(task_id):
-        crct_num += len(class_mask[i])
+    old_classes = [int(cls_id) for seen_task in range(task_id) for cls_id in class_mask[seen_task]]
+    seen_classes = [
+        int(cls_id) for seen_task in range(task_id + 1) for cls_id in class_mask[seen_task]]
+    crct_num = len(old_classes)
+
+    distill_weight = max(0.0, float(getattr(args, 'crct_distill_weight', 0.25)))
+    distill_temperature = max(
+        1e-6, float(getattr(args, 'crct_distill_temperature', 2.0)))
+    distill_confidence = min(
+        1.0, max(0.0, float(getattr(args, 'crct_distill_confidence', 0.6))))
+    distill_enabled = (
+        bool(getattr(args, 'crct_old_class_distill', False))
+        and distill_weight > 0.0
+        and len(old_classes) > 0
+    )
+    anchor_weight = max(0.0, float(getattr(args, 'crct_anchor_weight', 0.0)))
+
+    base_model = model.module if hasattr(model, 'module') else model
+    teacher_fc_norm = None
+    teacher_head = None
+    if distill_enabled or anchor_weight > 0.0:
+        if not hasattr(base_model, 'head') or not hasattr(base_model, 'fc_norm'):
+            raise AttributeError('Stability-aware CRCT requires model.head and model.fc_norm')
+        teacher_fc_norm = copy.deepcopy(base_model.fc_norm).to(device).eval()
+        teacher_head = copy.deepcopy(base_model.head).to(device).eval()
+        for teacher_parameter in list(teacher_fc_norm.parameters()) + list(teacher_head.parameters()):
+            teacher_parameter.requires_grad_(False)
+
+    if utils.is_main_process() and (distill_enabled or anchor_weight > 0.0):
+        print(
+            'CRCT stability:',
+            'old_classes=', len(old_classes),
+            'distill_weight=', distill_weight if distill_enabled else 0.0,
+            'temperature=', distill_temperature,
+            'confidence=', distill_confidence,
+            'anchor_weight=', anchor_weight,
+        )
+
 
     # TODO: efficiency may be improved by encapsulating sampled data into Datasets class and using distributed sampler.
     for epoch in range(run_epochs):
@@ -685,7 +764,6 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
         sampled_data = []
         sampled_label = []
         num_sampled_pcls = args.batch_size * 5
-        seen_classes = [cls_id for seen_task in range(task_id + 1) for cls_id in class_mask[seen_task]]
 
         metric_logger = utils.MetricLogger(delimiter="  ")
         metric_logger.add_meter('Lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
@@ -789,6 +867,11 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
             outputs = model(inp, fc_only=True)
             logits = outputs['logits']
 
+            teacher_logits = None
+            if distill_enabled:
+                with torch.no_grad():
+                    teacher_logits = teacher_head(teacher_fc_norm(inp))
+
             if args.train_mask and class_mask is not None:
                 mask = []
                 for id in range(task_id + 1):
@@ -798,7 +881,41 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
                 not_mask = torch.tensor(not_mask, dtype=torch.int64).to(device)
                 logits = logits.index_fill(dim=1, index=not_mask, value=float('-inf'))
 
-            loss = criterion(logits, tgt)  # base criterion (CrossEntropyLoss)
+            loss_ce = criterion(logits, tgt)
+            loss_kd = logits.new_zeros(())
+            kd_kept = 0
+            if distill_enabled:
+                loss_kd, kd_kept = _crct_old_class_distillation_loss(
+                    logits,
+                    teacher_logits,
+                    tgt,
+                    seen_classes,
+                    old_classes,
+                    temperature=distill_temperature,
+                    confidence_threshold=distill_confidence,
+                )
+
+            loss_anchor = logits.new_zeros(())
+            if anchor_weight > 0.0:
+                old_class_index = torch.as_tensor(
+                    old_classes, dtype=torch.long, device=base_model.head.weight.device)
+                weight_delta = (
+                    base_model.head.weight.index_select(0, old_class_index)
+                    - teacher_head.weight.index_select(0, old_class_index)
+                )
+                loss_anchor = weight_delta.pow(2).sum(dim=1).mean()
+                if base_model.head.bias is not None and teacher_head.bias is not None:
+                    bias_delta = (
+                        base_model.head.bias.index_select(0, old_class_index)
+                        - teacher_head.bias.index_select(0, old_class_index)
+                    )
+                    loss_anchor = loss_anchor + bias_delta.pow(2).mean()
+
+            loss = (
+                loss_ce
+                + distill_weight * loss_kd
+                + anchor_weight * loss_anchor
+            )
             acc1, acc5 = accuracy(logits, tgt, topk=(1, 5))
 
             if not math.isfinite(loss.item()):
@@ -813,7 +930,13 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
             optimizer.step()
             torch.cuda.synchronize()
 
-            metric_logger.update(Loss=loss.item())
+            metric_logger.update(
+                Loss=loss.item(),
+                CE=loss_ce.item(),
+                KD=loss_kd.item(),
+                Anchor=loss_anchor.item(),
+                KDKeep=kd_kept,
+            )
             metric_logger.update(Lr=optimizer.param_groups[0]["lr"])
             metric_logger.meters['Acc@1'].update(acc1.item(), n=inp.shape[0])
             metric_logger.meters['Acc@5'].update(acc5.item(), n=inp.shape[0])
