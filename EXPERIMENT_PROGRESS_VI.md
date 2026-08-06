@@ -1862,3 +1862,30 @@ Kết luận:
 - Loss giảm `0.0021`, forgetting giảm `0.0889`, backward cải thiện `0.1334`.
 - `ca_lr=0.004` thay thế `0.005` làm cấu hình tốt nhất mới theo cân bằng nhiều chỉ số.
 - Kết quả xác nhận classifier correction trước đó hơi mạnh; tiếp tục tinh chỉnh xuống `ca_lr=0.0035` để tìm điểm tối ưu gần vùng này.
+
+## 47. Kết quả classifier-correction ca_lr=0.0035
+
+Tiếp tục giảm learning rate của classifier correction từ `0.004` xuống `0.0035`.
+
+```text
+[Average accuracy till task10]
+Acc@task 88.3300
+Acc@1    88.4600
+Acc@5    98.0500
+Loss     0.4604
+Forgetting 4.2222
+Backward  -3.9444
+```
+
+| ca_lr | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0.0035 | 88.3300 | 88.4600 | 98.0500 | 0.4604 | 4.2222 | -3.9444 |
+| 0.0040 | 88.3400 | 88.5600 | 98.0700 | 0.4606 | 4.1889 | -3.9444 |
+| 0.0050 | 88.3000 | 88.5600 | 98.0700 | 0.4627 | 4.2778 | -4.0778 |
+
+Kết luận:
+
+- So với `0.004`, mức `0.0035` giảm Acc@1 `0.10`, Acc@task `0.01` và Acc@5 `0.02`.
+- Loss chỉ giảm thêm `0.0002`, không đủ bù suy giảm accuracy; forgetting cũng xấu hơn `0.0333`.
+- `ca_lr=0.004` vẫn là cấu hình tốt nhất.
+- Thử điểm giữa phía trên `ca_lr=0.0045` để kiểm tra vùng giữa hai mức cùng đạt Acc@1 88.56; sau đó dừng sweep `ca_lr`.
