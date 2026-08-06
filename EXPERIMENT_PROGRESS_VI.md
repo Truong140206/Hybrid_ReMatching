@@ -1889,3 +1889,31 @@ Kết luận:
 - Loss chỉ giảm thêm `0.0002`, không đủ bù suy giảm accuracy; forgetting cũng xấu hơn `0.0333`.
 - `ca_lr=0.004` vẫn là cấu hình tốt nhất.
 - Thử điểm giữa phía trên `ca_lr=0.0045` để kiểm tra vùng giữa hai mức cùng đạt Acc@1 88.56; sau đó dừng sweep `ca_lr`.
+
+## 48. Kết quả classifier-correction ca_lr=0.0045
+
+Thử điểm giữa `0.004` và `0.005` cho classifier correction.
+
+```text
+[Average accuracy till task10]
+Acc@task 88.3200
+Acc@1    88.6000
+Acc@5    98.0700
+Loss     0.4607
+Forgetting 4.2000
+Backward  -3.9444
+```
+
+| ca_lr | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0.0040 | 88.3400 | 88.5600 | 98.0700 | 0.4606 | 4.1889 | -3.9444 |
+| 0.0045 | 88.3200 | 88.6000 | 98.0700 | 0.4607 | 4.2000 | -3.9444 |
+| 0.0050 | 88.3000 | 88.5600 | 98.0700 | 0.4627 | 4.2778 | -4.0778 |
+
+Kết luận:
+
+- `ca_lr=0.0045` tăng Acc@1 thêm `0.04`, đạt mốc cao nhất mới `88.60`.
+- So với `0.004`, Acc@task giảm `0.02`, loss tăng `0.0001`, forgetting xấu hơn `0.0111`; backward và Acc@5 giữ nguyên.
+- Nếu ưu tiên Acc@1, chọn `0.0045`; nếu ưu tiên cân bằng loss/forgetting, `0.004` vẫn tốt hơn rất nhẹ.
+- Chốt `0.0045` làm nền accuracy cho thử nghiệm tiếp theo.
+- Task-energy temperature `0.1` chưa từng được sweep. Thử `0.2` để energy score bớt phụ thuộc duy nhất vào class logit lớn nhất trong mỗi task.
