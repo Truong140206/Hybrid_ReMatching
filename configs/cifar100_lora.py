@@ -114,6 +114,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--crct_reliability_weighting', action='store_true', help='down-weight uncertain old-class synthetic replay samples using the pre-CRCT teacher')
     subparsers.add_argument('--crct_reliability_floor', default=0.25, type=float, help='minimum CE weight assigned to an old-class replay sample')
     subparsers.add_argument('--crct_reliability_power', default=1.0, type=float, help='power applied to teacher target confidence for replay weighting')
+    subparsers.add_argument('--crct_reliability_preserve_mass', action='store_true', help='renormalize old replay weights so reliability does not reduce total old-class CE mass')
     subparsers.add_argument('--crct_old_row_lr_scale', default=1.0, type=float, help='gradient scale for old classifier rows during CRCT; 1 preserves the original update')
     subparsers.add_argument('--continual_norm_blend', action='store_true', help='blend shared fc_norm parameters with their pre-task values to reduce global representation drift')
     subparsers.add_argument('--continual_norm_update_ratio', default=0.25, type=float, help='fraction of the current-task fc_norm update retained after blending')

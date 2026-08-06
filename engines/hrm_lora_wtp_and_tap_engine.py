@@ -735,7 +735,8 @@ def _crct_old_class_distillation_loss(student_logits, teacher_logits, targets,
 
 
 def _crct_replay_reliability_weights(teacher_logits, targets, seen_classes,
-                                     old_classes, floor=0.25, power=1.0):
+                                     old_classes, floor=0.25, power=1.0,
+                                     preserve_mass=False):
     """Weight uncertain old-class synthetic samples without weakening new-class learning."""
     weights = teacher_logits.new_ones(targets.shape, dtype=torch.float32)
     if teacher_logits.numel() == 0 or not old_classes or not seen_classes:
@@ -762,6 +763,8 @@ def _crct_replay_reliability_weights(teacher_logits, targets, seen_classes,
         floor = min(1.0, max(0.0, float(floor)))
         power = max(0.0, float(power))
         old_weights = floor + (1.0 - floor) * target_confidence.pow(power)
+        if bool(preserve_mass):
+            old_weights = old_weights / old_weights.mean().clamp_min(1e-12)
         weights[old_sample_mask] = old_weights
 
     return weights, target_confidence.mean(), old_sample_count
@@ -844,6 +847,8 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
         1.0, max(0.0, float(getattr(args, 'crct_reliability_floor', 0.25))))
     reliability_power = max(
         0.0, float(getattr(args, 'crct_reliability_power', 1.0)))
+    reliability_preserve_mass = bool(
+        getattr(args, 'crct_reliability_preserve_mass', False))
     old_row_lr_scale = min(
         1.0, max(0.0, float(getattr(args, 'crct_old_row_lr_scale', 1.0))))
 
@@ -871,6 +876,7 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
             'reliability=', reliability_enabled,
             'reliability_floor=', reliability_floor,
             'reliability_power=', reliability_power,
+            'reliability_preserve_mass=', reliability_preserve_mass,
             'old_row_lr_scale=', old_row_lr_scale,
         )
 
@@ -1010,6 +1016,7 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
                         old_classes,
                         floor=reliability_floor,
                         power=reliability_power,
+                        preserve_mass=reliability_preserve_mass,
                     )
                 )
                 per_sample_ce = F.cross_entropy(logits, tgt, reduction='none')

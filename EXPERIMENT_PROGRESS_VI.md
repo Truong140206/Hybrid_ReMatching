@@ -1984,6 +1984,37 @@ Mẫu Gaussian/CFS cũng không có độ tin cậy bằng dữ liệu thật. V
 - `py_compile`: đạt.
 - Parser nhận đầy đủ các cờ mới: đạt.
 - `git diff --check`: đạt.
-- Chưa ghi kết quả accuracy/forgetting cho phương pháp mới trước khi chạy đủ 10 task.
+- Đã chạy đủ 10 task cho cấu hình v1; kết quả được ghi ở mục 51.
 
 Thử nghiệm đầu tiên dùng mức bảo toàn vừa phải: norm update ratio `0.25`, reliability floor `0.5`, old-row scale `0.5`, không cộng thêm semantic và không dùng KD/anchor để đo riêng tác dụng của cơ chế mới.
+
+## 51. Kết quả SP-CRCT v1 và sửa thiết kế v2
+
+Kết quả v1:
+
+```text
+[Average accuracy till task10]
+Acc@task 88.5400
+Acc@1    88.2400
+Acc@5    97.9900
+Loss     0.4625
+Forgetting 5.2556
+Backward  -5.2333
+```
+
+So với bản gốc, Acc@task tăng `0.53` nhưng forgetting xấu thêm `1.6667`. Cấu hình này không đạt mục tiêu đồng thời và không được chọn làm kết quả cuối.
+
+Phân tích nguyên nhân:
+
+- Reliability v1 gán trọng số nhỏ hơn 1 cho mẫu cũ không chắc chắn nhưng không chuẩn hóa lại. Vì vậy tổng lực CE bảo vệ lớp cũ bị giảm.
+- `old_row_lr_scale=0.5` giảm cập nhật các hàng classifier cũ, trong khi hàng lớp mới vẫn cập nhật đầy đủ. Việc giữ riêng hàng cũ không giữ được biên quyết định tương đối khi hàng mới dịch chuyển.
+- Hai cơ chế trên cộng hưởng theo hướng ưu tiên lớp mới: Acc@task tăng nhưng lịch sử task cũ suy giảm mạnh, thể hiện qua forgetting và backward.
+
+Thiết kế v2:
+
+1. Thêm `--crct_reliability_preserve_mass`: chuẩn hóa trọng số reliability trong nhóm mẫu cũ về trung bình 1. Reliability chỉ chuyển lực học từ mẫu đáng ngờ sang mẫu đáng tin, không làm giảm tổng CE lớp cũ.
+2. Trả `--crct_old_row_lr_scale` về `1.0` để các hàng cũ được hiệu chỉnh đầy đủ trước cạnh tranh từ lớp mới.
+3. Nới `--continual_norm_update_ratio` từ `0.25` lên `0.5`, tránh bảo toàn norm quá cứng làm giảm khả năng tái cân bằng giữa các task.
+4. Giữ `crct_head_only`, CFS, boundary replay và CTIRD không đổi để so sánh trực tiếp với v1.
+
+Tiêu chí vẫn giữ nguyên: chỉ coi là cải thiện thành công khi Acc@task cao hơn `88.01` và forgetting thấp hơn `3.5889` trên cùng seed và thiết lập.
