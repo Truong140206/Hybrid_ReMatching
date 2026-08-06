@@ -1944,3 +1944,46 @@ Kết luận:
 - Acc@5 tăng nhẹ `0.03` nhưng không bù được suy giảm còn lại.
 - Energy score mềm hơn đã đưa quá nhiều class logit phụ vào task score; giữ `0.1` làm mốc.
 - Thử phía ngược lại `0.05`, gần phép chọn max-logit hơn. Nếu không vượt `0.1` thì dừng sweep task temperature.
+
+## 50. Hướng mới: Stability-Plasticity CRCT và continual norm consolidation
+
+### 50.1. Vấn đề cần giải quyết
+
+Mốc chạy lại của cấu hình gốc trên cùng thiết lập CIFAR100 là:
+
+```text
+Acc@task 88.0100 | Acc@1 87.8100 | Acc@5 98.0500
+Loss 0.5228 | Forgetting 3.5889 | Backward -3.2556
+```
+
+Các cấu hình CFS/CRCT trước đã tăng accuracy và giảm loss, nhưng forgetting vẫn cao hơn bản gốc. Hai kết quả tiêu biểu:
+
+| Cấu hình | Acc@task | Acc@1 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|
+| Stability KD 0.25 + anchor 0.01 | 88.5400 | 88.4100 | 0.4699 | 4.1333 | -3.9778 |
+| Stability KD 0.35 + anchor 0.015 | 88.4700 | 88.4600 | 0.4680 | 4.0333 | -3.8556 |
+
+Do đó mục tiêu mới không phải tiếp tục tăng riêng accuracy, mà phải đạt đồng thời `Acc@task > 88.01` và `Forgetting < 3.5889` so với mốc gốc.
+
+### 50.2. Phân tích nguyên nhân
+
+Trong code cũ, CRCT được mô tả là bước hiệu chỉnh classifier nhưng optimizer thực tế cập nhật cả `head` và `fc_norm`. `fc_norm` là phép chuẩn hóa dùng chung cho mọi task, nên học trên feature tổng hợp có thể làm toàn bộ logits lớp cũ dịch cùng lúc. Ngoài CRCT, `fc_norm` còn được cập nhật trên dữ liệu riêng của từng task mới, trong khi các LoRA cũ đã được tách riêng. Đây là một nguồn gây quên chưa được kiểm soát trực tiếp.
+
+Mẫu Gaussian/CFS cũng không có độ tin cậy bằng dữ liệu thật. Việc gán cùng trọng số CE cho mọi mẫu, đặc biệt mẫu gần biên mà teacher không nhận đúng lớp đích, có thể kéo classifier theo nhiễu tổng hợp.
+
+### 50.3. Thay đổi đã triển khai
+
+1. `--crct_head_only`: CRCT chỉ cập nhật classifier `head`, giữ `fc_norm` cố định. Điều này bám sát mô tả classification-layer fine-tuning và tránh overfit norm chung vào replay tổng hợp.
+2. `--crct_reliability_weighting`: CE của mẫu replay lớp cũ được nhân với trọng số dựa trên xác suất teacher gán cho nhãn đích. Mẫu đáng tin gần trọng số 1; mẫu đáng ngờ được giảm nhưng không bỏ hẳn nhờ `--crct_reliability_floor`.
+3. `--crct_old_row_lr_scale`: gradient của các hàng classifier thuộc lớp cũ được giảm riêng; hàng lớp mới vẫn học với learning rate đầy đủ. Đây là phân tách stability-plasticity trực tiếp ở classifier.
+4. `--continual_norm_blend`: sau khi học task mới, tham số `fc_norm` được nội suy với trạng thái trước task. `--continual_norm_update_ratio` quy định phần cập nhật mới được giữ lại, thay vì đóng băng cứng.
+5. Các cờ mới mặc định tắt hoặc giữ hệ số `1.0`, nên lệnh cũ vẫn giữ nguyên hành vi và checkpoint TII cũ vẫn dùng lại được.
+
+### 50.4. Trạng thái kiểm tra
+
+- `py_compile`: đạt.
+- Parser nhận đầy đủ các cờ mới: đạt.
+- `git diff --check`: đạt.
+- Chưa ghi kết quả accuracy/forgetting cho phương pháp mới trước khi chạy đủ 10 task.
+
+Thử nghiệm đầu tiên dùng mức bảo toàn vừa phải: norm update ratio `0.25`, reliability floor `0.5`, old-row scale `0.5`, không cộng thêm semantic và không dùng KD/anchor để đo riêng tác dụng của cơ chế mới.

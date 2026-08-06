@@ -481,8 +481,17 @@ def train_and_evaluate(model: torch.nn.Module, model_without_ddp: torch.nn.Modul
     cls_mean = dict()
     cls_cov = dict()
     cls_cfs_model = dict()
+    norm_blend_enabled = bool(getattr(args, 'continual_norm_blend', False))
+    norm_update_ratio = min(
+        1.0, max(0.0, float(getattr(args, 'continual_norm_update_ratio', 0.25))))
 
     for task_id in range(args.num_tasks):
+        previous_fc_norm = None
+        if norm_blend_enabled and task_id > 0:
+            previous_fc_norm = {
+                name: parameter.detach().clone()
+                for name, parameter in model_without_ddp.fc_norm.named_parameters()
+            }
         # Create new optimizer for each task to clear optimizer status
         if task_id > 0 and args.reinit_optimizer:
             optimizer = create_optimizer(args, model)
@@ -545,6 +554,26 @@ def train_and_evaluate(model: torch.nn.Module, model_without_ddp: torch.nn.Modul
             if lr_scheduler:
                 lr_scheduler.step(epoch)
         model_without_ddp.after_task(task_id=task_id, device=device)
+
+        if previous_fc_norm is not None:
+            squared_update_before = 0.0
+            squared_update_after = 0.0
+            with torch.no_grad():
+                for name, parameter in model_without_ddp.fc_norm.named_parameters():
+                    previous = previous_fc_norm[name].to(parameter.device)
+                    update = parameter - previous
+                    squared_update_before += update.float().pow(2).sum().item()
+                    parameter.mul_(norm_update_ratio).add_(
+                        previous, alpha=1.0 - norm_update_ratio)
+                    retained_update = parameter - previous
+                    squared_update_after += retained_update.float().pow(2).sum().item()
+            if utils.is_main_process():
+                print(
+                    'Continual norm blend:',
+                    'update_ratio=', norm_update_ratio,
+                    'delta_before=', math.sqrt(squared_update_before),
+                    'delta_after=', math.sqrt(squared_update_after),
+                )
 
         if args.lora_momentum > 0 and task_id > 0:
             with torch.no_grad():
@@ -705,11 +734,83 @@ def _crct_old_class_distillation_loss(student_logits, teacher_logits, targets,
     return per_sample_kl.mean() * (temperature ** 2), kept_samples
 
 
+def _crct_replay_reliability_weights(teacher_logits, targets, seen_classes,
+                                     old_classes, floor=0.25, power=1.0):
+    """Weight uncertain old-class synthetic samples without weakening new-class learning."""
+    weights = teacher_logits.new_ones(targets.shape, dtype=torch.float32)
+    if teacher_logits.numel() == 0 or not old_classes or not seen_classes:
+        return weights, weights.new_zeros(()), 0
+
+    seen_index = torch.as_tensor(seen_classes, dtype=torch.long, device=targets.device)
+    old_index = torch.as_tensor(old_classes, dtype=torch.long, device=targets.device)
+    old_sample_mask = (targets.unsqueeze(1) == old_index.unsqueeze(0)).any(dim=1)
+    old_sample_count = int(old_sample_mask.sum().item())
+    if old_sample_count == 0:
+        return weights, weights.new_zeros(()), 0
+
+    with torch.no_grad():
+        teacher_seen = teacher_logits[old_sample_mask].index_select(1, seen_index)
+        teacher_probs = F.softmax(teacher_seen, dim=1)
+        class_positions = torch.full(
+            (teacher_logits.shape[1],), -1, dtype=torch.long, device=targets.device)
+        class_positions[seen_index] = torch.arange(
+            seen_index.numel(), dtype=torch.long, device=targets.device)
+        target_positions = class_positions[targets[old_sample_mask]]
+        target_confidence = teacher_probs.gather(
+            1, target_positions.unsqueeze(1)).squeeze(1)
+
+        floor = min(1.0, max(0.0, float(floor)))
+        power = max(0.0, float(power))
+        old_weights = floor + (1.0 - floor) * target_confidence.pow(power)
+        weights[old_sample_mask] = old_weights
+
+    return weights, target_confidence.mean(), old_sample_count
+
+
+def _scale_old_classifier_row_gradients(head, old_classes, scale):
+    """Apply a smaller effective learning rate to consolidated old classifier rows."""
+    if not old_classes:
+        return
+    scale = min(1.0, max(0.0, float(scale)))
+    if scale >= 1.0:
+        return
+
+    old_index = torch.as_tensor(old_classes, dtype=torch.long, device=head.weight.device)
+    if head.weight.grad is not None:
+        old_weight_grad = head.weight.grad.index_select(0, old_index) * scale
+        head.weight.grad.index_copy_(0, old_index, old_weight_grad)
+    if head.bias is not None and head.bias.grad is not None:
+        old_bias_grad = head.bias.grad.index_select(0, old_index) * scale
+        head.bias.grad.index_copy_(0, old_index, old_bias_grad)
+
+
 def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_mask=None, task_id=-1):
     model.train()
     run_epochs = args.crct_epochs
     crct_num = 0
-    param_list = [p for n, p in model.named_parameters() if p.requires_grad and 'lora' not in n]
+    base_model = model.module if hasattr(model, 'module') else model
+    head_only = bool(getattr(args, 'crct_head_only', False))
+    fc_norm_grad_states = []
+    if head_only:
+        if not hasattr(base_model, 'head') or not hasattr(base_model, 'fc_norm'):
+            raise AttributeError('Head-only CRCT requires model.head and model.fc_norm')
+        fc_norm_grad_states = [
+            (parameter, parameter.requires_grad)
+            for parameter in base_model.fc_norm.parameters()
+        ]
+        for parameter, _ in fc_norm_grad_states:
+            parameter.requires_grad_(False)
+        param_list = [
+            parameter for parameter in base_model.head.parameters()
+            if parameter.requires_grad
+        ]
+    else:
+        param_list = [
+            p for n, p in model.named_parameters()
+            if p.requires_grad and 'lora' not in n
+        ]
+    if not param_list:
+        raise ValueError('CRCT has no trainable parameters')
     network_params = [{'params': param_list, 'lr': args.ca_lr, 'weight_decay': args.weight_decay}]
     if 'mae' in args.model or 'beit' in args.model:
         optimizer = optim.AdamW(network_params, lr=args.ca_lr / 10, weight_decay=args.weight_decay)
@@ -735,11 +836,20 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
         and len(old_classes) > 0
     )
     anchor_weight = max(0.0, float(getattr(args, 'crct_anchor_weight', 0.0)))
+    reliability_enabled = (
+        bool(getattr(args, 'crct_reliability_weighting', False))
+        and len(old_classes) > 0
+    )
+    reliability_floor = min(
+        1.0, max(0.0, float(getattr(args, 'crct_reliability_floor', 0.25))))
+    reliability_power = max(
+        0.0, float(getattr(args, 'crct_reliability_power', 1.0)))
+    old_row_lr_scale = min(
+        1.0, max(0.0, float(getattr(args, 'crct_old_row_lr_scale', 1.0))))
 
-    base_model = model.module if hasattr(model, 'module') else model
     teacher_fc_norm = None
     teacher_head = None
-    if distill_enabled or anchor_weight > 0.0:
+    if distill_enabled or anchor_weight > 0.0 or reliability_enabled:
         if not hasattr(base_model, 'head') or not hasattr(base_model, 'fc_norm'):
             raise AttributeError('Stability-aware CRCT requires model.head and model.fc_norm')
         teacher_fc_norm = copy.deepcopy(base_model.fc_norm).to(device).eval()
@@ -747,14 +857,21 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
         for teacher_parameter in list(teacher_fc_norm.parameters()) + list(teacher_head.parameters()):
             teacher_parameter.requires_grad_(False)
 
-    if utils.is_main_process() and (distill_enabled or anchor_weight > 0.0):
+    if utils.is_main_process() and (
+            head_only or distill_enabled or anchor_weight > 0.0
+            or reliability_enabled or old_row_lr_scale < 1.0):
         print(
             'CRCT stability:',
+            'head_only=', head_only,
             'old_classes=', len(old_classes),
             'distill_weight=', distill_weight if distill_enabled else 0.0,
             'temperature=', distill_temperature,
             'confidence=', distill_confidence,
             'anchor_weight=', anchor_weight,
+            'reliability=', reliability_enabled,
+            'reliability_floor=', reliability_floor,
+            'reliability_power=', reliability_power,
+            'old_row_lr_scale=', old_row_lr_scale,
         )
 
 
@@ -868,7 +985,7 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
             logits = outputs['logits']
 
             teacher_logits = None
-            if distill_enabled:
+            if distill_enabled or reliability_enabled:
                 with torch.no_grad():
                     teacher_logits = teacher_head(teacher_fc_norm(inp))
 
@@ -881,7 +998,26 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
                 not_mask = torch.tensor(not_mask, dtype=torch.int64).to(device)
                 logits = logits.index_fill(dim=1, index=not_mask, value=float('-inf'))
 
-            loss_ce = criterion(logits, tgt)
+            replay_weight = logits.new_ones(tgt.shape, dtype=torch.float32)
+            old_teacher_confidence = logits.new_zeros(())
+            old_replay_count = 0
+            if reliability_enabled:
+                replay_weight, old_teacher_confidence, old_replay_count = (
+                    _crct_replay_reliability_weights(
+                        teacher_logits,
+                        tgt,
+                        seen_classes,
+                        old_classes,
+                        floor=reliability_floor,
+                        power=reliability_power,
+                    )
+                )
+                per_sample_ce = F.cross_entropy(logits, tgt, reduction='none')
+                loss_ce = (
+                    per_sample_ce * replay_weight
+                ).sum() / replay_weight.sum().clamp_min(1e-12)
+            else:
+                loss_ce = criterion(logits, tgt)
             loss_kd = logits.new_zeros(())
             kd_kept = 0
             if distill_enabled:
@@ -924,6 +1060,8 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
 
             optimizer.zero_grad()
             loss.backward()
+            _scale_old_classifier_row_gradients(
+                base_model.head, old_classes, old_row_lr_scale)
             #for name, p in model.named_parameters():
             #    if p.requires_grad and p.grad is None:
             #        print(name)
@@ -936,6 +1074,9 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
                 KD=loss_kd.item(),
                 Anchor=loss_anchor.item(),
                 KDKeep=kd_kept,
+                ReplayW=replay_weight.mean().item(),
+                OldConf=old_teacher_confidence.item(),
+                OldReplay=old_replay_count,
             )
             metric_logger.update(Lr=optimizer.param_groups[0]["lr"])
             metric_logger.meters['Acc@1'].update(acc1.item(), n=inp.shape[0])
@@ -945,6 +1086,9 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
         metric_logger.synchronize_between_processes()
         print("Averaged stats:", metric_logger)
         scheduler.step()
+
+    for parameter, requires_grad in fc_norm_grad_states:
+        parameter.requires_grad_(requires_grad)
 
 
 def orth_loss(features, targets, device, args):
