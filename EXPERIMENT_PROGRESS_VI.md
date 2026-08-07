@@ -2108,3 +2108,24 @@ max_confidence_drop=0.02, max_margin_drop=0.10
 ```
 
 Code chọn alpha chỉ trên rank 0, broadcast sang mọi rank rồi mới áp classifier, bảo đảm đúng khi chạy DDP nhiều GPU. Tính năng mặc định tắt nên các cấu hình cũ vẫn tái lập được.
+
+## 54. Sửa smoke test v4
+
+Lần smoke đầu tiên không kiểm tra được trust-region vì dừng ở đầu task 2 với CUDA OOM. Log cho thấy một tiến trình khác (PID `790732`) đang chiếm khoảng `20.01 GiB`; tiến trình smoke chỉ dùng khoảng `2.58 GiB` và GPU còn khoảng `54 MiB`. Đây không phải lỗi bộ nhớ do trust-region.
+
+Smoke cũ còn đặt `num_tasks=2`, khiến Split-CIFAR100 bị chia thành 2 task, mỗi task 50 lớp, trong khi TII checkpoint được train theo 10 task, mỗi task 10 lớp. Vì partition không khớp, Acc@1 task 1 chỉ `1.94%`; con số này không có giá trị đánh giá phương pháp.
+
+Bản sửa thêm:
+
+```text
+--num_tasks 10
+--max_train_tasks 2
+```
+
+`num_tasks=10` giữ nguyên class partition và target-task mapping. `max_train_tasks=2` chỉ giới hạn vòng train ở hai task đầu. Full run dùng `max_train_tasks=0`, nghĩa là chạy đủ 10 task như trước.
+
+Smoke hợp lệ phải:
+
+1. In `Limiting run to 2 of 10 tasks`.
+2. Chạy hết task 2 mà không có traceback.
+3. In dòng `CRCT adaptive trust region` với alpha, số anchor và ba metric drift.

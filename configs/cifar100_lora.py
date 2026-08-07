@@ -75,6 +75,7 @@ def get_args_parser(subparsers):
 
     # Continual learning parameters
     subparsers.add_argument('--num_tasks', default=10, type=int, help='number of sequential tasks')
+    subparsers.add_argument('--max_train_tasks', default=0, type=int, help='stop after this many tasks while preserving the num_tasks dataset partition; 0 runs all tasks')
     subparsers.add_argument('--train_mask', default=True, type=bool, help='if using the class mask at training')
     subparsers.add_argument('--task_inc', default=False, type=bool, help='if doing task incremental')
 

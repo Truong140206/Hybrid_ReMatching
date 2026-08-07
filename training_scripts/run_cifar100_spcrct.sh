@@ -23,15 +23,17 @@ fi
 
 case "${MODE}" in
   smoke)
-    NUM_TASKS=2
+    MAX_TRAIN_TASKS=2
+    FINAL_TASK=2
     EPOCHS=1
     CRCT_EPOCHS=1
     CFS_EPOCHS=1
     MASTER_PORT="${MASTER_PORT:-29525}"
-    RUN_NAME="cifar100_spcrct_v4_trust_smoke_seed${SEED}"
+    RUN_NAME="cifar100_spcrct_v4_trust_smoke10x2_seed${SEED}"
     ;;
   full)
-    NUM_TASKS=10
+    MAX_TRAIN_TASKS=0
+    FINAL_TASK=10
     EPOCHS=10
     CRCT_EPOCHS=3
     CFS_EPOCHS=20
@@ -80,7 +82,8 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --lora_momentum 0.4 \
   --lora_type hide \
   --trained_original_model "${TII_DIR}" \
-  --num_tasks "${NUM_TASKS}" \
+  --num_tasks 10 \
+  --max_train_tasks "${MAX_TRAIN_TASKS}" \
   --cfs_sampling \
   --cfs_epochs "${CFS_EPOCHS}" \
   --cfs_train_max_samples 1024 \
@@ -115,4 +118,4 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   2>&1 | tee "${LOG_PATH}"
 
 echo "Final metrics:"
-grep "Average accuracy till task${NUM_TASKS}" "${LOG_PATH}" | tail -n 1 || true
+grep "Average accuracy till task${FINAL_TASK}" "${LOG_PATH}" | tail -n 1 || true

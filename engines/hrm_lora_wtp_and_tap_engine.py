@@ -485,7 +485,13 @@ def train_and_evaluate(model: torch.nn.Module, model_without_ddp: torch.nn.Modul
     norm_update_ratio = min(
         1.0, max(0.0, float(getattr(args, 'continual_norm_update_ratio', 0.25))))
 
-    for task_id in range(args.num_tasks):
+    task_count = args.num_tasks
+    max_train_tasks = int(getattr(args, 'max_train_tasks', 0))
+    if max_train_tasks > 0:
+        task_count = min(task_count, max_train_tasks)
+        if utils.is_main_process():
+            print('Limiting run to', task_count, 'of', args.num_tasks, 'tasks')
+    for task_id in range(task_count):
         previous_fc_norm = None
         if norm_blend_enabled and task_id > 0:
             previous_fc_norm = {
