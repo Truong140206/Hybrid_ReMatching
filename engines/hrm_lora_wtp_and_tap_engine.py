@@ -798,6 +798,170 @@ def _scale_old_classifier_row_gradients(head, old_classes, scale):
         head.bias.grad.index_copy_(0, old_index, old_bias_grad)
 
 
+@torch.no_grad()
+def _build_crct_trust_anchors(class_means, class_covariances, old_classes,
+                              args, device):
+    """Draw independent high-density anchors from stored real-feature statistics."""
+    samples_per_component = max(
+        1, int(getattr(args, 'crct_trust_samples_per_component', 4)))
+    covariance_scale = max(
+        0.0, float(getattr(args, 'crct_trust_cov_scale', 0.25)))
+    anchor_chunks = []
+    anchor_labels = []
+
+    for class_id in old_classes:
+        stored_means = class_means.get(class_id)
+        stored_covariances = class_covariances.get(class_id)
+        if stored_means is None or stored_covariances is None:
+            continue
+
+        means = stored_means if isinstance(stored_means, list) else [stored_means]
+        covariances = (
+            stored_covariances
+            if isinstance(stored_covariances, list)
+            else [stored_covariances]
+        )
+        for component_mean, component_covariance in zip(means, covariances):
+            mean = torch.as_tensor(component_mean, device=device).float()
+            covariance = torch.as_tensor(component_covariance, device=device).float()
+            component_anchors = [mean.unsqueeze(0)]
+            random_count = samples_per_component - 1
+            if random_count > 0 and covariance_scale > 0.0:
+                if covariance.dim() == 1:
+                    std = (covariance.clamp_min(1e-6) * covariance_scale).sqrt()
+                    random_anchors = (
+                        mean.unsqueeze(0)
+                        + torch.randn(
+                            random_count, mean.numel(), device=device,
+                            dtype=mean.dtype) * std.unsqueeze(0)
+                    )
+                else:
+                    scaled_covariance = covariance * covariance_scale
+                    scaled_covariance = scaled_covariance + torch.eye(
+                        mean.numel(), device=device, dtype=mean.dtype) * 1e-5
+                    distribution = torch.distributions.MultivariateNormal(
+                        mean, scaled_covariance)
+                    random_anchors = distribution.sample((random_count,))
+                component_anchors.append(random_anchors)
+
+            component_anchors = torch.cat(component_anchors, dim=0)
+            anchor_chunks.append(component_anchors)
+            anchor_labels.extend([int(class_id)] * component_anchors.shape[0])
+
+    if not anchor_chunks:
+        return None, None
+    return (
+        torch.cat(anchor_chunks, dim=0),
+        torch.as_tensor(anchor_labels, dtype=torch.long, device=device),
+    )
+
+
+@torch.no_grad()
+def _select_crct_adaptive_trust_alpha(base_model, teacher_fc_norm, teacher_head,
+                                      anchors, targets, seen_classes,
+                                      old_classes, args):
+    """Interpolate the whole classifier to satisfy worst-class logit-drift limits."""
+    if anchors is None or targets is None or anchors.numel() == 0:
+        return 1.0, None
+
+    device = anchors.device
+    seen_index = torch.as_tensor(seen_classes, dtype=torch.long, device=device)
+    old_index = torch.as_tensor(old_classes, dtype=torch.long, device=device)
+    old_sample_mask = (targets.unsqueeze(1) == old_index.unsqueeze(0)).any(dim=1)
+    if not bool(old_sample_mask.any()):
+        return 1.0, None
+
+    anchors = anchors[old_sample_mask]
+    targets = targets[old_sample_mask]
+    teacher_logits = teacher_head(teacher_fc_norm(anchors)).index_select(1, seen_index)
+    student_logits = base_model.head(base_model.fc_norm(anchors)).index_select(1, seen_index)
+    teacher_log_probs = F.log_softmax(teacher_logits, dim=1)
+    teacher_probs = teacher_log_probs.exp()
+
+    class_positions = torch.full(
+        (base_model.head.out_features,), -1, dtype=torch.long, device=device)
+    class_positions[seen_index] = torch.arange(
+        seen_index.numel(), dtype=torch.long, device=device)
+    target_positions = class_positions[targets]
+    teacher_target_confidence = teacher_probs.gather(
+        1, target_positions.unsqueeze(1)).squeeze(1)
+    teacher_competitors = teacher_logits.clone()
+    teacher_competitors.scatter_(
+        1, target_positions.unsqueeze(1), float('-inf'))
+    teacher_margin = (
+        teacher_logits.gather(1, target_positions.unsqueeze(1)).squeeze(1)
+        - teacher_competitors.max(dim=1).values
+    )
+
+    steps = max(1, int(getattr(args, 'crct_trust_steps', 10)))
+    quantile = min(
+        1.0, max(0.0, float(getattr(args, 'crct_trust_quantile', 0.9))))
+    max_kl = max(0.0, float(getattr(args, 'crct_trust_max_kl', 0.02)))
+    max_conf_drop = max(
+        0.0, float(getattr(args, 'crct_trust_max_conf_drop', 0.02)))
+    max_margin_drop = max(
+        0.0, float(getattr(args, 'crct_trust_max_margin_drop', 0.10)))
+
+    best_alpha = 0.0
+    best_metrics = {'kl': 0.0, 'conf_drop': 0.0, 'margin_drop': 0.0}
+    class_ids = torch.unique(targets, sorted=True)
+    for step in range(steps + 1):
+        alpha = step / float(steps)
+        candidate_logits = teacher_logits.lerp(student_logits, alpha)
+        candidate_log_probs = F.log_softmax(candidate_logits, dim=1)
+        candidate_probs = candidate_log_probs.exp()
+        sample_kl = (
+            teacher_probs * (teacher_log_probs - candidate_log_probs)
+        ).sum(dim=1)
+        candidate_target_confidence = candidate_probs.gather(
+            1, target_positions.unsqueeze(1)).squeeze(1)
+        confidence_drop = (
+            teacher_target_confidence - candidate_target_confidence
+        ).clamp_min(0.0)
+        candidate_competitors = candidate_logits.clone()
+        candidate_competitors.scatter_(
+            1, target_positions.unsqueeze(1), float('-inf'))
+        candidate_margin = (
+            candidate_logits.gather(1, target_positions.unsqueeze(1)).squeeze(1)
+            - candidate_competitors.max(dim=1).values
+        )
+        margin_drop = (teacher_margin - candidate_margin).clamp_min(0.0)
+
+        class_kl = []
+        class_conf_drop = []
+        class_margin_drop = []
+        for class_id in class_ids:
+            class_mask = targets == class_id
+            class_kl.append(sample_kl[class_mask].mean())
+            class_conf_drop.append(confidence_drop[class_mask].mean())
+            class_margin_drop.append(margin_drop[class_mask].mean())
+        kl_value = torch.quantile(torch.stack(class_kl), quantile).item()
+        conf_drop_value = torch.quantile(
+            torch.stack(class_conf_drop), quantile).item()
+        margin_drop_value = torch.quantile(
+            torch.stack(class_margin_drop), quantile).item()
+        if (
+                kl_value <= max_kl
+                and conf_drop_value <= max_conf_drop
+                and margin_drop_value <= max_margin_drop):
+            best_alpha = alpha
+            best_metrics = {
+                'kl': kl_value,
+                'conf_drop': conf_drop_value,
+                'margin_drop': margin_drop_value,
+            }
+
+    return best_alpha, best_metrics
+
+
+@torch.no_grad()
+def _blend_crct_classifier(base_model, teacher_head, alpha):
+    """Apply one shared interpolation factor to every classifier parameter."""
+    for student_parameter, teacher_parameter in zip(
+            base_model.head.parameters(), teacher_head.parameters()):
+        student_parameter.copy_(teacher_parameter.lerp(student_parameter, alpha))
+
+
 def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_mask=None, task_id=-1):
     model.train()
     run_epochs = args.crct_epochs
@@ -862,12 +1026,20 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
         getattr(args, 'crct_reliability_preserve_mass', False))
     reliability_preserve_class_mass = bool(
         getattr(args, 'crct_reliability_preserve_class_mass', False))
+    trust_region_enabled = (
+        bool(getattr(args, 'crct_adaptive_trust_region', False))
+        and len(old_classes) > 0
+    )
+    if trust_region_enabled and not head_only:
+        raise ValueError(
+            'Adaptive CRCT trust region requires --crct_head_only')
     old_row_lr_scale = min(
         1.0, max(0.0, float(getattr(args, 'crct_old_row_lr_scale', 1.0))))
 
     teacher_fc_norm = None
     teacher_head = None
-    if distill_enabled or anchor_weight > 0.0 or reliability_enabled:
+    if (distill_enabled or anchor_weight > 0.0 or reliability_enabled
+            or trust_region_enabled):
         if not hasattr(base_model, 'head') or not hasattr(base_model, 'fc_norm'):
             raise AttributeError('Stability-aware CRCT requires model.head and model.fc_norm')
         teacher_fc_norm = copy.deepcopy(base_model.fc_norm).to(device).eval()
@@ -877,7 +1049,8 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
 
     if utils.is_main_process() and (
             head_only or distill_enabled or anchor_weight > 0.0
-            or reliability_enabled or old_row_lr_scale < 1.0):
+            or reliability_enabled or trust_region_enabled
+            or old_row_lr_scale < 1.0):
         print(
             'CRCT stability:',
             'head_only=', head_only,
@@ -891,6 +1064,7 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
             'reliability_power=', reliability_power,
             'reliability_preserve_mass=', reliability_preserve_mass,
             'reliability_preserve_class_mass=', reliability_preserve_class_mass,
+            'adaptive_trust_region=', trust_region_enabled,
             'old_row_lr_scale=', old_row_lr_scale,
         )
 
@@ -1108,6 +1282,32 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
         metric_logger.synchronize_between_processes()
         print("Averaged stats:", metric_logger)
         scheduler.step()
+
+    if trust_region_enabled:
+        selected_alpha = 1.0
+        trust_metrics = None
+        trust_anchor_count = 0
+        if not dist.is_initialized() or utils.is_main_process():
+            trust_anchors, trust_targets = _build_crct_trust_anchors(
+                cls_mean, cls_cov, old_classes, args, device)
+            trust_anchor_count = 0 if trust_targets is None else trust_targets.numel()
+            selected_alpha, trust_metrics = _select_crct_adaptive_trust_alpha(
+                base_model, teacher_fc_norm, teacher_head,
+                trust_anchors, trust_targets, seen_classes, old_classes, args)
+        if dist.is_initialized():
+            alpha_tensor = torch.tensor(selected_alpha, dtype=torch.float32, device=device)
+            dist.broadcast(alpha_tensor, src=0)
+            selected_alpha = float(alpha_tensor.item())
+        _blend_crct_classifier(base_model, teacher_head, selected_alpha)
+        if utils.is_main_process():
+            print(
+                'CRCT adaptive trust region:',
+                'alpha=', selected_alpha,
+                'anchors=', trust_anchor_count,
+                'kl=', None if trust_metrics is None else trust_metrics['kl'],
+                'conf_drop=', None if trust_metrics is None else trust_metrics['conf_drop'],
+                'margin_drop=', None if trust_metrics is None else trust_metrics['margin_drop'],
+            )
 
     for parameter, requires_grad in fc_norm_grad_states:
         parameter.requires_grad_(requires_grad)

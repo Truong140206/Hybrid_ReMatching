@@ -2062,3 +2062,49 @@ Thiết kế v3:
 4. Bỏ continual norm blend; giữ old-row scale `1.0`, head-only CRCT, CTIRD và tổng số replay sample không đổi.
 
 V3 kiểm tra trực tiếp giả thuyết rằng replay quá thiên về mẫu đa dạng/biên làm classifier fit synthetic rất cao nhưng tổng quát hóa kém lên feature thật.
+
+## 53. Kết quả core replay v3 và adaptive trust-region v4
+
+Kết quả v3:
+
+```text
+Acc@task 88.5200 | Acc@1 88.3900 | Acc@5 98.0300
+Loss 0.4717 | Forgetting 4.3444 | Backward -4.2667
+```
+
+So với v2, v3 tăng Acc@1 `0.05`, Acc@5 `0.03`, giảm forgetting `0.10` và cải thiện backward `0.1333`. Core replay có tác dụng đúng hướng nhưng mức cải thiện nhỏ; tiếp tục tăng tỷ lệ core đơn thuần khó tạo bước nhảy đủ lớn.
+
+### 53.1. Nguyên nhân forgetting đã xác định
+
+- LoRA cũ được tách riêng và không phải phần bị CRCT cập nhật.
+- `fc_norm` không thay đổi trong cấu hình hiện tại.
+- CRCT cập nhật global classifier lặp lại trên feature tổng hợp.
+- Synthetic replay đạt gần `99%` accuracy nhưng dữ liệu thật chỉ khoảng `88%`, cho thấy classifier overfit synthetic distribution.
+- Một số task thật bị giảm so với đỉnh lịch sử dù average accuracy tăng, vì vậy forgetting và accuracy có thể cùng tăng.
+
+### 53.2. Adaptive trust-region CRCT
+
+V4 lưu classifier ngay trước CRCT làm teacher. Sau khi CRCT train xong, phương pháp:
+
+1. Tạo tập anchor độc lập quanh các centroid đã lưu từ feature thật; không dùng chính batch replay vừa train.
+2. So sánh pre-CRCT và post-CRCT logits trên anchor của từng lớp cũ.
+3. Thử các hệ số nội suy `alpha` từ `0.0` đến `1.0`.
+4. Với mỗi alpha, đo theo từng lớp: KL drift, mức giảm target confidence và mức giảm target-vs-competitor margin.
+5. Dùng quantile `0.9` để ràng buộc nhóm lớp drift mạnh nhất, thay vì chỉ nhìn trung bình toàn bộ lớp.
+6. Chọn alpha lớn nhất vẫn thỏa cả ba giới hạn; sau đó nội suy toàn bộ classifier bằng cùng một alpha.
+
+```text
+head_final = head_before + alpha * (head_after - head_before)
+```
+
+Nội suy toàn bộ head cùng nhau giữ hình học tương đối giữa hàng lớp cũ và lớp mới, tránh lỗi v1 khi chỉ giảm gradient hàng cũ. Alpha được chọn lại sau mỗi task: CRCT hữu ích có thể giữ gần `1`, CRCT gây drift sẽ tự bị thu nhỏ hoặc rollback.
+
+Thiết lập v4 đầu tiên:
+
+```text
+steps=10, anchors/component=4, covariance_scale=0.25
+class_quantile=0.9, max_KL=0.02
+max_confidence_drop=0.02, max_margin_drop=0.10
+```
+
+Code chọn alpha chỉ trên rank 0, broadcast sang mọi rank rồi mới áp classifier, bảo đảm đúng khi chạy DDP nhiều GPU. Tính năng mặc định tắt nên các cấu hình cũ vẫn tái lập được.

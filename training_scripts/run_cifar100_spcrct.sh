@@ -28,7 +28,7 @@ case "${MODE}" in
     CRCT_EPOCHS=1
     CFS_EPOCHS=1
     MASTER_PORT="${MASTER_PORT:-29525}"
-    RUN_NAME="cifar100_spcrct_v3_smoke_seed${SEED}"
+    RUN_NAME="cifar100_spcrct_v4_trust_smoke_seed${SEED}"
     ;;
   full)
     NUM_TASKS=10
@@ -36,7 +36,7 @@ case "${MODE}" in
     CRCT_EPOCHS=3
     CFS_EPOCHS=20
     MASTER_PORT="${MASTER_PORT:-29526}"
-    RUN_NAME="cifar100_spcrct_v3_classmass_core25_seed${SEED}"
+    RUN_NAME="cifar100_spcrct_v4_adaptive_trust_seed${SEED}"
     ;;
   *)
     echo "Usage: $0 [smoke|full]" >&2
@@ -103,6 +103,14 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --crct_reliability_power 1.0 \
   --crct_reliability_preserve_class_mass \
   --crct_old_row_lr_scale 1.0 \
+  --crct_adaptive_trust_region \
+  --crct_trust_steps 10 \
+  --crct_trust_samples_per_component 4 \
+  --crct_trust_cov_scale 0.25 \
+  --crct_trust_quantile 0.9 \
+  --crct_trust_max_kl 0.02 \
+  --crct_trust_max_conf_drop 0.02 \
+  --crct_trust_max_margin_drop 0.10 \
   --output_dir "${OUTPUT_DIR}" \
   2>&1 | tee "${LOG_PATH}"
 
