@@ -1,0 +1,80 @@
+% !TeX program = xelatex
+\documentclass[10pt,aspectratio=169]{beamer}
+
+\usepackage{fontspec}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+
+\setsansfont{TeX Gyre Heros}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}{}
+
+\definecolor{MainBlue}{HTML}{1F5FBF}
+\definecolor{GoodGreen}{HTML}{157347}
+\definecolor{WarnOrange}{HTML}{A45100}
+\definecolor{LightBlue}{HTML}{EAF2FF}
+\definecolor{LightOrange}{HTML}{FFF2E3}
+
+\setbeamercolor{frametitle}{fg=MainBlue}
+\setbeamerfont{frametitle}{series=\bfseries,size=\Large}
+\setbeamercolor{block title}{fg=white,bg=MainBlue}
+\setbeamercolor{block body}{fg=black,bg=LightBlue}
+
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcommand{\good}[1]{\textcolor{GoodGreen}{\textbf{#1}}}
+\newcommand{\warn}[1]{\textcolor{WarnOrange}{\textbf{#1}}}
+
+\begin{document}
+
+\begin{frame}{Kết quả trên Split-CIFAR100 sau 10 task}
+  \vspace{-0.15cm}
+  {\footnotesize
+  \textbf{Thiết lập:} ViT-B/16, seed 42; HRM-PET gốc và bản cải tiến được chạy trong cùng điều kiện.}
+
+  \vspace{0.16cm}
+  \centering
+  \scriptsize
+  \setlength{\tabcolsep}{3.5pt}
+  \renewcommand{\arraystretch}{1.18}
+  \begin{tabularx}{\textwidth}{>{\bfseries}p{1.55cm} >{\centering\arraybackslash}p{1.25cm} >{\centering\arraybackslash}p{1.35cm} >{\centering\arraybackslash}p{1.35cm} Y}
+    \toprule
+    Chỉ số & Gốc & Cải tiến & Thay đổi & Ý nghĩa và cách đọc \\
+    \midrule
+    Acc@task
+      & 88.01 & 88.32 & \good{+0.31}
+      & Tỷ lệ xác định đúng task/LoRA cần dùng. Cao hơn là tốt hơn. \\
+    Acc@1
+      & 87.81 & 88.60 & \good{+0.79}
+      & Tỷ lệ ảnh có nhãn đúng đứng đầu dự đoán. Đây là chỉ số chính; cao hơn tốt hơn. \\
+    Acc@5
+      & 98.05 & 98.07 & \good{+0.02}
+      & Tỷ lệ nhãn đúng xuất hiện trong 5 dự đoán đầu. Cao hơn là tốt hơn. \\
+    Loss
+      & 0.5228 & 0.4607 & \good{$-0.0621$}
+      & Sai số phân loại trung bình. Thấp hơn là tốt hơn khi accuracy không giảm. \\
+    Forgetting
+      & 3.5889 & 4.2000 & \warn{+0.6111}
+      & Mức giảm trung bình của task cũ so với lúc task đó tốt nhất. Thấp hơn là tốt hơn. \\
+    Backward
+      & $-3.2556$ & $-3.9444$ & \warn{$-0.6888$}
+      & Ảnh hưởng của việc học task mới lên task cũ. Gần 0 hoặc dương là tốt hơn. \\
+    \bottomrule
+  \end{tabularx}
+
+  \vspace{0.16cm}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.49\textwidth}
+      \begin{block}{Kết quả đạt được}
+        \scriptsize Acc@1 tăng \textbf{0.79 điểm}, Acc@task tăng \textbf{0.31 điểm}; loss giảm khoảng \textbf{11.9\%}. Mô hình phân loại chính xác và ổn định hơn.
+      \end{block}
+    \end{column}
+    \begin{column}{0.49\textwidth}
+      \begin{alertblock}{Điểm còn hạn chế}
+        \scriptsize Forgetting và Backward chưa tốt hơn bản gốc. Cải tiến hiện tăng độ chính xác, nhưng khả năng giữ kiến thức cũ vẫn cần tối ưu tiếp.
+      \end{alertblock}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\end{document}
