@@ -2129,3 +2129,50 @@ Smoke hợp lệ phải:
 1. In `Limiting run to 2 of 10 tasks`.
 2. Chạy hết task 2 mà không có traceback.
 3. In dòng `CRCT adaptive trust region` với alpha, số anchor và ba metric drift.
+
+
+## 55. ImageNet-R: Exhaustive LoRA Rematching
+
+### 55.1. Van de
+
+Ba huong dinh tuyen hau xu ly truoc do deu khong thanh cong:
+
+- Prototype trong khong gian LoRA: feature cua cac adapter khac nhau khong so sanh truc tiep duoc.
+- Shared-space prototype: nearest-prototype tren backbone dong bang khong mo ta tot ranh gioi 200 lop ImageNet-R.
+- Learned replay task router: validation tren feature memory qua lac quan va khong tong quat hoa sang test renditions.
+
+Nut that chinh van la phai chon mot task/LoRA duy nhat truoc khi phan loai. Neu task sai, lop dung de bi loai khoi nhom ung vien.
+
+### 55.2. Exhaustive rematching
+
+Phuong phap moi khong doan task truoc. Voi moi anh:
+
+1. Chay anh qua tat ca LoRA da hoc.
+2. LoRA cua task `t` chi cham cac lop thuoc task `t`.
+3. Ghep logits cuc bo cua tat ca task thanh mot vector logits tren toan bo lop da thay.
+4. Them TII task prior nhe (`0.1`) de on dinh thang diem giua cac adapter.
+5. Lay du doan toan cuc tren vector da ghep.
+
+Phuong phap khong train lai va khong thay doi checkpoint. Doi lai, chi phi inference tang tu mot adapter pass len toi da 10 adapter pass o task cuoi.
+
+### 55.3. Ket qua sau 10 task
+
+Thiet lap: Split-ImageNet-R, ViT-B/16, seed 42, TII prior weight `0.1`, logit temperature `1.0`.
+
+| Chi so | Baseline | Hybrid Real+CFS | Exhaustive | Thay doi so voi baseline |
+|---|---:|---:|---:|---:|
+| Acc@task | 77.3007 | 77.5854 | **80.3087** | **+3.0080** |
+| Acc@1 | 73.8379 | 74.0477 | **74.9447** | **+1.1068** |
+| Acc@5 | 86.0767 | 86.4646 | **88.5370** | **+2.4603** |
+| Loss | 1.2399 | 1.2230 | **1.0919** | **-0.1480** |
+| Forgetting | 3.5268 | 3.3264 | **2.8804** | **-0.6464** |
+| Backward | -3.1815 | -2.9319 | **-2.8605** | **+0.3210** |
+
+Day la thi nghiem ImageNet-R dau tien cai thien dong thoi tat ca nhom chi so. So voi baseline, loss giam xap xi `11.9%` va forgetting giam xap xi `18.3%`.
+
+### 55.4. Y nghia
+
+- Acc@task tang manh xac nhan routing mot-LoRA la nut that thuc su.
+- Acc@1 va Acc@5 tang cho thay moi adapter cham cac lop cua chinh task no tot hon viec dung adapter duoc router chon.
+- Forgetting giam vi LoRA cu luon co co hoi tu cham lai cac lop cu, thay vi bi loai ngay khi TII chon nham task.
+- Ket qua danh doi do chinh xac lay chi phi suy luan tang tuyen tinh theo so task da hoc.
