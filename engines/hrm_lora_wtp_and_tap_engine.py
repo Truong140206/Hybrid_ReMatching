@@ -478,9 +478,11 @@ def train_and_evaluate(model: torch.nn.Module, model_without_ddp: torch.nn.Modul
     global cls_mean
     global cls_cov
     global cls_cfs_model
+    global cls_real_features
     cls_mean = dict()
     cls_cov = dict()
     cls_cfs_model = dict()
+    cls_real_features = dict()
     norm_blend_enabled = bool(getattr(args, 'continual_norm_blend', False))
     norm_update_ratio = min(
         1.0, max(0.0, float(getattr(args, 'continual_norm_update_ratio', 0.25))))
@@ -600,6 +602,15 @@ def train_and_evaluate(model: torch.nn.Module, model_without_ddp: torch.nn.Modul
         # compute mean and variance
         _compute_mean(model=model, data_loader=data_loader_per_cls, device=device, task_id=task_id,
                       class_mask=class_mask[task_id], args=args)
+        if bool(getattr(args, 'crct_real_feature_replay', False)) and utils.is_main_process():
+            memory_samples = sum(memory.shape[0] for memory in cls_real_features.values())
+            memory_bytes = sum(memory.numel() * memory.element_size() for memory in cls_real_features.values())
+            print(
+                'Real feature memory:',
+                'classes=', len(cls_real_features),
+                'samples=', memory_samples,
+                'MiB=', round(memory_bytes / (1024.0 * 1024.0), 3),
+            )
         if utils.use_semantic_feature_adapter(args):
             seen_classes = []
             for seen_task in range(task_id + 1):
@@ -647,6 +658,152 @@ def train_and_evaluate(model: torch.nn.Module, model_without_ddp: torch.nn.Modul
 
 
 @torch.no_grad()
+def _select_real_feature_memory(features, args):
+    """Keep central but diverse real features without retaining input images."""
+    features = features.detach().float()
+    budget = max(1, int(getattr(args, 'crct_real_memory_per_class', 48)))
+    if features.shape[0] <= budget:
+        return features.cpu().half()
+
+    normalized = F.normalize(features, dim=1)
+    normalized_center = F.normalize(features.mean(dim=0), dim=0)
+    center_distance = 1.0 - normalized.matmul(normalized_center)
+    outlier_quantile = min(
+        1.0, max(0.0, float(getattr(args, 'crct_real_outlier_quantile', 0.9))))
+    distance_limit = torch.quantile(center_distance, outlier_quantile)
+    eligible = torch.nonzero(center_distance <= distance_limit, as_tuple=False).flatten()
+    if eligible.numel() < budget:
+        eligible = torch.argsort(center_distance)[:budget]
+
+    diversity_weight = min(
+        1.0, max(0.0, float(getattr(args, 'crct_real_diversity_weight', 0.7))))
+    first_index = eligible[torch.argmin(center_distance.index_select(0, eligible))]
+    selected = [int(first_index.item())]
+    available = torch.zeros(features.shape[0], dtype=torch.bool, device=features.device)
+    available[eligible] = True
+    available[first_index] = False
+    min_distance = 1.0 - normalized.matmul(normalized[first_index])
+
+    while len(selected) < budget and bool(available.any()):
+        score = (
+            diversity_weight * min_distance
+            - (1.0 - diversity_weight) * center_distance
+        )
+        score = score.masked_fill(~available, float('-inf'))
+        next_index = torch.argmax(score)
+        selected.append(int(next_index.item()))
+        available[next_index] = False
+        distance_to_next = 1.0 - normalized.matmul(normalized[next_index])
+        min_distance = torch.minimum(min_distance, distance_to_next)
+
+    selected_index = torch.as_tensor(selected, dtype=torch.long, device=features.device)
+    return features.index_select(0, selected_index).cpu().half()
+
+
+@torch.no_grad()
+def _sample_real_feature_memory(class_id, sample_count, model, seen_classes, args, device):
+    """Mix hard real features with random representatives from one class memory."""
+    memory = cls_real_features.get(int(class_id))
+    if memory is None or memory.numel() == 0 or sample_count <= 0:
+        return None
+
+    feature_bank = memory.to(device=device, dtype=torch.float32, non_blocking=True)
+    bank_size = feature_bank.shape[0]
+    hard_ratio = min(
+        1.0, max(0.0, float(getattr(args, 'crct_real_hard_ratio', 0.5))))
+    hard_count = min(bank_size, sample_count, int(round(sample_count * hard_ratio)))
+    selected = []
+
+    if hard_count > 0:
+        logits = model(feature_bank, fc_only=True)['logits']
+        seen_index = torch.as_tensor(seen_classes, dtype=torch.long, device=device)
+        seen_logits = logits.index_select(1, seen_index)
+        target_position = torch.nonzero(
+            seen_index == int(class_id), as_tuple=False).flatten()
+        if target_position.numel() == 1 and seen_index.numel() > 1:
+            target_position = int(target_position.item())
+            target_logit = seen_logits[:, target_position]
+            competitor_logits = seen_logits.clone()
+            competitor_logits[:, target_position] = float('-inf')
+            margin = target_logit - competitor_logits.max(dim=1).values
+            selected.extend(torch.argsort(margin)[:hard_count].tolist())
+
+    selected_mask = torch.zeros(bank_size, dtype=torch.bool, device=device)
+    if selected:
+        selected_mask[torch.as_tensor(selected, dtype=torch.long, device=device)] = True
+    remaining_count = sample_count - len(selected)
+    available = torch.nonzero(~selected_mask, as_tuple=False).flatten()
+    if remaining_count > 0 and available.numel() > 0:
+        take_count = min(remaining_count, available.numel())
+        permutation = torch.randperm(available.numel(), device=device)[:take_count]
+        selected.extend(available.index_select(0, permutation).tolist())
+        remaining_count -= take_count
+    if remaining_count > 0:
+        selected.extend(torch.randint(bank_size, (remaining_count,), device=device).tolist())
+
+    selected_index = torch.as_tensor(selected, dtype=torch.long, device=device)
+    return feature_bank.index_select(0, selected_index)
+
+
+@torch.no_grad()
+def _sample_hybrid_class_replay(class_id, total_count, model, seen_classes,
+                                old_classes, args, device):
+    """Use one fixed per-class budget shared by real memory and CFS replay."""
+    default_ratio = float(getattr(args, 'crct_real_replay_ratio', 0.25))
+    if int(class_id) in old_classes:
+        real_ratio = float(getattr(args, 'crct_real_old_replay_ratio', default_ratio))
+    else:
+        real_ratio = float(getattr(args, 'crct_real_new_replay_ratio', default_ratio))
+    real_ratio = min(1.0, max(0.0, real_ratio))
+    has_memory = int(class_id) in cls_real_features
+    real_count = int(round(total_count * real_ratio)) if has_memory else 0
+    real_count = min(total_count, max(0, real_count))
+    synthetic_count = total_count - real_count
+    synthetic_chunks = []
+
+    means = cls_mean[class_id]
+    covariances = cls_cov[class_id]
+    if not isinstance(means, list):
+        means = [means]
+        covariances = [covariances]
+    valid_components = []
+    for mean, covariance in zip(means, covariances):
+        covariance = torch.as_tensor(covariance, device=device)
+        if covariance.numel() > 0 and float(covariance.float().abs().mean()) > 0.0:
+            valid_components.append((mean, covariance))
+
+    if synthetic_count > 0 and valid_components:
+        base_count, remainder = divmod(synthetic_count, len(valid_components))
+        for component_id, (mean, covariance) in enumerate(valid_components):
+            component_count = base_count + int(component_id < remainder)
+            if component_count <= 0:
+                continue
+            mean = torch.as_tensor(mean, device=device).float()
+            covariance = covariance.float()
+            if covariance.dim() == 1:
+                covariance = torch.diag(covariance)
+            covariance = covariance + torch.eye(
+                mean.numel(), device=device, dtype=mean.dtype) * 1e-4
+            synthetic_chunks.append(utils.sample_boundary_aware_cfs_features(
+                mean, covariance, component_count, args, device, model,
+                class_id, seen_classes, cfs_model=cls_cfs_model.get(class_id)))
+
+    real_features = _sample_real_feature_memory(
+        class_id, real_count, model, seen_classes, args, device)
+    chunks = synthetic_chunks
+    if real_features is not None:
+        chunks.append(real_features)
+    if not chunks:
+        raise RuntimeError('No replay features available for class {}'.format(class_id))
+    replay = torch.cat(chunks, dim=0)
+    if replay.shape[0] != total_count:
+        raise RuntimeError(
+            'Hybrid replay generated {} instead of {} samples for class {}'.format(
+                replay.shape[0], total_count, class_id))
+    return replay, 0 if real_features is None else real_features.shape[0]
+
+
+@torch.no_grad()
 def _compute_mean(model: torch.nn.Module, data_loader: Iterable, device: torch.device, task_id, class_mask=None,
                   args=None, ):
     model.eval()
@@ -664,6 +821,9 @@ def _compute_mean(model: torch.nn.Module, data_loader: Iterable, device: torch.d
         utils.distributed_barrier()
         dist.all_gather(features_per_cls_list, features_per_cls)
         gathered_features_per_cls = torch.cat(features_per_cls_list, dim=0)
+        if bool(getattr(args, 'crct_real_feature_replay', False)):
+            cls_real_features[int(cls_id)] = _select_real_feature_memory(
+                gathered_features_per_cls, args)
         if utils.use_cfs_sampling(args):
             cls_cfs_model[cls_id] = utils.train_cfs_model(gathered_features_per_cls, args, device)
 
@@ -1032,6 +1192,14 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
         getattr(args, 'crct_reliability_preserve_mass', False))
     reliability_preserve_class_mass = bool(
         getattr(args, 'crct_reliability_preserve_class_mass', False))
+    hybrid_real_replay = bool(getattr(args, 'crct_real_feature_replay', False))
+    if hybrid_real_replay and utils.use_semantic_projection(args):
+        raise ValueError(
+            'Hybrid real-feature replay and semantic projection must be evaluated separately')
+    if hybrid_real_replay and not cls_real_features:
+        raise RuntimeError('Real-feature replay is enabled but the feature memory is empty')
+    hybrid_samples_per_class = int(
+        getattr(args, 'crct_hybrid_samples_per_class', 0))
     trust_region_enabled = (
         bool(getattr(args, 'crct_adaptive_trust_region', False))
         and len(old_classes) > 0
@@ -1055,7 +1223,7 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
 
     if utils.is_main_process() and (
             head_only or distill_enabled or anchor_weight > 0.0
-            or reliability_enabled or trust_region_enabled
+            or reliability_enabled or trust_region_enabled or hybrid_real_replay
             or old_row_lr_scale < 1.0):
         print(
             'CRCT stability:',
@@ -1071,6 +1239,11 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
             'reliability_preserve_mass=', reliability_preserve_mass,
             'reliability_preserve_class_mass=', reliability_preserve_class_mass,
             'adaptive_trust_region=', trust_region_enabled,
+            'real_feature_replay=', hybrid_real_replay,
+            'real_replay_ratio=', float(getattr(args, 'crct_real_replay_ratio', 0.25)),
+            'real_old_new_ratio=', (float(getattr(args, 'crct_real_old_replay_ratio', 0.35)), float(getattr(args, 'crct_real_new_replay_ratio', 0.10))),
+            'real_hard_ratio=', float(getattr(args, 'crct_real_hard_ratio', 0.5)),
+            'hybrid_samples_per_class=', hybrid_samples_per_class,
             'old_row_lr_scale=', old_row_lr_scale,
         )
 
@@ -1081,12 +1254,23 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
         sampled_data = []
         sampled_label = []
         num_sampled_pcls = args.batch_size * 5
+        if hybrid_real_replay and hybrid_samples_per_class > 0:
+            num_sampled_pcls = hybrid_samples_per_class
+        real_replay_total = 0
 
         metric_logger = utils.MetricLogger(delimiter="  ")
         metric_logger.add_meter('Lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
         metric_logger.add_meter('Loss', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
 
-        if args.ca_storage_efficient_method in ['covariance', 'variance']:
+        if hybrid_real_replay:
+            for seen_task in range(task_id + 1):
+                for c_id in class_mask[seen_task]:
+                    sampled_data_single, real_count = _sample_hybrid_class_replay(
+                        c_id, num_sampled_pcls, model, seen_classes, old_classes, args, device)
+                    sampled_data.append(sampled_data_single)
+                    sampled_label.extend([c_id] * sampled_data_single.shape[0])
+                    real_replay_total += real_count
+        elif args.ca_storage_efficient_method in ['covariance', 'variance']:
             for i in range(task_id + 1):
                 for c_id in class_mask[i]:
                     mean = torch.tensor(cls_mean[c_id], dtype=torch.float64).to(device)
@@ -1161,6 +1345,15 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
         sampled_data = torch.cat(sampled_data, dim=0).float().to(device)
         sampled_label = torch.tensor(sampled_label).long().to(device)
         print(sampled_data.shape)
+        if hybrid_real_replay and utils.is_main_process():
+            print(
+                'CRCT hybrid replay:',
+                'epoch=', epoch + 1,
+                'samples_per_class=', num_sampled_pcls,
+                'real=', real_replay_total,
+                'synthetic=', sampled_data.shape[0] - real_replay_total,
+                'classes=', len(seen_classes),
+            )
 
         inputs = sampled_data
         targets = sampled_label

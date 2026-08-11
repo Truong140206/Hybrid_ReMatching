@@ -75,6 +75,7 @@ def get_args_parser(subparsers):
 
     # Continual learning parameters
     subparsers.add_argument('--num_tasks', default=10, type=int, help='number of sequential tasks')
+    subparsers.add_argument('--max_train_tasks', default=0, type=int, help='stop after this many tasks while preserving the num_tasks dataset partition; 0 runs all tasks')
     subparsers.add_argument('--train_mask', default=True, type=bool, help='if using the class mask at training')
     subparsers.add_argument('--task_inc', default=False, type=bool, help='if doing task incremental')
 
@@ -135,6 +136,15 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--cfs_selection_ratio', default=0.5, type=float)
     subparsers.add_argument('--cfs_selection_steps', default=5, type=int)
     subparsers.add_argument('--cfs_step_candidates', default=0, type=int)
+    subparsers.add_argument('--crct_real_feature_replay', action='store_true', help='mix a compact memory of real class features with Gaussian/CFS replay during classifier correction')
+    subparsers.add_argument('--crct_real_memory_per_class', default=48, type=int, help='maximum number of representative real features retained per class')
+    subparsers.add_argument('--crct_real_replay_ratio', default=0.25, type=float, help='fraction of each class correction budget filled with real feature memory')
+    subparsers.add_argument('--crct_real_old_replay_ratio', default=0.35, type=float, help='real-feature fraction for old classes during classifier correction')
+    subparsers.add_argument('--crct_real_new_replay_ratio', default=0.10, type=float, help='real-feature fraction for classes in the current task')
+    subparsers.add_argument('--crct_real_hard_ratio', default=0.5, type=float, help='fraction of real replay chosen by lowest current target margin')
+    subparsers.add_argument('--crct_real_outlier_quantile', default=0.9, type=float, help='exclude the most distant real features before diversity-based memory selection')
+    subparsers.add_argument('--crct_real_diversity_weight', default=0.7, type=float, help='tradeoff between feature coverage and proximity to the class center when building memory')
+    subparsers.add_argument('--crct_hybrid_samples_per_class', default=0, type=int, help='total real plus synthetic correction samples per class and epoch; 0 uses batch_size * 5')
     subparsers.add_argument('--semantic_distill', action='store_true', help='use semantic-aware weighting for relation distillation')
     subparsers.add_argument('--semantic_backend', default='hash', choices=['hash', 'clip', 'auto'], type=str)
     subparsers.add_argument('--semantic_clip_model', default='ViT-B-16', type=str)
