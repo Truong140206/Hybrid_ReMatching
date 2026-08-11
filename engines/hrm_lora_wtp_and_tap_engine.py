@@ -16,6 +16,8 @@ from timm.optim import create_optimizer
 from timm.scheduler import create_scheduler
 from torch import optim
 import utils
+from engines.prototype_rematching import (
+    build_prototype_bank, prototype_assisted_rematching)
 from torch.distributions.multivariate_normal import MultivariateNormal
 
 
@@ -251,6 +253,26 @@ incon_num=0
 con_all=0
 incon_all=0
 max_p = []
+cls_mean = {}
+cls_cov = {}
+cls_cfs_model = {}
+cls_real_features = {}
+
+
+def reset_replay_statistics():
+    global cls_mean, cls_cov, cls_cfs_model, cls_real_features
+    cls_mean = {}
+    cls_cov = {}
+    cls_cfs_model = {}
+    cls_real_features = {}
+
+
+def restore_real_feature_memory(feature_memory):
+    global cls_real_features
+    cls_real_features = {
+        int(class_id): features.detach().cpu().half()
+        for class_id, features in feature_memory.items()
+    }
 
 @torch.no_grad()
 def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loader,
@@ -264,6 +286,22 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
     # switch to evaluation mode
     model.eval()
     original_model.eval()
+    prototype_bank = None
+    if bool(getattr(args, 'prototype_rematching', False)):
+        seen_classes = [
+            int(class_id)
+            for seen_task in range(task_id + 1)
+            for class_id in class_mask[seen_task]
+        ]
+        prototype_bank = build_prototype_bank(
+            model, cls_real_features, seen_classes, device)
+        if utils.is_main_process():
+            print(
+                'Prototype rematching:',
+                'classes=', len(prototype_bank),
+                'candidate_tasks=', int(getattr(args, 'prototype_candidate_tasks', 2)),
+                'temperature=', float(getattr(args, 'prototype_temperature', 0.07)),
+            )
 
     with torch.no_grad():
         for input, target in metric_logger.log_every(data_loader, args.print_freq, header):
@@ -399,6 +437,18 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     #     pass
                     
             
+            if prototype_bank is not None:
+                logits, prompt_id = prototype_assisted_rematching(
+                    model,
+                    input,
+                    old_logits,
+                    class_mask,
+                    task_id + 1,
+                    prototype_bank,
+                    args,
+                )
+                filtered_index_tensor = torch.empty(0, dtype=torch.long, device=device)
+                re_id = None
 
             loss = criterion(logits, target)
 
@@ -641,6 +691,10 @@ def train_and_evaluate(model: torch.nn.Module, model_without_ddp: torch.nn.Modul
                 'optimizer': optimizer.state_dict(),
                 'args': args,
             }
+            if bool(getattr(args, 'crct_real_feature_replay', False)):
+                state_dict['real_feature_memory'] = {
+                    int(class_id): memory.cpu()
+                    for class_id, memory in cls_real_features.items()}
             if args.sched is not None and args.sched != 'constant':
                 state_dict['lr_scheduler'] = lr_scheduler.state_dict()
 
