@@ -16,6 +16,7 @@ from timm.optim import create_optimizer
 from timm.scheduler import create_scheduler
 from torch import optim
 import utils
+from engines.exhaustive_rematching import exhaustive_adapter_rematching
 from engines.prototype_rematching import (
     build_prototype_bank, prototype_assisted_rematching)
 from engines.shared_prototype_router import (
@@ -473,7 +474,19 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     #     pass
                     
             
-            if replay_task_router is not None:
+            if bool(getattr(args, 'exhaustive_rematching', False)):
+                logits, prompt_id = exhaustive_adapter_rematching(
+                    model=model,
+                    inputs=input,
+                    tii_logits=old_logits,
+                    class_mask=class_mask,
+                    seen_task_count=task_id + 1,
+                    args=args,
+                )
+                filtered_index_tensor = torch.empty(
+                    0, dtype=torch.long, device=device)
+                re_id = None
+            elif replay_task_router is not None:
                 prompt_id = replay_task_router.predict(shared_features, old_logits)
                 logits = model(input, task_id=prompt_id)['logits']
                 if args.train_mask and class_mask is not None:
