@@ -6,8 +6,8 @@ from timm.optim import create_optimizer
 import time, datetime, os, sys, random, numpy as np
 from datasets import build_continual_dataloader
 from engines.hrm_lora_wtp_and_tap_engine import (
-    _compute_mean, evaluate_till_now, reset_replay_statistics,
-    restore_real_feature_memory, train_and_evaluate,
+    _compute_mean, _compute_shared_feature_memory, evaluate_till_now,
+    reset_replay_statistics, restore_real_feature_memory, train_and_evaluate,
 )
 import vits.hrm_lora_vision_transformer as hide_lora_vision_transformer
 import torch.nn as nn
@@ -57,10 +57,14 @@ def train(args):
     if args.eval:
         acc_matrix = np.zeros((args.num_tasks, args.num_tasks))
         prototype_enabled = bool(getattr(args, 'prototype_rematching', False))
+        shared_router_enabled = bool(getattr(args, 'shared_prototype_router', False))
+        if prototype_enabled or shared_router_enabled:
+            reset_replay_statistics()
         if prototype_enabled:
             args.crct_real_feature_replay = True
-            reset_replay_statistics()
             print('Prototype evaluation will restore or reconstruct real-feature memory.')
+        if shared_router_enabled:
+            print('Shared prototype evaluation will reconstruct backbone feature memory.')
 
         for task_id in range(args.num_tasks):
             checkpoint_path = os.path.join(args.output_dir, 'checkpoint/task{}_checkpoint.pth'.format(task_id + 1))
@@ -80,7 +84,13 @@ def train(args):
             else:
                 print('No checkpoint found at:', original_checkpoint_path)
                 return
-            if prototype_enabled:
+            if shared_router_enabled:
+                print('Reconstructing shared feature memory for task', task_id + 1)
+                _compute_shared_feature_memory(
+                    original_model=original_model, data_loader=data_loader_per_cls,
+                    device=device, class_ids=class_mask[task_id], args=args,
+                )
+            elif prototype_enabled:
                 saved_memory = checkpoint.get('real_feature_memory')
                 if saved_memory:
                     restore_real_feature_memory(saved_memory)

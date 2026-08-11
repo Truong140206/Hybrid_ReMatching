@@ -18,6 +18,8 @@ from torch import optim
 import utils
 from engines.prototype_rematching import (
     build_prototype_bank, prototype_assisted_rematching)
+from engines.shared_prototype_router import (
+    build_shared_prototype_bank, shared_space_prototype_routing)
 from torch.distributions.multivariate_normal import MultivariateNormal
 
 
@@ -257,14 +259,16 @@ cls_mean = {}
 cls_cov = {}
 cls_cfs_model = {}
 cls_real_features = {}
+cls_shared_features = {}
 
 
 def reset_replay_statistics():
-    global cls_mean, cls_cov, cls_cfs_model, cls_real_features
+    global cls_mean, cls_cov, cls_cfs_model, cls_real_features, cls_shared_features
     cls_mean = {}
     cls_cov = {}
     cls_cfs_model = {}
     cls_real_features = {}
+    cls_shared_features = {}
 
 
 def restore_real_feature_memory(feature_memory):
@@ -302,6 +306,21 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 'candidate_tasks=', int(getattr(args, 'prototype_candidate_tasks', 2)),
                 'temperature=', float(getattr(args, 'prototype_temperature', 0.07)),
             )
+    shared_prototype_bank = None
+    if bool(getattr(args, 'shared_prototype_router', False)):
+        seen_classes = [
+            int(class_id)
+            for seen_task in range(task_id + 1)
+            for class_id in class_mask[seen_task]
+        ]
+        shared_prototype_bank = build_shared_prototype_bank(
+            cls_shared_features, seen_classes, device)
+        if utils.is_main_process():
+            print(
+                'Shared prototype router:',
+                'classes=', len(shared_prototype_bank),
+                'temperature=', float(getattr(args, 'shared_prototype_temperature', 0.07)),
+            )
 
     with torch.no_grad():
         for input, target in metric_logger.log_every(data_loader, args.print_freq, header):
@@ -312,6 +331,7 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
             with torch.no_grad():
                 if original_model is not None:
                     output = original_model(input)
+                    shared_features = output.get('pre_logits')
                     logits = output['logits']
                     if args.train_mask and class_mask is not None:
                         mask = []
@@ -437,7 +457,20 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     #     pass
                     
             
-            if prototype_bank is not None:
+            if shared_prototype_bank is not None:
+                logits, prompt_id = shared_space_prototype_routing(
+                    model,
+                    input,
+                    shared_features,
+                    old_logits,
+                    class_mask,
+                    task_id + 1,
+                    shared_prototype_bank,
+                    args,
+                )
+                filtered_index_tensor = torch.empty(0, dtype=torch.long, device=device)
+                re_id = None
+            elif prototype_bank is not None:
                 logits, prompt_id = prototype_assisted_rematching(
                     model,
                     input,
@@ -752,6 +785,28 @@ def _select_real_feature_memory(features, args):
 
     selected_index = torch.as_tensor(selected, dtype=torch.long, device=features.device)
     return features.index_select(0, selected_index).cpu().half()
+
+
+@torch.no_grad()
+def _compute_shared_feature_memory(original_model, data_loader, device,
+                                   class_ids, args):
+    original_model.eval()
+    for class_id in class_ids:
+        features_per_class = []
+        for inputs, _ in data_loader[class_id]['train']:
+            inputs = inputs.to(device, non_blocking=True)
+            output = original_model(inputs)
+            features_per_class.append(output['pre_logits'])
+        features_per_class = torch.cat(features_per_class, dim=0)
+        gathered = [
+            torch.zeros_like(features_per_class, device=device)
+            for _ in range(args.world_size)
+        ]
+        utils.distributed_barrier()
+        dist.all_gather(gathered, features_per_class)
+        gathered = torch.cat(gathered, dim=0)
+        cls_shared_features[int(class_id)] = _select_real_feature_memory(
+            gathered, args)
 
 
 @torch.no_grad()
