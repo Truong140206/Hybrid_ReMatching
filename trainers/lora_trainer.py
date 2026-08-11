@@ -7,8 +7,10 @@ import time, datetime, os, sys, random, numpy as np
 from datasets import build_continual_dataloader
 from engines.hrm_lora_wtp_and_tap_engine import (
     _compute_mean, _compute_shared_feature_memory, evaluate_till_now,
-    reset_replay_statistics, restore_real_feature_memory, train_and_evaluate,
+    get_real_feature_memory, reset_replay_statistics,
+    restore_real_feature_memory, train_and_evaluate,
 )
+from engines.replay_logit_calibration import calibrate_task_logits
 import vits.hrm_lora_vision_transformer as hide_lora_vision_transformer
 import torch.nn as nn
 import torch.nn.init as init
@@ -58,7 +60,8 @@ def train(args):
         acc_matrix = np.zeros((args.num_tasks, args.num_tasks))
         prototype_enabled = bool(getattr(args, 'prototype_rematching', False))
         shared_router_enabled = bool(getattr(args, 'shared_prototype_router', False))
-        if prototype_enabled or shared_router_enabled:
+        calibration_enabled = bool(getattr(args, 'replay_logit_calibration', False))
+        if prototype_enabled or shared_router_enabled or calibration_enabled:
             reset_replay_statistics()
         if prototype_enabled:
             args.crct_real_feature_replay = True
@@ -84,7 +87,41 @@ def train(args):
             else:
                 print('No checkpoint found at:', original_checkpoint_path)
                 return
-            if shared_router_enabled:
+            if calibration_enabled:
+                saved_memory = checkpoint.get('real_feature_memory')
+                if saved_memory:
+                    restore_real_feature_memory(saved_memory)
+                    calibration_memory = saved_memory
+                    print(
+                        'Replay calibration restored checkpoint memory:',
+                        len(saved_memory), 'classes')
+                else:
+                    args.crct_real_feature_replay = True
+                    print(
+                        'EXPLORATORY replay calibration: reconstructing training '
+                        'feature memory for task', task_id + 1)
+                    _compute_mean(
+                        model=model, data_loader=data_loader_per_cls,
+                        device=device, task_id=task_id,
+                        class_mask=class_mask[task_id], args=args,
+                    )
+                    calibration_memory = get_real_feature_memory()
+                calibration_stats = calibrate_task_logits(
+                    model=model, feature_memory=calibration_memory,
+                    class_mask=class_mask, seen_task_count=task_id + 1,
+                    args=args, device=device,
+                )
+                if calibration_stats is not None:
+                    print(
+                        'Replay logit calibration:',
+                        'accepted=', calibration_stats['accepted'],
+                        'samples=', calibration_stats['samples'],
+                        'before=', calibration_stats['before'],
+                        'after=', calibration_stats['after'],
+                        'scale=', calibration_stats['scale'],
+                        'bias=', calibration_stats['bias'],
+                    )
+            elif shared_router_enabled:
                 print('Reconstructing shared feature memory for task', task_id + 1)
                 _compute_shared_feature_memory(
                     original_model=original_model, data_loader=data_loader_per_cls,

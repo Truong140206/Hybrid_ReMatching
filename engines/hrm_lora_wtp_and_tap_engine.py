@@ -278,6 +278,10 @@ def restore_real_feature_memory(feature_memory):
         for class_id, features in feature_memory.items()
     }
 
+
+def get_real_feature_memory():
+    return cls_real_features
+
 @torch.no_grad()
 def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loader,
              device, i=-1, task_id=-1, class_mask=None, target_task_map=None, args=None, ):
