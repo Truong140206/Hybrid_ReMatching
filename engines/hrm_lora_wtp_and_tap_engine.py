@@ -260,15 +260,17 @@ cls_cov = {}
 cls_cfs_model = {}
 cls_real_features = {}
 cls_shared_features = {}
+replay_task_router = None
 
 
 def reset_replay_statistics():
-    global cls_mean, cls_cov, cls_cfs_model, cls_real_features, cls_shared_features
+    global cls_mean, cls_cov, cls_cfs_model, cls_real_features, cls_shared_features, replay_task_router
     cls_mean = {}
     cls_cov = {}
     cls_cfs_model = {}
     cls_real_features = {}
     cls_shared_features = {}
+    replay_task_router = None
 
 
 def restore_real_feature_memory(feature_memory):
@@ -281,6 +283,16 @@ def restore_real_feature_memory(feature_memory):
 
 def get_real_feature_memory():
     return cls_real_features
+
+
+def get_shared_feature_memory():
+    return cls_shared_features
+
+
+def set_replay_task_router(router):
+    global replay_task_router
+    replay_task_router = router
+
 
 @torch.no_grad()
 def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loader,
@@ -461,7 +473,19 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     #     pass
                     
             
-            if shared_prototype_bank is not None:
+            if replay_task_router is not None:
+                prompt_id = replay_task_router.predict(shared_features, old_logits)
+                logits = model(input, task_id=prompt_id)['logits']
+                if args.train_mask and class_mask is not None:
+                    seen_mask = []
+                    for seen_task in range(task_id + 1):
+                        seen_mask.extend(class_mask[seen_task])
+                    unseen = np.setdiff1d(np.arange(args.nb_classes), seen_mask)
+                    unseen = torch.as_tensor(unseen, dtype=torch.long, device=device)
+                    logits = logits.index_fill(1, unseen, float('-inf'))
+                filtered_index_tensor = torch.empty(0, dtype=torch.long, device=device)
+                re_id = None
+            elif shared_prototype_bank is not None:
                 logits, prompt_id = shared_space_prototype_routing(
                     model,
                     input,

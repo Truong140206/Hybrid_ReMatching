@@ -7,10 +7,12 @@ import time, datetime, os, sys, random, numpy as np
 from datasets import build_continual_dataloader
 from engines.hrm_lora_wtp_and_tap_engine import (
     _compute_mean, _compute_shared_feature_memory, evaluate_till_now,
-    get_real_feature_memory, reset_replay_statistics,
-    restore_real_feature_memory, train_and_evaluate,
+    get_real_feature_memory, get_shared_feature_memory,
+    reset_replay_statistics, restore_real_feature_memory,
+    set_replay_task_router, train_and_evaluate,
 )
 from engines.replay_logit_calibration import calibrate_task_logits
+from engines.replay_task_router import train_replay_task_router
 import vits.hrm_lora_vision_transformer as hide_lora_vision_transformer
 import torch.nn as nn
 import torch.nn.init as init
@@ -61,7 +63,9 @@ def train(args):
         prototype_enabled = bool(getattr(args, 'prototype_rematching', False))
         shared_router_enabled = bool(getattr(args, 'shared_prototype_router', False))
         calibration_enabled = bool(getattr(args, 'replay_logit_calibration', False))
-        if prototype_enabled or shared_router_enabled or calibration_enabled:
+        learned_router_enabled = bool(getattr(args, 'replay_task_router', False))
+        if (prototype_enabled or shared_router_enabled or calibration_enabled
+                or learned_router_enabled):
             reset_replay_statistics()
         if prototype_enabled:
             args.crct_real_feature_replay = True
@@ -87,7 +91,29 @@ def train(args):
             else:
                 print('No checkpoint found at:', original_checkpoint_path)
                 return
-            if calibration_enabled:
+            if learned_router_enabled:
+                print('Reconstructing validated task-router memory for task', task_id + 1)
+                _compute_shared_feature_memory(
+                    original_model=original_model, data_loader=data_loader_per_cls,
+                    device=device, class_ids=class_mask[task_id], args=args,
+                )
+                learned_router, router_stats = train_replay_task_router(
+                    original_model=original_model,
+                    feature_memory=get_shared_feature_memory(),
+                    class_mask=class_mask, seen_task_count=task_id + 1,
+                    args=args, device=device,
+                )
+                set_replay_task_router(learned_router)
+                if router_stats is not None:
+                    print(
+                        'Validated replay task router:',
+                        'accepted=', router_stats['accepted'],
+                        'samples=', router_stats['samples'],
+                        'validation_samples=', router_stats['validation_samples'],
+                        'baseline_val_acc=', router_stats['baseline_validation_accuracy'],
+                        'router_val_acc=', router_stats['router_validation_accuracy'],
+                    )
+            elif calibration_enabled:
                 saved_memory = checkpoint.get('real_feature_memory')
                 if saved_memory:
                     restore_real_feature_memory(saved_memory)
