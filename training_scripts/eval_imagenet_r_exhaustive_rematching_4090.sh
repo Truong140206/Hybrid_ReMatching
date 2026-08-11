@@ -64,6 +64,8 @@ echo "Exhaustive rematching evaluates every seen LoRA and merges task-local clas
 echo "Run: ${RUN_DIR}"
 echo "tii_prior_weight=${TII_PRIOR_WEIGHT}, logit_temperature=${LOGIT_TEMPERATURE}"
 
+START_TIME="$(date +%s)"
+
 PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --nproc_per_node=1 \
   --master_port="${MASTER_PORT:-29553}" \
@@ -93,6 +95,10 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --eval \
   --output_dir "${RUN_DIR}" \
   2>&1 | tee "${LOG_PATH}"
+
+END_TIME="$(date +%s)"
+ELAPSED_SECONDS="$((END_TIME - START_TIME))"
+printf 'Exhaustive evaluation wall time seconds: %s\n' "${ELAPSED_SECONDS}" | tee -a "${LOG_PATH}"
 
 echo "Final exhaustive-rematching evaluation metrics:"
 grep "Average accuracy till task10" "${LOG_PATH}" | tail -n 1 || true
