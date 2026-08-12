@@ -4,6 +4,7 @@ import torch
 from torch import nn
 
 from engines.hrm_lora_wtp_and_tap_engine import (
+    _macro_crct_metrics,
     _select_crct_validation_alpha,
 )
 
@@ -24,6 +25,17 @@ def _args():
         crct_validation_min_acc_gain=0.0,
         crct_validation_min_ce_gain=0.0,
     )
+
+
+def test_old_class_metrics_ignore_new_class_targets():
+    logits = torch.tensor([
+        [4.0, 0.0], [3.0, 0.0], [0.0, 4.0], [0.0, 3.0]])
+    targets = torch.tensor([0, 0, 1, 1])
+
+    metrics = _macro_crct_metrics(logits, targets, class_ids=[0])
+
+    assert metrics['accuracy'] == 100.0
+    assert set(metrics['per_class_accuracy']) == {0}
 
 
 def test_gate_accepts_classifier_that_improves_all_classes():

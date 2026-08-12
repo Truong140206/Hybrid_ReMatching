@@ -1492,11 +1492,19 @@ def _macro_crct_metrics(logits, targets, class_ids):
         return {'accuracy': 0.0, 'ce': float('inf'),
                 'per_class_accuracy': {}}
     class_index = torch.as_tensor(class_ids, dtype=torch.long, device=logits.device)
+    sample_mask = targets.unsqueeze(1).eq(class_index.unsqueeze(0)).any(dim=1)
+    if not bool(sample_mask.any()):
+        return {'accuracy': 0.0, 'ce': float('inf'),
+                'per_class_accuracy': {}}
+    logits = logits[sample_mask]
+    targets = targets[sample_mask]
     selected_logits = logits.index_select(1, class_index)
     class_positions = torch.full(
         (logits.shape[1],), -1, dtype=torch.long, device=logits.device)
     class_positions[class_index] = torch.arange(class_index.numel(), device=logits.device)
     target_positions = class_positions[targets]
+    if bool(target_positions.lt(0).any()):
+        raise ValueError('CRCT metric received targets outside the requested classes')
     predictions = selected_logits.argmax(dim=1)
     sample_ce = F.cross_entropy(selected_logits, target_positions, reduction='none')
     class_accuracy = []
