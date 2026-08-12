@@ -62,6 +62,16 @@ if [[ -s "${LOG_PATH}" ]]; then
   echo "Set RUN_NAME_OVERRIDE to a new name." >&2
   exit 4
 fi
+if [[ "${MODE}" == "pilot" ]]; then
+  if [[ ! -s "${BASELINE_LOG}" ]]; then
+    echo "Baseline log was not found: ${BASELINE_LOG}" >&2
+    exit 6
+  fi
+  if ! grep -q "Average accuracy till task${MAX_TRAIN_TASKS}" "${BASELINE_LOG}"; then
+    echo "Baseline log has no comparable task-${MAX_TRAIN_TASKS} row." >&2
+    exit 6
+  fi
+fi
 
 mkdir -p "${OUTPUT_DIR}"
 cd "${REPO_ROOT}"
