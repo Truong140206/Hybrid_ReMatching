@@ -182,6 +182,8 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--exhaustive_tii_prior_weight', default=0.1, type=float)
     subparsers.add_argument('--exhaustive_logit_temperature', default=1.0, type=float)
     subparsers.add_argument('--exhaustive_max_calibration_weight', default=0.0, type=float, help='blend raw cross-task maxima toward unit-standardized maxima while preserving within-task class logit gaps')
+    subparsers.add_argument('--exhaustive_tii_class_weight', default=0.0, type=float, help='fuse centered TII class evidence within each task while preserving that task maximum')
+    subparsers.add_argument('--exhaustive_tii_class_temperature', default=1.0, type=float)
     subparsers.add_argument('--hierarchical_rematching', action='store_true', help='combine normalized task posterior and task-conditional class probabilities across all seen LoRAs')
     subparsers.add_argument('--hierarchical_tii_weight', default=0.3, type=float)
     subparsers.add_argument('--hierarchical_max_weight', default=1.0, type=float)
