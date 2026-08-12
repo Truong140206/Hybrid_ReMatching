@@ -49,6 +49,23 @@ def compute_task_energy_scores(logits, class_mask, num_tasks, temperature=0.1):
         task_scores.append(temperature * torch.logsumexp(task_logits / temperature, dim=1))
     return torch.stack(task_scores, dim=1)
 
+
+def compute_relation_matrix(features):
+    normalized = F.normalize(features, p=2, dim=1)
+    similarities = torch.mm(normalized, normalized.t())
+    return F.softmax(similarities, dim=1)
+
+
+def select_ctird_source_tasks(logits, class_mask, num_old_tasks, top_k,
+                              temperature=1.0):
+    """Select unique old tasks by aggregate TII class probability mass."""
+    count = min(int(num_old_tasks), int(top_k))
+    if count <= 0:
+        return None
+    task_scores = compute_task_energy_scores(
+        logits, class_mask, num_old_tasks, temperature=temperature)
+    return torch.topk(task_scores, k=count, dim=1, largest=True).indices
+
 def compute_ctird_rank_weights(top_values, args):
     temperature = max(float(getattr(args, 'ctird_weight_temperature', 1.0)), 1e-6)
     weights = F.softmax(top_values.float() / temperature, dim=1)
@@ -153,6 +170,8 @@ def train_one_epoch(model: torch.nn.Module, original_model: torch.nn.Module,
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('Lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     metric_logger.add_meter('Loss', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
+    online_aligned_ctird = (
+        task_id > 0 and bool(getattr(args, 'ctird_online_aligned', False)))
     replay_anchor_enabled = (
         task_id > 0
         and bool(getattr(args, 'replay_anchor_ctird', False))
@@ -193,32 +212,53 @@ def train_one_epoch(model: torch.nn.Module, original_model: torch.nn.Module,
         ctird_rank_weights = None
         
         if task_id>0:
-
-            probabilities = temp[:,:task_id*len(class_mask[0])]
             m = min(task_id, args.K)
-            ctird_selection = str(getattr(args, 'ctird_task_selection', 'legacy')).lower()
-            if ctird_selection == 'task_energy':
-                task_scores = compute_task_energy_scores(
-                    temp, class_mask, task_id,
-                    temperature=getattr(args, 'ctird_task_temperature', 0.1))
-                top_values, top5_id = torch.topk(task_scores, k=m, dim=1, largest=True)
-                if str(getattr(args, 'ctird_task_weighting', 'uniform')).lower() == 'energy':
-                    ctird_rank_weights = compute_ctird_rank_weights(top_values, args)
+            if online_aligned_ctird:
+                top5_id = select_ctird_source_tasks(
+                    temp, class_mask, task_id, m,
+                    temperature=getattr(args, 'ctird_online_temperature', 1.0))
             else:
-                _, top_indices = torch.topk(probabilities, k=m, dim=1, largest=False)
-                top5_id = []
-                for i in range(top_indices.shape[0]):
-                    top5_id.append(torch.tensor([target_task_map[v.item()] for v in top_indices[i]]))
-                top5_id = torch.stack(top5_id, dim=0).to(device, non_blocking=True)
+                probabilities = temp[:,:task_id*len(class_mask[0])]
+                ctird_selection = str(getattr(args, 'ctird_task_selection', 'legacy')).lower()
+                if ctird_selection == 'task_energy':
+                    task_scores = compute_task_energy_scores(
+                        temp, class_mask, task_id,
+                        temperature=getattr(args, 'ctird_task_temperature', 0.1))
+                    top_values, top5_id = torch.topk(task_scores, k=m, dim=1, largest=True)
+                    if str(getattr(args, 'ctird_task_weighting', 'uniform')).lower() == 'energy':
+                        ctird_rank_weights = compute_ctird_rank_weights(top_values, args)
+                else:
+                    _, top_indices = torch.topk(probabilities, k=m, dim=1, largest=False)
+                    top5_id = []
+                    for i in range(top_indices.shape[0]):
+                        top5_id.append(torch.tensor([target_task_map[v.item()] for v in top_indices[i]]))
+                    top5_id = torch.stack(top5_id, dim=0).to(device, non_blocking=True)
         
         if task_id>0:
-            #robust_logits = robust_loss(model, input, output['features'], target,device,task_id,class_mask,top5_id)
-            robust_bundle = old_features[global_index]
-            ctird_rank_weights = None
-            if isinstance(robust_bundle, tuple):
-                robust_logits, ctird_rank_weights = robust_bundle
+            if online_aligned_ctird:
+                rank_count = max(
+                    1, min(m, int(getattr(args, 'ctird_online_ranks_per_batch', 1))))
+                start_rank = (epoch + global_index) % m
+                selected_ranks = [
+                    (start_rank + offset) % m for offset in range(rank_count)]
+                robust_logits = []
+                with torch.no_grad():
+                    for rank in selected_ranks:
+                        prompt_id = top5_id[:, rank]
+                        old_output = model(input, task_id=prompt_id)
+                        robust_logits.append(
+                            compute_relation_matrix(old_output['features']))
+                # Scaling preserves the expected sum over all top-K CTIRD teachers.
+                ctird_rank_weights = output['features'].new_full(
+                    (rank_count,), float(m) / float(rank_count))
             else:
-                robust_logits = robust_bundle
+                #robust_logits = robust_loss(model, input, output['features'], target,device,task_id,class_mask,top5_id)
+                robust_bundle = old_features[global_index]
+                ctird_rank_weights = None
+                if isinstance(robust_bundle, tuple):
+                    robust_logits, ctird_rank_weights = robust_bundle
+                else:
+                    robust_logits = robust_bundle
         
         if args.train_mask and class_mask is not None:
             mask = class_mask[task_id]
@@ -850,7 +890,8 @@ def train_and_evaluate(model: torch.nn.Module, model_without_ddp: torch.nn.Modul
                     model.lora_layer.v_lora_B.grad.zero_()
                     model.lora_layer.v_lora_B[task_id] = model.module.lora_layer.v_lora_B[task_id-1]
 
-        if task_id>0:
+        if (task_id > 0
+                and not bool(getattr(args, 'ctird_online_aligned', False))):
             old_features = get_old_features(model=model, original_model=original_model, criterion=criterion,
                                             data_loader=data_loader[task_id]['train'], optimizer=optimizer,
                                             device=device, epoch=0, max_norm=args.clip_grad,
