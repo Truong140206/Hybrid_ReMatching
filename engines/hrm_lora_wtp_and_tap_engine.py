@@ -1486,6 +1486,112 @@ def _blend_crct_classifier(base_model, teacher_head, alpha):
         student_parameter.copy_(teacher_parameter.lerp(student_parameter, alpha))
 
 
+@torch.no_grad()
+def _macro_crct_metrics(logits, targets, class_ids):
+    if targets.numel() == 0 or not class_ids:
+        return {'accuracy': 0.0, 'ce': float('inf'),
+                'per_class_accuracy': {}}
+    class_index = torch.as_tensor(class_ids, dtype=torch.long, device=logits.device)
+    selected_logits = logits.index_select(1, class_index)
+    class_positions = torch.full(
+        (logits.shape[1],), -1, dtype=torch.long, device=logits.device)
+    class_positions[class_index] = torch.arange(class_index.numel(), device=logits.device)
+    target_positions = class_positions[targets]
+    predictions = selected_logits.argmax(dim=1)
+    sample_ce = F.cross_entropy(selected_logits, target_positions, reduction='none')
+    class_accuracy = []
+    class_ce = []
+    per_class_accuracy = {}
+    for class_id in class_ids:
+        class_mask = targets.eq(int(class_id))
+        if not bool(class_mask.any()):
+            continue
+        accuracy_value = (
+            predictions[class_mask].eq(target_positions[class_mask]).float().mean())
+        class_accuracy.append(accuracy_value)
+        per_class_accuracy[int(class_id)] = float(accuracy_value.mul(100.0).item())
+        class_ce.append(sample_ce[class_mask].mean())
+    if not class_accuracy:
+        return {'accuracy': 0.0, 'ce': float('inf'),
+                'per_class_accuracy': {}}
+    return {
+        'accuracy': float(torch.stack(class_accuracy).mean().mul(100.0).item()),
+        'ce': float(torch.stack(class_ce).mean().item()),
+        'per_class_accuracy': per_class_accuracy,
+    }
+
+
+@torch.no_grad()
+def _select_crct_validation_alpha(base_model, teacher_fc_norm, teacher_head,
+                                  anchors, targets, seen_classes, old_classes, args):
+    """Select a classifier interpolation on independent feature-statistic anchors."""
+    if anchors is None or targets is None or anchors.numel() == 0:
+        return 0.0, None
+
+    teacher_logits = teacher_head(teacher_fc_norm(anchors))
+    student_logits = base_model.head(base_model.fc_norm(anchors))
+    teacher_all = _macro_crct_metrics(teacher_logits, targets, seen_classes)
+    teacher_old = _macro_crct_metrics(teacher_logits, targets, old_classes)
+    steps = max(1, int(getattr(args, 'crct_validation_steps', 10)))
+    max_old_drop = max(
+        0.0, float(getattr(args, 'crct_validation_max_old_acc_drop', 0.0)))
+    min_acc_gain = float(getattr(args, 'crct_validation_min_acc_gain', 0.0))
+    min_ce_gain = float(getattr(args, 'crct_validation_min_ce_gain', 0.0))
+
+    best_alpha = 0.0
+    best_all = teacher_all
+    best_old = teacher_old
+    best_key = (teacher_all['accuracy'], -teacher_all['ce'], 0.0)
+    tolerance = 1e-7
+    for step in range(1, steps + 1):
+        alpha = step / float(steps)
+        candidate_logits = teacher_logits.lerp(student_logits, alpha)
+        candidate_all = _macro_crct_metrics(
+            candidate_logits, targets, seen_classes)
+        candidate_old = _macro_crct_metrics(
+            candidate_logits, targets, old_classes)
+        old_ok = (
+            not old_classes or all(
+                candidate_old['per_class_accuracy'].get(class_id, 0.0)
+                + max_old_drop + tolerance
+                >= teacher_old['per_class_accuracy'].get(class_id, 0.0)
+                for class_id in old_classes)
+        )
+        accuracy_ok = (
+            candidate_all['accuracy'] + tolerance
+            >= teacher_all['accuracy'] + min_acc_gain
+        )
+        ce_ok = (
+            candidate_all['ce']
+            <= teacher_all['ce'] - min_ce_gain + tolerance
+        )
+        if not (old_ok and accuracy_ok and ce_ok):
+            continue
+        candidate_key = (
+            candidate_all['accuracy'], -candidate_all['ce'], alpha)
+        if candidate_key > best_key:
+            best_alpha = alpha
+            best_all = candidate_all
+            best_old = candidate_old
+            best_key = candidate_key
+
+    old_class_drops = [
+        teacher_old['per_class_accuracy'].get(class_id, 0.0)
+        - best_old['per_class_accuracy'].get(class_id, 0.0)
+        for class_id in old_classes
+    ]
+    compact = lambda values: {
+        'accuracy': values['accuracy'], 'ce': values['ce']}
+    return best_alpha, {
+        'teacher_all': compact(teacher_all),
+        'teacher_old': compact(teacher_old),
+        'selected_all': compact(best_all),
+        'selected_old': compact(best_old),
+        'worst_old_class_drop': (
+            max(old_class_drops) if old_class_drops else 0.0),
+    }
+
+
 def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_mask=None, task_id=-1):
     model.train()
     run_epochs = args.crct_epochs
@@ -1565,13 +1671,19 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
     if trust_region_enabled and not head_only:
         raise ValueError(
             'Adaptive CRCT trust region requires --crct_head_only')
+    validation_gate_enabled = bool(getattr(args, 'crct_validation_gate', False))
+    if validation_gate_enabled and not head_only:
+        raise ValueError('CRCT validation gate requires --crct_head_only')
+    if validation_gate_enabled and trust_region_enabled:
+        raise ValueError(
+            'Use either CRCT validation gate or adaptive trust region, not both')
     old_row_lr_scale = min(
         1.0, max(0.0, float(getattr(args, 'crct_old_row_lr_scale', 1.0))))
 
     teacher_fc_norm = None
     teacher_head = None
     if (distill_enabled or anchor_weight > 0.0 or reliability_enabled
-            or trust_region_enabled):
+            or trust_region_enabled or validation_gate_enabled):
         if not hasattr(base_model, 'head') or not hasattr(base_model, 'fc_norm'):
             raise AttributeError('Stability-aware CRCT requires model.head and model.fc_norm')
         teacher_fc_norm = copy.deepcopy(base_model.fc_norm).to(device).eval()
@@ -1582,7 +1694,7 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
     if utils.is_main_process() and (
             head_only or distill_enabled or anchor_weight > 0.0
             or reliability_enabled or trust_region_enabled or hybrid_real_replay
-            or old_row_lr_scale < 1.0):
+            or validation_gate_enabled or old_row_lr_scale < 1.0):
         print(
             'CRCT stability:',
             'head_only=', head_only,
@@ -1597,6 +1709,7 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
             'reliability_preserve_mass=', reliability_preserve_mass,
             'reliability_preserve_class_mass=', reliability_preserve_class_mass,
             'adaptive_trust_region=', trust_region_enabled,
+            'validation_gate=', validation_gate_enabled,
             'real_feature_replay=', hybrid_real_replay,
             'real_replay_ratio=', float(getattr(args, 'crct_real_replay_ratio', 0.25)),
             'real_old_new_ratio=', (float(getattr(args, 'crct_real_old_replay_ratio', 0.35)), float(getattr(args, 'crct_real_new_replay_ratio', 0.10))),
@@ -1840,7 +1953,35 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
         print("Averaged stats:", metric_logger)
         scheduler.step()
 
-    if trust_region_enabled:
+    if validation_gate_enabled:
+        selected_alpha = 0.0
+        validation_metrics = None
+        validation_anchor_count = 0
+        if not dist.is_initialized() or utils.is_main_process():
+            validation_args = copy.copy(args)
+            validation_args.crct_trust_samples_per_component = int(getattr(
+                args, 'crct_validation_samples_per_component', 8))
+            validation_args.crct_trust_cov_scale = float(getattr(
+                args, 'crct_validation_cov_scale', 0.25))
+            validation_anchors, validation_targets = _build_crct_trust_anchors(
+                cls_mean, cls_cov, seen_classes, validation_args, device)
+            validation_anchor_count = (
+                0 if validation_targets is None else validation_targets.numel())
+            selected_alpha, validation_metrics = _select_crct_validation_alpha(
+                base_model, teacher_fc_norm, teacher_head,
+                validation_anchors, validation_targets,
+                seen_classes, old_classes, args)
+        if dist.is_initialized():
+            alpha_tensor = torch.tensor(
+                selected_alpha, dtype=torch.float32, device=device)
+            dist.broadcast(alpha_tensor, src=0)
+            selected_alpha = float(alpha_tensor.item())
+        _blend_crct_classifier(base_model, teacher_head, selected_alpha)
+        if utils.is_main_process():
+            print(
+                'CRCT validation gate:', 'alpha=', selected_alpha,
+                'anchors=', validation_anchor_count, 'metrics=', validation_metrics)
+    elif trust_region_enabled:
         selected_alpha = 1.0
         trust_metrics = None
         trust_anchor_count = 0
