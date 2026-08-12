@@ -18,6 +18,9 @@ def exhaustive_adapter_rematching(model, inputs, tii_logits, class_mask,
         1e-6, float(getattr(args, 'exhaustive_logit_temperature', 1.0)))
     prior_weight = max(
         0.0, float(getattr(args, 'exhaustive_tii_prior_weight', 0.1)))
+    max_calibration_weight = min(
+        1.0, max(0.0, float(getattr(
+            args, 'exhaustive_max_calibration_weight', 0.0))))
 
     tii_task_scores = []
     for task_index in range(seen_task_count):
@@ -28,21 +31,39 @@ def exhaustive_adapter_rematching(model, inputs, tii_logits, class_mask,
     tii_task_prior = _standardize_task_scores(
         torch.stack(tii_task_scores, dim=1))
 
-    merged_logits = torch.full_like(tii_logits, float('-inf'))
-    task_evidence = []
+    local_logits_by_task = []
+    adapter_maxima = []
     for task_index in range(seen_task_count):
         task_ids = torch.full(
             (inputs.shape[0],), task_index, dtype=torch.long, device=device)
         adapter_logits = model(inputs, task_id=task_ids)['logits']
         class_index = torch.as_tensor(
             class_mask[task_index], dtype=torch.long, device=device)
-        local_logits = adapter_logits.index_select(1, class_index) / temperature
-        local_logits = (
-            local_logits
-            + prior_weight * tii_task_prior[:, task_index].unsqueeze(1)
+        local_logits = adapter_logits.index_select(
+            1, class_index) / temperature
+        local_logits_by_task.append(local_logits)
+        adapter_maxima.append(local_logits.max(dim=1).values)
+
+    adapter_maxima = torch.stack(adapter_maxima, dim=1)
+    maximum_mean = adapter_maxima.mean(dim=1, keepdim=True)
+    maximum_task_prior = _standardize_task_scores(adapter_maxima)
+    maximum_scale_correction = (
+        maximum_task_prior - (adapter_maxima - maximum_mean)
+    )
+
+    merged_logits = torch.full_like(tii_logits, float('-inf'))
+    task_evidence = []
+    for task_index, local_logits in enumerate(local_logits_by_task):
+        class_index = torch.as_tensor(
+            class_mask[task_index], dtype=torch.long, device=device)
+        task_bias = (
+            prior_weight * tii_task_prior[:, task_index]
+            + max_calibration_weight
+            * maximum_scale_correction[:, task_index]
         )
-        merged_logits[:, class_index] = local_logits
-        task_evidence.append(local_logits.max(dim=1).values)
+        calibrated_logits = local_logits + task_bias.unsqueeze(1)
+        merged_logits[:, class_index] = calibrated_logits
+        task_evidence.append(calibrated_logits.max(dim=1).values)
 
     routed_tasks = torch.stack(task_evidence, dim=1).argmax(dim=1)
     return merged_logits, routed_tasks
