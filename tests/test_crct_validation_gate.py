@@ -23,6 +23,8 @@ def _args():
         crct_validation_steps=10,
         crct_validation_max_old_acc_drop=0.0,
         crct_validation_min_acc_gain=0.0,
+        crct_validation_min_top5_gain=0.0,
+        crct_validation_min_task_gain=0.0,
         crct_validation_min_ce_gain=0.0,
     )
 
@@ -52,6 +54,7 @@ def test_gate_accepts_classifier_that_improves_all_classes():
         targets,
         seen_classes=[0, 1],
         old_classes=[0],
+        class_to_task={0: 0, 1: 1},
         args=_args(),
     )
 
@@ -73,6 +76,7 @@ def test_gate_rolls_back_classifier_that_hurts_old_class():
         targets,
         seen_classes=[0, 1],
         old_classes=[0],
+        class_to_task={0: 0, 1: 1},
         args=_args(),
     )
 

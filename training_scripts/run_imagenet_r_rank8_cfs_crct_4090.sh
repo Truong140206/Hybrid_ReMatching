@@ -114,11 +114,11 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --cfs_distribution_filter \
   --cfs_filter_multiplier "${CFS_FILTER_MULTIPLIER:-3}" \
   --cfs_boundary_replay \
-  --cfs_boundary_ratio "${CFS_BOUNDARY_RATIO:-0.25}" \
+  --cfs_boundary_ratio "${CFS_BOUNDARY_RATIO:-0.10}" \
   --cfs_boundary_multiplier "${CFS_BOUNDARY_MULTIPLIER:-3}" \
   --cfs_boundary_density_quantile "${CFS_BOUNDARY_DENSITY_QUANTILE:-0.85}" \
   --cfs_boundary_target_side \
-  --cfs_core_replay_ratio "${CFS_CORE_REPLAY_RATIO:-0.25}" \
+  --cfs_core_replay_ratio "${CFS_CORE_REPLAY_RATIO:-0.40}" \
   --cfs_core_multiplier "${CFS_CORE_MULTIPLIER:-4}" \
   --crct_use_all_samples \
   --crct_balanced_batches \
@@ -127,6 +127,7 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --crct_validation_steps "${CRCT_VALIDATION_STEPS:-20}" \
   --crct_validation_samples_per_component "${CRCT_VALIDATION_SAMPLES:-16}" \
   --crct_validation_cov_scale "${CRCT_VALIDATION_COV_SCALE:-0.20}" \
+  --crct_validation_repeats "${CRCT_VALIDATION_REPEATS:-3}" \
   --crct_validation_max_old_acc_drop "${CRCT_VALIDATION_MAX_OLD_DROP:-0.0}" \
   --output_dir "${OUTPUT_DIR}" \
   2>&1 | tee "${LOG_PATH}"
@@ -167,15 +168,25 @@ def metric(row, name):
 
 baseline = os.environ['BASELINE_ROW']
 candidate = os.environ['FINAL_ROW']
-base_acc = metric(baseline, 'Acc@1')
-new_acc = metric(candidate, 'Acc@1')
-base_forgetting = metric(baseline, 'Forgetting')
-new_forgetting = metric(candidate, 'Forgetting')
-passed = new_acc >= base_acc and new_forgetting <= base_forgetting
+higher_is_better = ['Acc@task', 'Acc@1', 'Acc@5', 'Backward']
+lower_is_better = ['Loss', 'Forgetting']
+deltas = {
+    name: metric(candidate, name) - metric(baseline, name)
+    for name in higher_is_better + lower_is_better
+}
+checks = {
+    **{name: deltas[name] >= 0.0 for name in higher_is_better},
+    **{name: deltas[name] <= 0.0 for name in lower_is_better},
+}
+passed = all(checks.values())
 print('Pilot baseline :', baseline)
 print('Pilot candidate:', candidate)
-print(f'Delta Acc@1={new_acc - base_acc:+.4f}; '
-      f'Delta Forgetting={new_forgetting - base_forgetting:+.4f}')
+print('Strict multi-metric pilot gate:')
+for name in higher_is_better + lower_is_better:
+    direction = 'higher' if name in higher_is_better else 'lower'
+    status = 'PASS' if checks[name] else 'FAIL'
+    print(f'  {name:10s} delta={deltas[name]:+.4f} '
+          f'({direction} is better): {status}')
 print('PILOT_GATE=' + ('PASS' if passed else 'FAIL'))
 sys.exit(0 if passed else 10)
 PY

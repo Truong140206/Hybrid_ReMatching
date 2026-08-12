@@ -26,8 +26,11 @@ Code thu 21 muc noi suy giua classifier truoc va sau CRCT. Mot muc chi duoc
 chap nhan khi:
 
 - macro accuracy tren tat ca lop khong giam;
+- top-5 accuracy tren anchor khong giam;
+- task-routing accuracy (lop top-1 anh xa ve task) khong giam;
 - macro cross-entropy khong tang;
 - accuracy cua tung lop cu rieng le khong giam tren anchor holdout.
+Cac dieu kien duoc kiem tra tren ba lan lay anchor doc lap de giam nhieu.
 
 Neu khong co muc nao dat dieu kien, alpha bang 0 va classifier tu dong rollback.
 Gate nay khong dung tap test va khong bao dam test accuracy se tang, nhung ngan
@@ -53,3 +56,7 @@ bash training_scripts/run_imagenet_r_rank8_cfs_crct_4090.sh full
 
 Thiet nghiem chinh khong bat semantic, prototype, exhaustive rematching, replay
 anh gia hay real-feature memory.
+
+Pilot chi PASS khi Acc@task, Acc@1, Acc@5 va Backward khong giam, dong thoi
+Loss va Forgetting khong tang so voi cung dong task cua baseline rank 8. Chi
+can mot chi so di sai huong thi script tra ve `PILOT_GATE=FAIL`.

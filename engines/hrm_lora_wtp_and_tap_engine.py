@@ -1487,14 +1487,16 @@ def _blend_crct_classifier(base_model, teacher_head, alpha):
 
 
 @torch.no_grad()
-def _macro_crct_metrics(logits, targets, class_ids):
+def _macro_crct_metrics(logits, targets, class_ids, class_to_task=None):
     if targets.numel() == 0 or not class_ids:
-        return {'accuracy': 0.0, 'ce': float('inf'),
+        return {'accuracy': 0.0, 'top5': 0.0, 'task_accuracy': 0.0,
+                'ce': float('inf'),
                 'per_class_accuracy': {}}
     class_index = torch.as_tensor(class_ids, dtype=torch.long, device=logits.device)
     sample_mask = targets.unsqueeze(1).eq(class_index.unsqueeze(0)).any(dim=1)
     if not bool(sample_mask.any()):
-        return {'accuracy': 0.0, 'ce': float('inf'),
+        return {'accuracy': 0.0, 'top5': 0.0, 'task_accuracy': 0.0,
+                'ce': float('inf'),
                 'per_class_accuracy': {}}
     logits = logits[sample_mask]
     targets = targets[sample_mask]
@@ -1506,8 +1508,25 @@ def _macro_crct_metrics(logits, targets, class_ids):
     if bool(target_positions.lt(0).any()):
         raise ValueError('CRCT metric received targets outside the requested classes')
     predictions = selected_logits.argmax(dim=1)
+    top_k = min(5, selected_logits.shape[1])
+    top5_predictions = selected_logits.topk(top_k, dim=1).indices
+    top5_correct = top5_predictions.eq(target_positions.unsqueeze(1)).any(dim=1)
+    task_correct = predictions.new_zeros(predictions.shape, dtype=torch.bool)
+    if class_to_task:
+        task_lookup = torch.full(
+            (logits.shape[1],), -1, dtype=torch.long, device=logits.device)
+        mapped_classes = torch.as_tensor(
+            list(class_to_task), dtype=torch.long, device=logits.device)
+        mapped_tasks = torch.as_tensor(
+            [class_to_task[class_id] for class_id in class_to_task],
+            dtype=torch.long, device=logits.device)
+        task_lookup[mapped_classes] = mapped_tasks
+        predicted_classes = class_index.index_select(0, predictions)
+        task_correct = task_lookup[predicted_classes].eq(task_lookup[targets])
     sample_ce = F.cross_entropy(selected_logits, target_positions, reduction='none')
     class_accuracy = []
+    class_top5 = []
+    class_task_accuracy = []
     class_ce = []
     per_class_accuracy = {}
     for class_id in class_ids:
@@ -1518,12 +1537,20 @@ def _macro_crct_metrics(logits, targets, class_ids):
             predictions[class_mask].eq(target_positions[class_mask]).float().mean())
         class_accuracy.append(accuracy_value)
         per_class_accuracy[int(class_id)] = float(accuracy_value.mul(100.0).item())
+        class_top5.append(top5_correct[class_mask].float().mean())
+        if class_to_task:
+            class_task_accuracy.append(task_correct[class_mask].float().mean())
         class_ce.append(sample_ce[class_mask].mean())
     if not class_accuracy:
-        return {'accuracy': 0.0, 'ce': float('inf'),
+        return {'accuracy': 0.0, 'top5': 0.0, 'task_accuracy': 0.0,
+                'ce': float('inf'),
                 'per_class_accuracy': {}}
     return {
         'accuracy': float(torch.stack(class_accuracy).mean().mul(100.0).item()),
+        'top5': float(torch.stack(class_top5).mean().mul(100.0).item()),
+        'task_accuracy': float(
+            torch.stack(class_task_accuracy).mean().mul(100.0).item()
+            if class_task_accuracy else 0.0),
         'ce': float(torch.stack(class_ce).mean().item()),
         'per_class_accuracy': per_class_accuracy,
     }
@@ -1531,33 +1558,40 @@ def _macro_crct_metrics(logits, targets, class_ids):
 
 @torch.no_grad()
 def _select_crct_validation_alpha(base_model, teacher_fc_norm, teacher_head,
-                                  anchors, targets, seen_classes, old_classes, args):
+                                  anchors, targets, seen_classes, old_classes,
+                                  class_to_task, args):
     """Select a classifier interpolation on independent feature-statistic anchors."""
     if anchors is None or targets is None or anchors.numel() == 0:
         return 0.0, None
 
     teacher_logits = teacher_head(teacher_fc_norm(anchors))
     student_logits = base_model.head(base_model.fc_norm(anchors))
-    teacher_all = _macro_crct_metrics(teacher_logits, targets, seen_classes)
-    teacher_old = _macro_crct_metrics(teacher_logits, targets, old_classes)
+    teacher_all = _macro_crct_metrics(
+        teacher_logits, targets, seen_classes, class_to_task)
+    teacher_old = _macro_crct_metrics(
+        teacher_logits, targets, old_classes, class_to_task)
     steps = max(1, int(getattr(args, 'crct_validation_steps', 10)))
     max_old_drop = max(
         0.0, float(getattr(args, 'crct_validation_max_old_acc_drop', 0.0)))
     min_acc_gain = float(getattr(args, 'crct_validation_min_acc_gain', 0.0))
+    min_top5_gain = float(getattr(args, 'crct_validation_min_top5_gain', 0.0))
+    min_task_gain = float(getattr(args, 'crct_validation_min_task_gain', 0.0))
     min_ce_gain = float(getattr(args, 'crct_validation_min_ce_gain', 0.0))
 
     best_alpha = 0.0
     best_all = teacher_all
     best_old = teacher_old
-    best_key = (teacher_all['accuracy'], -teacher_all['ce'], 0.0)
+    best_key = (
+        teacher_all['accuracy'], teacher_all['task_accuracy'],
+        teacher_all['top5'], -teacher_all['ce'], 0.0)
     tolerance = 1e-7
     for step in range(1, steps + 1):
         alpha = step / float(steps)
         candidate_logits = teacher_logits.lerp(student_logits, alpha)
         candidate_all = _macro_crct_metrics(
-            candidate_logits, targets, seen_classes)
+            candidate_logits, targets, seen_classes, class_to_task)
         candidate_old = _macro_crct_metrics(
-            candidate_logits, targets, old_classes)
+            candidate_logits, targets, old_classes, class_to_task)
         old_ok = (
             not old_classes or all(
                 candidate_old['per_class_accuracy'].get(class_id, 0.0)
@@ -1569,14 +1603,23 @@ def _select_crct_validation_alpha(base_model, teacher_fc_norm, teacher_head,
             candidate_all['accuracy'] + tolerance
             >= teacher_all['accuracy'] + min_acc_gain
         )
+        top5_ok = (
+            candidate_all['top5'] + tolerance
+            >= teacher_all['top5'] + min_top5_gain
+        )
+        task_ok = (
+            candidate_all['task_accuracy'] + tolerance
+            >= teacher_all['task_accuracy'] + min_task_gain
+        )
         ce_ok = (
             candidate_all['ce']
             <= teacher_all['ce'] - min_ce_gain + tolerance
         )
-        if not (old_ok and accuracy_ok and ce_ok):
+        if not (old_ok and accuracy_ok and top5_ok and task_ok and ce_ok):
             continue
         candidate_key = (
-            candidate_all['accuracy'], -candidate_all['ce'], alpha)
+            candidate_all['accuracy'], candidate_all['task_accuracy'],
+            candidate_all['top5'], -candidate_all['ce'], alpha)
         if candidate_key > best_key:
             best_alpha = alpha
             best_all = candidate_all
@@ -1589,7 +1632,8 @@ def _select_crct_validation_alpha(base_model, teacher_fc_norm, teacher_head,
         for class_id in old_classes
     ]
     compact = lambda values: {
-        'accuracy': values['accuracy'], 'ce': values['ce']}
+        'accuracy': values['accuracy'], 'top5': values['top5'],
+        'task_accuracy': values['task_accuracy'], 'ce': values['ce']}
     return best_alpha, {
         'teacher_all': compact(teacher_all),
         'teacher_old': compact(teacher_old),
@@ -1971,14 +2015,31 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
                 args, 'crct_validation_samples_per_component', 8))
             validation_args.crct_trust_cov_scale = float(getattr(
                 args, 'crct_validation_cov_scale', 0.25))
-            validation_anchors, validation_targets = _build_crct_trust_anchors(
-                cls_mean, cls_cov, seen_classes, validation_args, device)
+            anchor_chunks = []
+            target_chunks = []
+            validation_repeats = max(
+                1, int(getattr(args, 'crct_validation_repeats', 1)))
+            for _ in range(validation_repeats):
+                repeat_anchors, repeat_targets = _build_crct_trust_anchors(
+                    cls_mean, cls_cov, seen_classes, validation_args, device)
+                if repeat_anchors is not None:
+                    anchor_chunks.append(repeat_anchors)
+                    target_chunks.append(repeat_targets)
+            validation_anchors = (
+                torch.cat(anchor_chunks, dim=0) if anchor_chunks else None)
+            validation_targets = (
+                torch.cat(target_chunks, dim=0) if target_chunks else None)
             validation_anchor_count = (
                 0 if validation_targets is None else validation_targets.numel())
+            class_to_task = {
+                int(class_id): int(seen_task)
+                for seen_task in range(task_id + 1)
+                for class_id in class_mask[seen_task]
+            }
             selected_alpha, validation_metrics = _select_crct_validation_alpha(
                 base_model, teacher_fc_norm, teacher_head,
                 validation_anchors, validation_targets,
-                seen_classes, old_classes, args)
+                seen_classes, old_classes, class_to_task, args)
         if dist.is_initialized():
             alpha_tensor = torch.tensor(
                 selected_alpha, dtype=torch.float32, device=device)
