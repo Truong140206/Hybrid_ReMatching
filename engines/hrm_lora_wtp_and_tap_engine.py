@@ -24,6 +24,11 @@ from engines.prototype_rematching import (
     build_prototype_bank, prototype_assisted_rematching)
 from engines.shared_prototype_router import (
     build_shared_prototype_bank, shared_space_prototype_routing)
+from engines.replay_anchored_ctird import (
+    build_replay_anchor_memory,
+    generate_task_replay_cache,
+    replay_anchor_relation_loss,
+)
 from torch.distributions.multivariate_normal import MultivariateNormal
 
 
@@ -137,7 +142,8 @@ def get_old_features(model: torch.nn.Module, original_model: torch.nn.Module,
 def train_one_epoch(model: torch.nn.Module, original_model: torch.nn.Module,
                     criterion, data_loader: Iterable, optimizer: torch.optim.Optimizer,
                     device: torch.device, epoch: int, max_norm: float = 0,
-                    set_training_mode=True, task_id=-1, class_mask=None, target_task_map=None, args=None, old_features = None):
+                    set_training_mode=True, task_id=-1, class_mask=None, target_task_map=None,
+                    args=None, old_features=None, replay_anchor_memory=None):
     model.train(set_training_mode)
     original_model.eval()
 
@@ -147,6 +153,16 @@ def train_one_epoch(model: torch.nn.Module, original_model: torch.nn.Module,
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('Lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     metric_logger.add_meter('Loss', utils.SmoothedValue(window_size=1, fmt='{value:.4f}'))
+    replay_anchor_enabled = (
+        task_id > 0
+        and bool(getattr(args, 'replay_anchor_ctird', False))
+        and replay_anchor_memory is not None
+        and not replay_anchor_memory.empty
+    )
+    if replay_anchor_enabled:
+        metric_logger.add_meter('ReplayCT', utils.SmoothedValue(window_size=20, fmt='{avg:.4f}'))
+        metric_logger.add_meter('ReplayKeep', utils.SmoothedValue(window_size=20, fmt='{avg:.1f}'))
+        metric_logger.add_meter('ReplayConf', utils.SmoothedValue(window_size=20, fmt='{avg:.3f}'))
     header = f'Train: Epoch[{epoch + 1:{int(math.log10(args.epochs)) + 1}}/{args.epochs}]'
     global_index = 0
     for input, target in metric_logger.log_every(data_loader, args.print_freq, header):
@@ -231,6 +247,22 @@ def train_one_epoch(model: torch.nn.Module, original_model: torch.nn.Module,
         else:
             loss = criterion(logits, target)+args.con*loss_ctird
             
+        replay_ctird_loss = logits.new_zeros(())
+        replay_kept = 0
+        replay_confidence = 0.0
+        if replay_anchor_enabled:
+            replay_ctird_loss, replay_kept, replay_confidence = replay_anchor_relation_loss(
+                model=model,
+                memory=replay_anchor_memory,
+                current_task_id=task_id,
+                seen_classes=replay_anchor_memory.class_ids,
+                args=args,
+                device=device,
+            )
+            replay_weight = max(
+                0.0, float(getattr(args, 'replay_anchor_weight', 0.05)))
+            loss = loss + replay_weight * replay_ctird_loss
+
         acc1, acc5 = accuracy(logits, target, topk=(1, 5))
 
         if not math.isfinite(loss.item()):
@@ -245,6 +277,10 @@ def train_one_epoch(model: torch.nn.Module, original_model: torch.nn.Module,
         torch.cuda.synchronize()
         metric_logger.update(Loss=loss.item())
         metric_logger.update(Lr=optimizer.param_groups[0]["lr"])
+        if replay_anchor_enabled:
+            metric_logger.update(ReplayCT=replay_ctird_loss.item())
+            metric_logger.update(ReplayKeep=float(replay_kept))
+            metric_logger.update(ReplayConf=float(replay_confidence))
         metric_logger.meters['Acc@1'].update(acc1.item(), n=input.shape[0])
         metric_logger.meters['Acc@5'].update(acc5.item(), n=input.shape[0])
         global_index = global_index+1
@@ -754,6 +790,18 @@ def train_and_evaluate(model: torch.nn.Module, model_without_ddp: torch.nn.Modul
         if utils.is_main_process():
             print('Limiting run to', task_count, 'of', args.num_tasks, 'tasks')
     for task_id in range(task_count):
+        replay_anchor_memory = None
+        if task_id > 0 and bool(getattr(args, 'replay_anchor_ctird', False)):
+            old_classes = [
+                int(class_id)
+                for previous_task in range(task_id)
+                for class_id in class_mask[previous_task]
+            ]
+            replay_anchor_memory = build_replay_anchor_memory(args, old_classes)
+            if replay_anchor_memory.empty:
+                raise RuntimeError(
+                    'Replay-Anchored CTIRD is enabled but no cached pseudo-images '
+                    'were found for tasks before task {}.'.format(task_id + 1))
         previous_fc_norm = None
         if norm_blend_enabled and task_id > 0:
             previous_fc_norm = {
@@ -817,7 +865,8 @@ def train_and_evaluate(model: torch.nn.Module, model_without_ddp: torch.nn.Modul
                                             data_loader=data_loader[task_id]['train'], optimizer=optimizer,
                                             device=device, epoch=epoch, max_norm=args.clip_grad,
                                             set_training_mode=True, task_id=task_id, class_mask=class_mask,
-                                            target_task_map=target_task_map, args=args, old_features=old_features)
+                                            target_task_map=target_task_map, args=args, old_features=old_features,
+                                            replay_anchor_memory=replay_anchor_memory)
 
             if lr_scheduler:
                 lr_scheduler.step(epoch)
@@ -887,6 +936,18 @@ def train_and_evaluate(model: torch.nn.Module, model_without_ddp: torch.nn.Modul
             #train_dis(model, args, device,data_loader[task_id]['train'], class_mask,target_task_map, task_id)
             train_task_adaptive_prediction(model, args, device, class_mask, task_id)
             
+        if (bool(getattr(args, 'replay_anchor_ctird', False))
+                and task_id + 1 < task_count):
+            generate_task_replay_cache(
+                model=model_without_ddp,
+                task_id=task_id,
+                class_ids=class_mask[task_id],
+                cls_mean=cls_mean,
+                cls_cov=cls_cov,
+                cls_cfs_model=cls_cfs_model,
+                args=args,
+                device=device,
+            )
         
         test_stats = evaluate_till_now(model=model, original_model=original_model, data_loader=data_loader,
                                        device=device,
@@ -905,6 +966,17 @@ def train_and_evaluate(model: torch.nn.Module, model_without_ddp: torch.nn.Modul
                 state_dict['real_feature_memory'] = {
                     int(class_id): memory.cpu()
                     for class_id, memory in cls_real_features.items()}
+            if bool(getattr(args, 'replay_anchor_ctird', False)):
+                state_dict['replay_anchor_cache'] = {
+                    'version': 1,
+                    'images_per_class': int(getattr(
+                        args, 'replay_anchor_images_per_class', 5)),
+                    'classes': [
+                        int(class_id)
+                        for seen_task in range(task_id + 1)
+                        for class_id in class_mask[seen_task]
+                    ],
+                }
             if args.sched is not None and args.sched != 'constant':
                 state_dict['lr_scheduler'] = lr_scheduler.state_dict()
 
