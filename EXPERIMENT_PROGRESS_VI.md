@@ -2176,3 +2176,50 @@ Day la thi nghiem ImageNet-R dau tien cai thien dong thoi tat ca nhom chi so. So
 - Acc@1 va Acc@5 tang cho thay moi adapter cham cac lop cua chinh task no tot hon viec dung adapter duoc router chon.
 - Forgetting giam vi LoRA cu luon co co hoi tu cham lai cac lop cu, thay vi bi loai ngay khi TII chon nham task.
 - Ket qua danh doi do chinh xac lay chi phi suy luan tang tuyen tinh theo so task da hoc.
+
+
+## 56. Ablation TII prior va phan ra dong gop tren ImageNet-R
+
+### 56.1. TII prior ablation
+
+Giu logit temperature `1.0`, exhaustive rematching duoc danh gia voi TII prior tu `0.0` den `0.3`.
+
+| TII prior | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0.00 | 80.3817 | 75.0211 | 88.4048 | 1.1026 | 2.8914 | -2.8205 |
+| 0.05 | 80.2631 | 74.9614 | 88.4533 | 1.0968 | 2.8959 | -2.8228 |
+| 0.10 | 80.3087 | 74.9447 | 88.5370 | 1.0919 | **2.8804** | -2.8605 |
+| 0.15 | 80.5439 | 75.1308 | 88.5306 | 1.0879 | 2.8986 | -2.8830 |
+| 0.20 | 80.5369 | 75.0960 | **88.6079** | 1.0847 | 2.9877 | -2.9877 |
+| 0.25 | 80.5505 | 75.1087 | 88.5955 | 1.0824 | 2.9211 | -2.9012 |
+| **0.30** | **80.6549** | **75.1798** | 88.5327 | **1.0809** | 2.8848 | -2.8449 |
+
+Prior `0.3` duoc chon lam cau hinh chinh vi dat Acc@task, Acc@1 va loss tot nhat. Forgetting chi cao hon gia tri thap nhat tai prior `0.1` dung `0.0044` diem. Moi lan exhaustive evaluation mat khoang `495` giay, tuong duong `8.25` phut tren RTX 4090.
+
+So voi baseline routing ban dau, cau hinh Hybrid + Exhaustive prior `0.3`:
+
+- Tang Acc@task `3.3542` diem.
+- Tang Acc@1 `1.3419` diem.
+- Tang Acc@5 `2.4560` diem.
+- Giam loss `0.1590`, xap xi `12.8%`.
+- Giam forgetting `0.6420`, xap xi `18.2%`.
+- Cai thien backward tu `-3.1815` len `-2.8449`.
+
+### 56.2. Baseline checkpoint + Exhaustive
+
+De tach dong gop cua training-time Hybrid Real+CFS va inference-time Exhaustive, cung prior `0.3` duoc danh gia tren checkpoint baseline.
+
+| Phuong phap | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|
+| Baseline routing | 77.3007 | 73.8379 | 86.0767 | 1.2399 | 3.5268 | -3.1815 |
+| Baseline + Exhaustive | 80.3572 | 75.0440 | **88.7258** | 1.0914 | 3.3068 | -3.3068 |
+| Hybrid Real+CFS routing | 77.5854 | 74.0477 | 86.4646 | 1.2230 | 3.3264 | -2.9319 |
+| **Hybrid Real+CFS + Exhaustive** | **80.6549** | **75.1798** | 88.5327 | **1.0809** | **2.8848** | **-2.8449** |
+
+### 56.3. Ket luan ablation
+
+- Exhaustive rematching la nguon tang accuracy chinh: tren checkpoint baseline, Acc@task tang `3.0565`, Acc@1 tang `1.2061` va Acc@5 tang `2.6491` diem.
+- Hybrid Real+CFS van co dong gop rieng. Khi ca hai deu dung exhaustive prior `0.3`, Hybrid tang them Acc@task `0.2977`, Acc@1 `0.1358`, giam loss `0.0105`, giam forgetting `0.4220` va cai thien backward `0.4619`.
+- Baseline + Exhaustive co Acc@5 cao hon, nhung kha nang duy tri task cu kem hon ro ret.
+- Ket hop Hybrid Real+CFS + Exhaustive la cau hinh can bang tot nhat cho continual learning: top-1 accuracy cao nhat, loss thap nhat, forgetting thap nhat va backward gan 0 nhat trong bang phan ra dong gop.
+- Trade-off chinh la inference tang tu mot adapter pass len toi da muoi adapter pass tai task cuoi.
