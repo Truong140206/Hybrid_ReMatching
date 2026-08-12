@@ -30,6 +30,8 @@ CRCT_EPOCHS="${CRCT_EPOCHS:-30}"
 CFS_EPOCHS="${CFS_EPOCHS:-20}"
 MAX_TRAIN_TASKS="${MAX_TRAIN_TASKS:-0}"
 RUN_NAME="${RUN_NAME_OVERRIDE:-imr_lora_hybrid_real_cfs_crct${CRCT_EPOCHS}_r025_m48_seed${SEED}}"
+SEMANTIC_DISTILL="${SEMANTIC_DISTILL:-0}"
+SEMANTIC_CLASS_NAME_FILE="${SEMANTIC_CLASS_NAME_FILE:-${REPO_ROOT}/configs/imagenet_class_names.json}"
 
 if [[ "${MODE}" == "smoke" ]]; then
   LORA_EPOCHS="${SMOKE_LORA_EPOCHS:-1}"
@@ -45,6 +47,30 @@ LOG_PATH="${OUTPUT_ROOT}/${RUN_NAME}.log"
 if [[ ! -x "${PYTHON_BIN}" ]]; then
   echo "Python environment not found: ${PYTHON_BIN}" >&2
   exit 2
+fi
+
+SEMANTIC_ARGS=()
+if [[ "${SEMANTIC_DISTILL}" == "1" ]]; then
+  if [[ ! -s "${SEMANTIC_CLASS_NAME_FILE}" ]]; then
+    echo "Semantic class-name mapping not found: ${SEMANTIC_CLASS_NAME_FILE}" >&2
+    exit 2
+  fi
+  if ! "${PYTHON_BIN}" -c "import open_clip" >/dev/null 2>&1; then
+    echo "open_clip_torch is required for semantic CTIRD." >&2
+    echo "Install it with: ${PYTHON_BIN} -m pip install open_clip_torch ftfy regex" >&2
+    exit 2
+  fi
+  SEMANTIC_ARGS=(
+    --semantic_distill
+    --semantic_backend clip
+    --semantic_clip_model "${SEMANTIC_CLIP_MODEL:-ViT-B-16}"
+    --semantic_clip_pretrained "${SEMANTIC_CLIP_PRETRAINED:-openai}"
+    --semantic_clip_templates "${SEMANTIC_CLIP_TEMPLATES:-a photo of a {}.|a painting of a {}.|a rendition of a {}.}"
+    --semantic_class_name_file "${SEMANTIC_CLASS_NAME_FILE}"
+    --semantic_mode "${SEMANTIC_MODE:-topk_mix}"
+    --semantic_top_k "${SEMANTIC_TOP_K:-3}"
+    --semantic_alpha "${SEMANTIC_ALPHA:-0.03}"
+  )
 fi
 
 for task_id in $(seq 1 10); do
@@ -75,6 +101,10 @@ echo "Dataset: ${IMR_DATA_PATH}"
 echo "TII checkpoints: ${TII_DIR}"
 echo "Output: ${OUTPUT_DIR}"
 echo "Real replay: old/new=${REAL_OLD_REPLAY_RATIO:-0.35}/${REAL_NEW_REPLAY_RATIO:-0.10}, memory/class=${REAL_MEMORY_PER_CLASS:-48}, hard ratio=${REAL_HARD_RATIO:-0.5}"
+if [[ "${SEMANTIC_DISTILL}" == "1" ]]; then
+  echo "Semantic CTIRD: backend=CLIP, mode=${SEMANTIC_MODE:-topk_mix}, top-k=${SEMANTIC_TOP_K:-3}, alpha=${SEMANTIC_ALPHA:-0.03}"
+  echo "Semantic class names: ${SEMANTIC_CLASS_NAME_FILE}"
+fi
 
 PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --nproc_per_node="${GPUS}" \
@@ -121,6 +151,7 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --crct_hybrid_samples_per_class "${HYBRID_SAMPLES_PER_CLASS:-120}" \
   --crct_use_all_samples \
   --crct_balanced_batches \
+  "${SEMANTIC_ARGS[@]}" \
   --output_dir "${OUTPUT_DIR}" \
   2>&1 | tee "${LOG_PATH}"
 
