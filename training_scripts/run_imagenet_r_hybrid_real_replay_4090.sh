@@ -32,6 +32,8 @@ MAX_TRAIN_TASKS="${MAX_TRAIN_TASKS:-0}"
 RUN_NAME="${RUN_NAME_OVERRIDE:-imr_lora_hybrid_real_cfs_crct${CRCT_EPOCHS}_r025_m48_seed${SEED}}"
 SEMANTIC_DISTILL="${SEMANTIC_DISTILL:-0}"
 SEMANTIC_CLASS_NAME_FILE="${SEMANTIC_CLASS_NAME_FILE:-${REPO_ROOT}/configs/imagenet_class_names.json}"
+DEFAULT_SEMANTIC_CLIP_TEMPLATES='a photo of a {}.|a painting of a {}.|a rendition of a {}.'
+SEMANTIC_CLIP_TEMPLATES="${SEMANTIC_CLIP_TEMPLATES:-${DEFAULT_SEMANTIC_CLIP_TEMPLATES}}"
 
 if [[ "${MODE}" == "smoke" ]]; then
   LORA_EPOCHS="${SMOKE_LORA_EPOCHS:-1}"
@@ -60,12 +62,20 @@ if [[ "${SEMANTIC_DISTILL}" == "1" ]]; then
     echo "Install it with: ${PYTHON_BIN} -m pip install open_clip_torch ftfy regex" >&2
     exit 2
   fi
+  if [[ "${SEMANTIC_CLIP_TEMPLATES}" != *'{}'* ]]; then
+    echo "Semantic CLIP templates must contain at least one '{}' placeholder: ${SEMANTIC_CLIP_TEMPLATES}" >&2
+    exit 2
+  fi
+  if ! "${PYTHON_BIN}" -c 'import sys; [item.format("class") for item in sys.argv[1].split("|") if item.strip()]' "${SEMANTIC_CLIP_TEMPLATES}"; then
+    echo "Invalid Semantic CLIP template string: ${SEMANTIC_CLIP_TEMPLATES}" >&2
+    exit 2
+  fi
   SEMANTIC_ARGS=(
     --semantic_distill
     --semantic_backend clip
     --semantic_clip_model "${SEMANTIC_CLIP_MODEL:-ViT-B-16}"
     --semantic_clip_pretrained "${SEMANTIC_CLIP_PRETRAINED:-openai}"
-    --semantic_clip_templates "${SEMANTIC_CLIP_TEMPLATES:-a photo of a {}.|a painting of a {}.|a rendition of a {}.}"
+    --semantic_clip_templates "${SEMANTIC_CLIP_TEMPLATES}"
     --semantic_class_name_file "${SEMANTIC_CLASS_NAME_FILE}"
     --semantic_mode "${SEMANTIC_MODE:-topk_mix}"
     --semantic_top_k "${SEMANTIC_TOP_K:-3}"

@@ -8,7 +8,7 @@ CRCT_EPOCHS="${CRCT_EPOCHS:-30}"
 if [[ "${MODE}" == "smoke" ]]; then
   DEFAULT_RUN_NAME="imr_hybrid_semantic_ctird_smoke_seed${SEED}"
 else
-  DEFAULT_RUN_NAME="imr_lora_hybrid_real_cfs_semantic_ctird_a003_k3_crct${CRCT_EPOCHS}_seed${SEED}"
+  DEFAULT_RUN_NAME="imr_lora_hybrid_real_cfs_semantic_topkmix_a003_k3_crct${CRCT_EPOCHS}_seed${SEED}"
 fi
 
 export RUN_NAME_OVERRIDE="${RUN_NAME_OVERRIDE:-${DEFAULT_RUN_NAME}}"
