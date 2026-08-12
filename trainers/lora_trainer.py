@@ -62,17 +62,26 @@ def train(args):
     if args.eval:
         acc_matrix = np.zeros((args.num_tasks, args.num_tasks))
         prototype_enabled = bool(getattr(args, 'prototype_rematching', False))
+        local_prototype_enabled = (
+            float(getattr(args, 'exhaustive_local_prototype_weight', 0.0)) > 0.0
+        )
         shared_router_enabled = bool(getattr(args, 'shared_prototype_router', False))
         calibration_enabled = bool(getattr(args, 'replay_logit_calibration', False))
         learned_router_enabled = bool(getattr(args, 'replay_task_router', False))
         distilled_router_enabled = bool(
             getattr(args, 'distilled_router_rematching', False))
-        if (prototype_enabled or shared_router_enabled or calibration_enabled
+        if (prototype_enabled or local_prototype_enabled
+                or shared_router_enabled or calibration_enabled
                 or learned_router_enabled or distilled_router_enabled):
             reset_replay_statistics()
         if prototype_enabled:
             args.crct_real_feature_replay = True
             print('Prototype evaluation will restore or reconstruct real-feature memory.')
+        if local_prototype_enabled:
+            args.crct_real_feature_replay = True
+            print(
+                'Task-local prototype fusion will restore real-feature memory; '
+                'task routing remains exhaustive.')
         if shared_router_enabled:
             print('Shared prototype evaluation will reconstruct backbone feature memory.')
 
@@ -179,7 +188,7 @@ def train(args):
                     original_model=original_model, data_loader=data_loader_per_cls,
                     device=device, class_ids=class_mask[task_id], args=args,
                 )
-            elif prototype_enabled:
+            elif prototype_enabled or local_prototype_enabled:
                 saved_memory = checkpoint.get('real_feature_memory')
                 if saved_memory:
                     restore_real_feature_memory(saved_memory)

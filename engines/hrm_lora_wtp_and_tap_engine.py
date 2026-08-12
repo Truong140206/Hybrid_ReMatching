@@ -311,7 +311,11 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
     model.eval()
     original_model.eval()
     prototype_bank = None
-    if bool(getattr(args, 'prototype_rematching', False)):
+    local_prototype_enabled = (
+        float(getattr(args, 'exhaustive_local_prototype_weight', 0.0)) > 0.0
+    )
+    if (bool(getattr(args, 'prototype_rematching', False))
+            or local_prototype_enabled):
         seen_classes = [
             int(class_id)
             for seen_task in range(task_id + 1)
@@ -320,12 +324,24 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
         prototype_bank = build_prototype_bank(
             model, cls_real_features, seen_classes, device)
         if utils.is_main_process():
-            print(
-                'Prototype rematching:',
-                'classes=', len(prototype_bank),
-                'candidate_tasks=', int(getattr(args, 'prototype_candidate_tasks', 2)),
-                'temperature=', float(getattr(args, 'prototype_temperature', 0.07)),
-            )
+            if local_prototype_enabled:
+                print(
+                    'Task-local prototype fusion:',
+                    'classes=', len(prototype_bank),
+                    'weight=', float(getattr(
+                        args, 'exhaustive_local_prototype_weight', 0.0)),
+                    'temperature=', float(getattr(
+                        args, 'exhaustive_local_prototype_temperature', 0.07)),
+                )
+            else:
+                print(
+                    'Prototype rematching:',
+                    'classes=', len(prototype_bank),
+                    'candidate_tasks=', int(getattr(
+                        args, 'prototype_candidate_tasks', 2)),
+                    'temperature=', float(getattr(
+                        args, 'prototype_temperature', 0.07)),
+                )
     shared_prototype_bank = None
     if bool(getattr(args, 'shared_prototype_router', False)):
         seen_classes = [
@@ -383,6 +399,7 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                         class_mask=class_mask,
                         seen_task_count=task_id + 1,
                         args=args,
+                        prototype_bank=prototype_bank,
                     )
                 filtered_index_tensor = torch.empty(
                     0, dtype=torch.long, device=device)
