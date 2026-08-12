@@ -17,6 +17,7 @@ from timm.scheduler import create_scheduler
 from torch import optim
 import utils
 from engines.exhaustive_rematching import exhaustive_adapter_rematching
+from engines.selective_rematching import selective_adapter_rematching
 from engines.prototype_rematching import (
     build_prototype_bank, prototype_assisted_rematching)
 from engines.shared_prototype_router import (
@@ -361,6 +362,44 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 else:
                     raise NotImplementedError("original model is None")
 
+            if bool(getattr(args, 'selective_rematching', False)):
+                logits, prompt_id, candidate_tasks, candidate_counts = selective_adapter_rematching(
+                    model=model,
+                    inputs=input,
+                    tii_logits=old_logits,
+                    class_mask=class_mask,
+                    seen_task_count=task_id + 1,
+                    args=args,
+                )
+                filtered_index_tensor = torch.empty(
+                    0, dtype=torch.long, device=device)
+                re_id = None
+                loss = criterion(logits, target)
+                acc1, acc5 = accuracy(logits, target, topk=(1, 5))
+                task_inference_acc = utils.task_inference_accuracy(
+                    prompt_id.unsqueeze(-1), target, target_task_map,
+                    filtered_index_tensor, re_id)
+                target_tasks = torch.as_tensor(
+                    [target_task_map[value.item()] for value in target],
+                    dtype=torch.long, device=device)
+                active_candidates = (
+                    torch.arange(candidate_tasks.shape[1], device=device).unsqueeze(0)
+                    < candidate_counts.unsqueeze(1))
+                candidate_recall = (
+                    (candidate_tasks == target_tasks.unsqueeze(1)) & active_candidates
+                ).any(dim=1).float().mean() * 100.0
+
+                metric_logger.meters['Loss'].update(loss.item())
+                metric_logger.meters['Acc@1'].update(acc1.item(), n=input.shape[0])
+                metric_logger.meters['Acc@5'].update(acc5.item(), n=input.shape[0])
+                metric_logger.meters['Acc@task'].update(
+                    task_inference_acc.item(), n=input.shape[0])
+                metric_logger.meters['CandidateRecall'].update(
+                    candidate_recall.item(), n=input.shape[0])
+                metric_logger.meters['LoRA/sample'].update(
+                    candidate_counts.float().mean().item(), n=input.shape[0])
+                continue
+
             lora_id = torch.max(old_logits, dim=1)[1]
             lora_id = torch.tensor([target_task_map[v.item()] for v in lora_id], device=device)
             
@@ -542,6 +581,11 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
         .format(task_acc=metric_logger.meters['Acc@task'],
                 top1=metric_logger.meters['Acc@1'], top5=metric_logger.meters['Acc@5'],
                 losses=metric_logger.meters['Loss']))
+    if bool(getattr(args, 'selective_rematching', False)):
+        print(
+            '* Selective CandidateRecall {recall.global_avg:.3f} LoRA/sample {cost.global_avg:.3f}'
+            .format(recall=metric_logger.meters['CandidateRecall'],
+                    cost=metric_logger.meters['LoRA/sample']))
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
@@ -551,7 +595,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((4, args.num_tasks))  # 3 for Acc@1, Acc@5, Loss
+    stat_matrix = np.zeros((6, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -566,6 +610,8 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         stat_matrix[1, i] = test_stats['Acc@5']
         stat_matrix[2, i] = test_stats['Loss']
         stat_matrix[3, i] = test_stats['Acc@task']
+        stat_matrix[4, i] = test_stats.get('CandidateRecall', 0.0)
+        stat_matrix[5, i] = test_stats.get('LoRA/sample', 0.0)
 
         acc_matrix[i, task_id] = test_stats['Acc@1']
 
@@ -579,6 +625,9 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         avg_stat[0],
         avg_stat[1],
         avg_stat[2])
+    if bool(getattr(args, 'selective_rematching', False)):
+        result_str += "\tCandidateRecall: {:.4f}\tLoRA/sample: {:.4f}".format(
+            avg_stat[4], avg_stat[5])
     if task_id > 0:
         forgetting = np.mean((np.max(acc_matrix, axis=1) -
                               acc_matrix[:, task_id])[:task_id])
