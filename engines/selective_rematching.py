@@ -26,7 +26,7 @@ def _candidate_counts(sorted_scores, max_candidates, adaptive, high_margin, low_
 
 @torch.no_grad()
 def selective_adapter_rematching(model, inputs, tii_logits, class_mask,
-                                 seen_task_count, args):
+                                 seen_task_count, args, candidate_scores=None):
     """Evaluate only the most plausible LoRAs selected by TII task evidence."""
     device = inputs.device
     temperature = max(
@@ -46,8 +46,11 @@ def selective_adapter_rematching(model, inputs, tii_logits, class_mask,
     tii_task_prior = _standardize_task_scores(
         torch.stack(tii_task_scores, dim=1))
 
+    ranking_scores = tii_task_prior
+    if candidate_scores is not None:
+        ranking_scores = _standardize_task_scores(candidate_scores)
     sorted_scores, candidate_tasks = torch.topk(
-        tii_task_prior, k=max_candidates, dim=1, largest=True)
+        ranking_scores, k=max_candidates, dim=1, largest=True)
     candidate_source = str(
         getattr(args, 'selective_candidate_source', 'tii')).lower()
     candidate_counts = _candidate_counts(

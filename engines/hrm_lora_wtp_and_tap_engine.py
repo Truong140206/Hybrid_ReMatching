@@ -363,6 +363,11 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     raise NotImplementedError("original model is None")
 
             if bool(getattr(args, 'selective_rematching', False)):
+                candidate_scores = None
+                if (str(getattr(args, 'selective_candidate_source', 'tii')).lower()
+                        == 'router' and replay_task_router is not None):
+                    replay_task_router.eval()
+                    candidate_scores = replay_task_router(shared_features, old_logits)
                 logits, prompt_id, candidate_tasks, candidate_counts = selective_adapter_rematching(
                     model=model,
                     inputs=input,
@@ -370,6 +375,7 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     class_mask=class_mask,
                     seen_task_count=task_id + 1,
                     args=args,
+                    candidate_scores=candidate_scores,
                 )
                 filtered_index_tensor = torch.empty(
                     0, dtype=torch.long, device=device)

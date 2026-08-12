@@ -13,6 +13,7 @@ from engines.hrm_lora_wtp_and_tap_engine import (
 )
 from engines.replay_logit_calibration import calibrate_task_logits
 from engines.replay_task_router import train_replay_task_router
+from engines.distilled_task_router import train_distilled_task_router
 import vits.hrm_lora_vision_transformer as hide_lora_vision_transformer
 import torch.nn as nn
 import torch.nn.init as init
@@ -64,8 +65,10 @@ def train(args):
         shared_router_enabled = bool(getattr(args, 'shared_prototype_router', False))
         calibration_enabled = bool(getattr(args, 'replay_logit_calibration', False))
         learned_router_enabled = bool(getattr(args, 'replay_task_router', False))
+        distilled_router_enabled = bool(
+            getattr(args, 'distilled_router_rematching', False))
         if (prototype_enabled or shared_router_enabled or calibration_enabled
-                or learned_router_enabled):
+                or learned_router_enabled or distilled_router_enabled):
             reset_replay_statistics()
         if prototype_enabled:
             args.crct_real_feature_replay = True
@@ -91,7 +94,30 @@ def train(args):
             else:
                 print('No checkpoint found at:', original_checkpoint_path)
                 return
-            if learned_router_enabled:
+            if distilled_router_enabled:
+                print('Training exhaustive-teacher top-k router for task', task_id + 1)
+                distilled_router, router_stats = train_distilled_task_router(
+                    model=model,
+                    original_model=original_model,
+                    data_loader_per_cls=data_loader_per_cls,
+                    class_mask=class_mask,
+                    seen_task_count=task_id + 1,
+                    args=args,
+                    device=device,
+                )
+                set_replay_task_router(distilled_router)
+                if router_stats is not None:
+                    print(
+                        'Distilled top-k router:',
+                        'accepted=', router_stats['accepted'],
+                        'samples=', router_stats['samples'],
+                        'validation_samples=', router_stats['validation_samples'],
+                        'TII top1/topk=', router_stats['baseline_top1'],
+                        router_stats['baseline_topk'],
+                        'router top1/topk=', router_stats['router_top1'],
+                        router_stats['router_topk'],
+                    )
+            elif learned_router_enabled:
                 print('Reconstructing validated task-router memory for task', task_id + 1)
                 _compute_shared_feature_memory(
                     original_model=original_model, data_loader=data_loader_per_cls,
