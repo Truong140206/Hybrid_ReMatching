@@ -14,6 +14,9 @@ TII_PRIOR_WEIGHT="${4:-0.3}"
 LOGIT_TEMPERATURE="${5:-1.0}"
 CONFIDENT_MARGIN="${6:-1.0}"
 AMBIGUOUS_MARGIN="${7:-0.35}"
+CANDIDATE_SOURCE="${SELECTIVE_SOURCE:-tii}"
+CASCADE_WEIGHT="${CASCADE_WEIGHT:-0.5}"
+EXCLUDED_LOGIT_MARGIN="${EXCLUDED_LOGIT_MARGIN:-20.0}"
 TII_DIR="${TII_DIR:-${OUTPUT_ROOT}/imr_tii_original_10tasks_seed42}"
 
 if [[ -z "${RUN_DIR}" ]]; then
@@ -56,7 +59,8 @@ RUN_BASENAME="$(basename "${RUN_DIR}")"
 PRIOR_TAG="$(tag_value "${TII_PRIOR_WEIGHT}")"
 TEMP_TAG="$(tag_value "${LOGIT_TEMPERATURE}")"
 MARGIN_TAG="$(tag_value "${CONFIDENT_MARGIN}")_$(tag_value "${AMBIGUOUS_MARGIN}")"
-LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_selective_k${CANDIDATE_TASKS}_${MODE}_p${PRIOR_TAG}_t${TEMP_TAG}_m${MARGIN_TAG}.log"
+SOURCE_TAG="${CANDIDATE_SOURCE}_w$(tag_value "${CASCADE_WEIGHT}")"
+LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_selective_k${CANDIDATE_TASKS}_${MODE}_${SOURCE_TAG}_p${PRIOR_TAG}_t${TEMP_TAG}_m${MARGIN_TAG}.log"
 
 if [[ -s "${LOG_PATH}" ]]; then
   echo "Refusing to overwrite existing evaluation log: ${LOG_PATH}" >&2
@@ -69,8 +73,8 @@ if [[ "${MODE}" == "adaptive" ]]; then
 fi
 
 cd "${REPO_ROOT}"
-echo "Selective Rematching: mode=${MODE}, max LoRAs=${CANDIDATE_TASKS}"
-echo "TII prior=${TII_PRIOR_WEIGHT}, temperature=${LOGIT_TEMPERATURE}, margins=${CONFIDENT_MARGIN}/${AMBIGUOUS_MARGIN}"
+echo "Selective Rematching: mode=${MODE}, max LoRAs=${CANDIDATE_TASKS}, source=${CANDIDATE_SOURCE}"
+echo "TII prior=${TII_PRIOR_WEIGHT}, cascade weight=${CASCADE_WEIGHT}, temperature=${LOGIT_TEMPERATURE}, margins=${CONFIDENT_MARGIN}/${AMBIGUOUS_MARGIN}"
 echo "Run: ${RUN_DIR}"
 
 START_TIME="$(date +%s)"
@@ -103,6 +107,9 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --selective_logit_temperature "${LOGIT_TEMPERATURE}" \
   --selective_confident_margin "${CONFIDENT_MARGIN}" \
   --selective_ambiguous_margin "${AMBIGUOUS_MARGIN}" \
+  --selective_candidate_source "${CANDIDATE_SOURCE}" \
+  --selective_cascade_weight "${CASCADE_WEIGHT}" \
+  --selective_excluded_logit_margin "${EXCLUDED_LOGIT_MARGIN}" \
   "${ADAPTIVE_ARGS[@]}" \
   --eval \
   --output_dir "${RUN_DIR}" \
