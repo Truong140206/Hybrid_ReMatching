@@ -49,7 +49,7 @@ RUN_BASENAME="$(basename "${RUN_DIR}")"
 FRACTION_TAG="$(tag_value "${FALLBACK_FRACTION}")"
 PRIOR_TAG="$(tag_value "${TII_PRIOR_WEIGHT}")"
 TEMP_TAG="$(tag_value "${LOGIT_TEMPERATURE}")"
-LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_budgeted_f${FRACTION_TAG}_p${PRIOR_TAG}_t${TEMP_TAG}.log"
+LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_budgeted_v2_f${FRACTION_TAG}_p${PRIOR_TAG}_t${TEMP_TAG}.log"
 if [[ -s "${LOG_PATH}" ]]; then
   echo "Refusing to overwrite existing evaluation log: ${LOG_PATH}" >&2
   exit 3
@@ -58,7 +58,7 @@ fi
 cd "${REPO_ROOT}"
 echo "Confidence-gated exhaustive fallback"
 echo "Fallback fraction=${FALLBACK_FRACTION}, TII prior=${TII_PRIOR_WEIGHT}, temperature=${LOGIT_TEMPERATURE}"
-echo "The lowest TII task-margin samples receive exhaustive rematching."
+echo "Original routing is preserved; disagreement and low-margin samples receive exhaustive rematching."
 
 START_TIME="$(date +%s)"
 PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
@@ -88,6 +88,8 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --budgeted_fallback_fraction "${FALLBACK_FRACTION}" \
   --budgeted_tii_prior_weight "${TII_PRIOR_WEIGHT}" \
   --budgeted_logit_temperature "${LOGIT_TEMPERATURE}" \
+  --budgeted_disagreement_weight "${DISAGREEMENT_WEIGHT:-2.0}" \
+  --budgeted_classifier_weight "${CLASSIFIER_WEIGHT:-0.5}" \
   --eval \
   --output_dir "${RUN_DIR}" \
   2>&1 | tee "${LOG_PATH}"
