@@ -17,6 +17,7 @@ from timm.scheduler import create_scheduler
 from torch import optim
 import utils
 from engines.exhaustive_rematching import exhaustive_adapter_rematching
+from engines.hierarchical_rematching import hierarchical_adapter_rematching
 from engines.budgeted_rematching import budgeted_exhaustive_fallback
 from engines.selective_rematching import selective_adapter_rematching
 from engines.prototype_rematching import (
@@ -363,6 +364,43 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 else:
                     raise NotImplementedError("original model is None")
 
+            if (bool(getattr(args, 'hierarchical_rematching', False))
+                    or bool(getattr(args, 'exhaustive_rematching', False))):
+                if bool(getattr(args, 'hierarchical_rematching', False)):
+                    logits, prompt_id = hierarchical_adapter_rematching(
+                        model=model,
+                        inputs=input,
+                        tii_logits=old_logits,
+                        class_mask=class_mask,
+                        seen_task_count=task_id + 1,
+                        args=args,
+                    )
+                else:
+                    logits, prompt_id = exhaustive_adapter_rematching(
+                        model=model,
+                        inputs=input,
+                        tii_logits=old_logits,
+                        class_mask=class_mask,
+                        seen_task_count=task_id + 1,
+                        args=args,
+                    )
+                filtered_index_tensor = torch.empty(
+                    0, dtype=torch.long, device=device)
+                re_id = None
+                loss = criterion(logits, target)
+                acc1, acc5 = accuracy(logits, target, topk=(1, 5))
+                task_inference_acc = utils.task_inference_accuracy(
+                    prompt_id.unsqueeze(-1), target, target_task_map,
+                    filtered_index_tensor, re_id)
+                metric_logger.meters['Loss'].update(loss.item())
+                metric_logger.meters['Acc@1'].update(
+                    acc1.item(), n=input.shape[0])
+                metric_logger.meters['Acc@5'].update(
+                    acc5.item(), n=input.shape[0])
+                metric_logger.meters['Acc@task'].update(
+                    task_inference_acc.item(), n=input.shape[0])
+                continue
+
             if bool(getattr(args, 'selective_rematching', False)):
                 candidate_scores = None
                 if (str(getattr(args, 'selective_candidate_source', 'tii')).lower()
@@ -545,18 +583,7 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 metric_logger.meters['LoRA/sample'].update(
                     lora_counts.mean().item(), n=input.shape[0])
 
-            elif bool(getattr(args, 'exhaustive_rematching', False)):
-                logits, prompt_id = exhaustive_adapter_rematching(
-                    model=model,
-                    inputs=input,
-                    tii_logits=old_logits,
-                    class_mask=class_mask,
-                    seen_task_count=task_id + 1,
-                    args=args,
-                )
-                filtered_index_tensor = torch.empty(
-                    0, dtype=torch.long, device=device)
-                re_id = None
+
             elif replay_task_router is not None:
                 prompt_id = replay_task_router.predict(shared_features, old_logits)
                 logits = model(input, task_id=prompt_id)['logits']
