@@ -10,6 +10,7 @@ def test_strict_protocol_accepts_cfs_statistics_and_synthetic_replay():
         strict_exemplar_free=True,
         cfs_sampling=True,
         replay_anchor_ctird=True,
+        crct_validation_current_real=True,
     )
     validate_exemplar_free_protocol(args)
 

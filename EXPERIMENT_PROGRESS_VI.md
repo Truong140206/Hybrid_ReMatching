@@ -2511,3 +2511,17 @@ thoi feature cua anh train task hien tai de bao ve learning/plasticity, va dung
 Gaussian anchors chi cho cac lop cu de bao ve retention. Feature task hien tai
 chi ton tai trong luc chon alpha va khong duoc luu vao checkpoint; khong doc hay
 luu anh/feature task cu, nen van rehearsal-free va strict exemplar-free.
+
+### 59.6. Hybrid current-real/old-synthetic validation gate
+
+Trien khai gate moi de loai circular validation. Truoc CRCT, gate lay tam thoi
+toi da 16 feature/lop tu anh train cua task hien tai bang LoRA hien tai. Sau
+CRCT, cac alpha duoc danh gia tren tap ket hop: feature that task hien tai va
+Gaussian anchors cua rieng lop cu.
+
+Alpha chi duoc chap nhan khi tung lop hien tai khong giam accuracy, macro
+Acc@1/Acc@5/task accuracy khong giam, CE hien tai khong tang, cac lop cu khong
+giam accuracy, va cac rang buoc toan bo tap van dat. Feature hien tai chi la
+bien cuc bo trong luc CRCT, khong vao global memory/checkpoint va khong duoc
+dung o task sau. Khong doc hoac luu anh/feature cua task cu; strict
+exemplar-free van duoc giu.

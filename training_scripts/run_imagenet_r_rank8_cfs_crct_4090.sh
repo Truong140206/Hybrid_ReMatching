@@ -29,11 +29,11 @@ BASELINE_LOG="${BASELINE_LOG:-${OUTPUT_ROOT}/imr_lora_rank8_baseline_10tasks_see
 LORA_EPOCHS="${LORA_EPOCHS:-50}"
 CRCT_EPOCHS="${CRCT_EPOCHS:-30}"
 MAX_TRAIN_TASKS=10
-RUN_NAME="${RUN_NAME_OVERRIDE:-imr_rank8_cfs_moment_vgcrct_10tasks_seed${SEED}}"
+RUN_NAME="${RUN_NAME_OVERRIDE:-imr_rank8_cfs_hybridgate_10tasks_seed${SEED}}"
 
 if [[ "${MODE}" == "pilot" ]]; then
   MAX_TRAIN_TASKS="${PILOT_TASKS:-3}"
-  RUN_NAME="${RUN_NAME_OVERRIDE:-imr_rank8_cfs_moment_vgcrct_pilot${MAX_TRAIN_TASKS}_seed${SEED}}"
+  RUN_NAME="${RUN_NAME_OVERRIDE:-imr_rank8_cfs_hybridgate_pilot${MAX_TRAIN_TASKS}_seed${SEED}}"
 fi
 
 OUTPUT_DIR="${OUTPUT_ROOT}/${RUN_NAME}"
@@ -71,9 +71,10 @@ cd "${REPO_ROOT}"
 echo "Mode: ${MODE}"
 echo "Dataset: ${IMR_DATA_PATH}"
 echo "Output: ${OUTPUT_DIR}"
-echo "Method: strict exemplar-free rank-8 LoRA + moment-preserving paper-style CFS CRCT"
+echo "Method: strict exemplar-free rank-8 LoRA + CFS CRCT + hybrid validation gate"
 echo "Historical images/per-example real features: forbidden by runtime guard"
 echo "Replay source: paper-style CFS features with class mean/std restored"
+echo "Gate: transient current-task train features + old-class Gaussian anchors"
 
 echo "CRCT classifier interpolation cap: ${CRCT_VALIDATION_MAX_ALPHA:-1.0}"
 echo "Semantic/prototype/exhaustive: disabled"
@@ -120,6 +121,10 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --crct_balanced_batches \
   --crct_head_only \
   --crct_validation_gate \
+  --crct_validation_current_real \
+  --crct_validation_current_samples_per_class "${CRCT_VALIDATION_CURRENT_SAMPLES:-16}" \
+  --crct_validation_max_current_acc_drop "${CRCT_VALIDATION_MAX_CURRENT_DROP:-0.0}" \
+  --crct_validation_current_ce_tolerance "${CRCT_VALIDATION_CURRENT_CE_TOLERANCE:-0.0}" \
   --crct_validation_steps "${CRCT_VALIDATION_STEPS:-20}" \
   --crct_validation_max_alpha "${CRCT_VALIDATION_MAX_ALPHA:-1.0}" \
   --crct_validation_samples_per_component "${CRCT_VALIDATION_SAMPLES:-16}" \

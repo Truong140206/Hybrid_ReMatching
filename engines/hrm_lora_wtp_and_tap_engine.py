@@ -1287,7 +1287,9 @@ def train_and_evaluate(model: torch.nn.Module, model_without_ddp: torch.nn.Modul
                                                   target_task_map=target_task_map,
                                                   acc_matrix=pre_ca_acc_matrix, args=args)
             #train_dis(model, args, device,data_loader[task_id]['train'], class_mask,target_task_map, task_id)
-            train_task_adaptive_prediction(model, args, device, class_mask, task_id)
+            train_task_adaptive_prediction(
+                model, args, device, class_mask, task_id,
+                data_loader_per_cls=data_loader_per_cls)
             
         if (bool(getattr(args, 'replay_anchor_ctird', False))
                 and task_id + 1 < task_count):
@@ -1912,7 +1914,7 @@ def _macro_crct_metrics(logits, targets, class_ids, class_to_task=None):
 @torch.no_grad()
 def _select_crct_validation_alpha(base_model, teacher_fc_norm, teacher_head,
                                   anchors, targets, seen_classes, old_classes,
-                                  class_to_task, args):
+                                  class_to_task, args, current_classes=None):
     """Select a classifier interpolation on independent feature-statistic anchors."""
     if anchors is None or targets is None or anchors.numel() == 0:
         return 0.0, None
@@ -1923,6 +1925,11 @@ def _select_crct_validation_alpha(base_model, teacher_fc_norm, teacher_head,
         teacher_logits, targets, seen_classes, class_to_task)
     teacher_old = _macro_crct_metrics(
         teacher_logits, targets, old_classes, class_to_task)
+    teacher_current = (
+        _macro_crct_metrics(
+            teacher_logits, targets, current_classes, class_to_task)
+        if current_classes else None
+    )
     steps = max(1, int(getattr(args, 'crct_validation_steps', 10)))
     max_alpha = min(
         1.0, max(0.0, float(getattr(args, 'crct_validation_max_alpha', 1.0))))
@@ -1932,10 +1939,15 @@ def _select_crct_validation_alpha(base_model, teacher_fc_norm, teacher_head,
     min_top5_gain = float(getattr(args, 'crct_validation_min_top5_gain', 0.0))
     min_task_gain = float(getattr(args, 'crct_validation_min_task_gain', 0.0))
     min_ce_gain = float(getattr(args, 'crct_validation_min_ce_gain', 0.0))
+    max_current_drop = max(
+        0.0, float(getattr(args, 'crct_validation_max_current_acc_drop', 0.0)))
+    current_ce_tolerance = max(
+        0.0, float(getattr(args, 'crct_validation_current_ce_tolerance', 0.0)))
 
     best_alpha = 0.0
     best_all = teacher_all
     best_old = teacher_old
+    best_current = teacher_current
     best_key = (
         teacher_all['accuracy'], teacher_all['task_accuracy'],
         teacher_all['top5'], -teacher_all['ce'], 0.0)
@@ -1947,6 +1959,11 @@ def _select_crct_validation_alpha(base_model, teacher_fc_norm, teacher_head,
             candidate_logits, targets, seen_classes, class_to_task)
         candidate_old = _macro_crct_metrics(
             candidate_logits, targets, old_classes, class_to_task)
+        candidate_current = (
+            _macro_crct_metrics(
+                candidate_logits, targets, current_classes, class_to_task)
+            if current_classes else None
+        )
         old_ok = (
             not old_classes or all(
                 candidate_old['per_class_accuracy'].get(class_id, 0.0)
@@ -1970,7 +1987,28 @@ def _select_crct_validation_alpha(base_model, teacher_fc_norm, teacher_head,
             candidate_all['ce']
             <= teacher_all['ce'] - min_ce_gain + tolerance
         )
-        if not (old_ok and accuracy_ok and top5_ok and task_ok and ce_ok):
+        current_ok = (
+            not current_classes
+            or (
+                all(
+                    candidate_current['per_class_accuracy'].get(class_id, 0.0)
+                    + max_current_drop + tolerance
+                    >= teacher_current['per_class_accuracy'].get(class_id, 0.0)
+                    for class_id in current_classes
+                )
+                and candidate_current['accuracy'] + tolerance
+                >= teacher_current['accuracy']
+                and candidate_current['top5'] + tolerance
+                >= teacher_current['top5']
+                and candidate_current['task_accuracy'] + tolerance
+                >= teacher_current['task_accuracy']
+                and candidate_current['ce']
+                <= teacher_current['ce'] + current_ce_tolerance + tolerance
+            )
+        )
+        if not (
+                old_ok and accuracy_ok and top5_ok and task_ok and ce_ok
+                and current_ok):
             continue
         candidate_key = (
             candidate_all['accuracy'], candidate_all['task_accuracy'],
@@ -1979,6 +2017,7 @@ def _select_crct_validation_alpha(base_model, teacher_fc_norm, teacher_head,
             best_alpha = alpha
             best_all = candidate_all
             best_old = candidate_old
+            best_current = candidate_current
             best_key = candidate_key
 
     old_class_drops = [
@@ -1989,7 +2028,7 @@ def _select_crct_validation_alpha(base_model, teacher_fc_norm, teacher_head,
     compact = lambda values: {
         'accuracy': values['accuracy'], 'top5': values['top5'],
         'task_accuracy': values['task_accuracy'], 'ce': values['ce']}
-    return best_alpha, {
+    metrics = {
         'teacher_all': compact(teacher_all),
         'teacher_old': compact(teacher_old),
         'selected_all': compact(best_all),
@@ -1997,6 +2036,44 @@ def _select_crct_validation_alpha(base_model, teacher_fc_norm, teacher_head,
         'worst_old_class_drop': (
             max(old_class_drops) if old_class_drops else 0.0),
     }
+    if teacher_current is not None:
+        metrics['teacher_current'] = compact(teacher_current)
+        metrics['selected_current'] = compact(best_current)
+    return best_alpha, metrics
+
+
+@torch.no_grad()
+def _collect_current_task_validation_features(
+        model, data_loader_per_cls, current_classes, task_id,
+        samples_per_class, device):
+    """Collect transient current-task features; callers must not persist them."""
+    if data_loader_per_cls is None or samples_per_class <= 0:
+        return None, None
+
+    was_training = model.training
+    model.eval()
+    feature_chunks = []
+    target_chunks = []
+    try:
+        for class_id in current_classes:
+            remaining = samples_per_class
+            for inputs, _ in data_loader_per_cls[int(class_id)]['train']:
+                inputs = inputs.to(device, non_blocking=True)
+                features = model(
+                    inputs, task_id=task_id, train=True)['pre_logits'].detach()
+                take = min(remaining, features.shape[0])
+                feature_chunks.append(features[:take])
+                target_chunks.append(torch.full(
+                    (take,), int(class_id), dtype=torch.long, device=device))
+                remaining -= take
+                if remaining <= 0:
+                    break
+    finally:
+        model.train(was_training)
+
+    if not feature_chunks:
+        return None, None
+    return torch.cat(feature_chunks, dim=0), torch.cat(target_chunks, dim=0)
 
 
 def _use_cfs_for_crct_class(class_id, old_classes, args):
@@ -2019,7 +2096,9 @@ def _sample_crct_class_features(mean, cov, count, args, device, model,
         class_id, seen_classes, cfs_model=cfs_model)
 
 
-def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_mask=None, task_id=-1):
+def train_task_adaptive_prediction(model: torch.nn.Module, args, device,
+                                   class_mask=None, task_id=-1,
+                                   data_loader_per_cls=None):
     model.train()
     run_epochs = args.crct_epochs
     crct_num = 0
@@ -2104,6 +2183,12 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
     if validation_gate_enabled and trust_region_enabled:
         raise ValueError(
             'Use either CRCT validation gate or adaptive trust region, not both')
+    current_real_gate_enabled = (
+        validation_gate_enabled
+        and bool(getattr(args, 'crct_validation_current_real', False))
+    )
+    if current_real_gate_enabled and data_loader_per_cls is None:
+        raise ValueError('Current-real CRCT validation requires per-class train loaders')
     old_row_lr_scale = min(
         1.0, max(0.0, float(getattr(args, 'crct_old_row_lr_scale', 1.0))))
 
@@ -2117,6 +2202,26 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
         teacher_head = copy.deepcopy(base_model.head).to(device).eval()
         for teacher_parameter in list(teacher_fc_norm.parameters()) + list(teacher_head.parameters()):
             teacher_parameter.requires_grad_(False)
+
+    current_validation_anchors = None
+    current_validation_targets = None
+    current_classes = [int(class_id) for class_id in class_mask[task_id]]
+    if current_real_gate_enabled and (
+            not dist.is_initialized() or utils.is_main_process()):
+        current_validation_anchors, current_validation_targets = (
+            _collect_current_task_validation_features(
+                base_model, data_loader_per_cls, current_classes, task_id,
+                max(1, int(getattr(
+                    args, 'crct_validation_current_samples_per_class', 16))),
+                device)
+        )
+        if current_validation_anchors is None:
+            raise RuntimeError(
+                'Current-real CRCT validation could not collect any features')
+        print(
+            'CRCT current-real validation:',
+            'classes=', len(current_classes),
+            'anchors=', current_validation_targets.numel())
 
     if utils.is_main_process() and (
             head_only or distill_enabled or anchor_weight > 0.0
@@ -2396,9 +2501,11 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
             target_chunks = []
             validation_repeats = max(
                 1, int(getattr(args, 'crct_validation_repeats', 1)))
+            validation_classes = (
+                old_classes if current_real_gate_enabled else seen_classes)
             for _ in range(validation_repeats):
                 repeat_anchors, repeat_targets = _build_crct_trust_anchors(
-                    cls_mean, cls_cov, seen_classes, validation_args, device)
+                    cls_mean, cls_cov, validation_classes, validation_args, device)
                 if repeat_anchors is not None:
                     anchor_chunks.append(repeat_anchors)
                     target_chunks.append(repeat_targets)
@@ -2406,6 +2513,11 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
                 torch.cat(anchor_chunks, dim=0) if anchor_chunks else None)
             validation_targets = (
                 torch.cat(target_chunks, dim=0) if target_chunks else None)
+            if current_real_gate_enabled:
+                validation_anchors = torch.cat(
+                    [validation_anchors, current_validation_anchors], dim=0)
+                validation_targets = torch.cat(
+                    [validation_targets, current_validation_targets], dim=0)
             validation_anchor_count = (
                 0 if validation_targets is None else validation_targets.numel())
             class_to_task = {
@@ -2416,7 +2528,8 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
             selected_alpha, validation_metrics = _select_crct_validation_alpha(
                 base_model, teacher_fc_norm, teacher_head,
                 validation_anchors, validation_targets,
-                seen_classes, old_classes, class_to_task, args)
+                seen_classes, old_classes, class_to_task, args,
+                current_classes=(current_classes if current_real_gate_enabled else None))
         if dist.is_initialized():
             alpha_tensor = torch.tensor(
                 selected_alpha, dtype=torch.float32, device=device)

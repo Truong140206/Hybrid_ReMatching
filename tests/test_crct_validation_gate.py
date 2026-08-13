@@ -12,11 +12,12 @@ from engines.hrm_lora_wtp_and_tap_engine import (
 
 class TinyClassifier(nn.Module):
     def __init__(self, weight):
+        weight = torch.as_tensor(weight, dtype=torch.float32)
         super().__init__()
         self.fc_norm = nn.Identity()
-        self.head = nn.Linear(2, 2, bias=False)
+        self.head = nn.Linear(weight.shape[1], weight.shape[0], bias=False)
         with torch.no_grad():
-            self.head.weight.copy_(torch.tensor(weight, dtype=torch.float32))
+            self.head.weight.copy_(weight)
 
 
 def _args():
@@ -106,3 +107,25 @@ def test_gate_rolls_back_classifier_that_hurts_old_class():
 
     assert alpha == 0.0
     assert metrics['selected_old']['accuracy'] == metrics['teacher_old']['accuracy']
+
+def test_hybrid_gate_rejects_old_class_gain_that_increases_current_ce():
+    teacher = TinyClassifier(torch.eye(4))
+    student = TinyClassifier(torch.diag(torch.tensor([4.0, 4.0, 4.0, 0.2])))
+    anchors = torch.eye(4)
+    targets = torch.arange(4)
+
+    alpha, metrics = _select_crct_validation_alpha(
+        student,
+        teacher.fc_norm,
+        teacher.head,
+        anchors,
+        targets,
+        seen_classes=[0, 1, 2, 3],
+        old_classes=[0, 1, 2],
+        class_to_task={0: 0, 1: 0, 2: 1, 3: 1},
+        args=_args(),
+        current_classes=[3],
+    )
+
+    assert alpha == 0.0
+    assert metrics['selected_current']['ce'] == metrics['teacher_current']['ce']
