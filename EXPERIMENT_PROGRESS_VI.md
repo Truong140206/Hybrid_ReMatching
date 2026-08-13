@@ -2338,3 +2338,32 @@ Phuong phap thay the khong hoc tham so tu test:
 - Mau exhaustive fallback giu nguyen.
 - Phep tron `p'=(1-epsilon)p+epsilon/C` bao toan thu tu moi lop, nen Acc@task, Acc@1, Acc@5, Forgetting va Backward khong doi.
 - Muc tieu la giam phat cua cac early-exit error qua tu tin va dua loss xuong duoi baseline `1.2305`.
+
+### 57.9. Ket qua uncertainty-aware smoothing
+
+| Phuong phap | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward | LoRA/mau |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Baseline rerun | 77.7914 | 74.0191 | 86.8893 | 1.2305 | 3.2801 | -2.9119 | - |
+| Exhaustive tot nhat | **80.6549** | **75.1798** | **88.5327** | **1.0809** | **2.8848** | **-2.8449** | 10.0000 |
+| Progressive khong smoothing | 80.5329 | 75.0731 | 87.9394 | 1.2587 | 2.9413 | -2.9014 | 5.4531 |
+| **Progressive + uncertainty smoothing** | **80.5329** | **75.0731** | **87.9394** | **1.1253** | **2.9413** | **-2.9014** | **5.4531** |
+
+Routing statistics cua ban smoothing:
+
+- Stage1Stop: `55.3059%`.
+- Stage2Stop: `2.0407%`.
+- FullFallback: `42.6534%`.
+- Trung binh: `5.4531` LoRA/mau.
+
+So voi progressive khong smoothing, chi co loss thay doi: giam `0.1334`, tuong duong `10.60%`. Tat ca accuracy, forgetting, backward, stop rate va chi phi giu nguyen dung nhu thiet ke rank-preserving.
+
+So voi baseline rerun:
+
+- Acc@task tang `2.7415` diem.
+- Acc@1 tang `1.0540` diem.
+- Acc@5 tang `1.0501` diem.
+- Loss giam `0.1052`, tuong duong `8.55%`.
+- Forgetting giam `0.3388`, tuong duong `10.33%`.
+- Backward tang tu `-2.9119` len `-2.9014`.
+
+So voi exhaustive, progressive smoothing chi thap hon `0.1067` diem Acc@1 va cao hon `0.0444` loss, nhung giam `45.47%` so luot chay LoRA. Day la cau hinh progressive can bang tot nhat hien tai va la moc dau tien cua nhanh nay cai thien dong thoi tat ca chi so chat luong so voi baseline.
