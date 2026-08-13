@@ -19,6 +19,7 @@ import utils
 from engines.exhaustive_rematching import exhaustive_adapter_rematching
 from engines.hierarchical_rematching import hierarchical_adapter_rematching
 from engines.budgeted_rematching import budgeted_exhaustive_fallback
+from engines.progressive_rematching import progressive_adapter_rematching
 from engines.selective_rematching import selective_adapter_rematching
 from engines.prototype_rematching import (
     build_prototype_bank, prototype_assisted_rematching)
@@ -577,6 +578,41 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 else:
                     raise NotImplementedError("original model is None")
 
+            if bool(getattr(args, 'progressive_rematching', False)):
+                logits, prompt_id, lora_counts, stop_stage = progressive_adapter_rematching(
+                    model=model,
+                    inputs=input,
+                    tii_logits=old_logits,
+                    class_mask=class_mask,
+                    seen_task_count=task_id + 1,
+                    args=args,
+                )
+                filtered_index_tensor = torch.empty(
+                    0, dtype=torch.long, device=device)
+                re_id = None
+                loss = criterion(logits, target)
+                acc1, acc5 = accuracy(logits, target, topk=(1, 5))
+                task_inference_acc = utils.task_inference_accuracy(
+                    prompt_id.unsqueeze(-1), target, target_task_map,
+                    filtered_index_tensor, re_id)
+                metric_logger.meters['Loss'].update(loss.item())
+                metric_logger.meters['Acc@1'].update(acc1.item(), n=input.shape[0])
+                metric_logger.meters['Acc@5'].update(acc5.item(), n=input.shape[0])
+                metric_logger.meters['Acc@task'].update(
+                    task_inference_acc.item(), n=input.shape[0])
+                metric_logger.meters['LoRA/sample'].update(
+                    lora_counts.mean().item(), n=input.shape[0])
+                metric_logger.meters['Stage1StopRate'].update(
+                    stop_stage.eq(1).float().mean().mul(100.0).item(),
+                    n=input.shape[0])
+                metric_logger.meters['Stage2StopRate'].update(
+                    stop_stage.eq(2).float().mean().mul(100.0).item(),
+                    n=input.shape[0])
+                metric_logger.meters['FullFallbackRate'].update(
+                    stop_stage.eq(3).float().mean().mul(100.0).item(),
+                    n=input.shape[0])
+                continue
+
             if (bool(getattr(args, 'hierarchical_rematching', False))
                     or bool(getattr(args, 'exhaustive_rematching', False))):
                 if bool(getattr(args, 'hierarchical_rematching', False)):
@@ -864,6 +900,15 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
             '* Selective CandidateRecall {recall.global_avg:.3f} LoRA/sample {cost.global_avg:.3f}'
             .format(recall=metric_logger.meters['CandidateRecall'],
                     cost=metric_logger.meters['LoRA/sample']))
+    if bool(getattr(args, 'progressive_rematching', False)):
+        print(
+            '* Progressive Stage1Stop {stage1.global_avg:.3f} Stage2Stop {stage2.global_avg:.3f} '
+            'FullFallback {fallback.global_avg:.3f} LoRA/sample {cost.global_avg:.3f}'
+            .format(
+                stage1=metric_logger.meters['Stage1StopRate'],
+                stage2=metric_logger.meters['Stage2StopRate'],
+                fallback=metric_logger.meters['FullFallbackRate'],
+                cost=metric_logger.meters['LoRA/sample']))
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
@@ -873,7 +918,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((8, args.num_tasks))
+    stat_matrix = np.zeros((11, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -893,6 +938,11 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         stat_matrix[6, i] = test_stats.get('FallbackRate', 0.0)
         if bool(getattr(args, 'budgeted_rematching', False)):
             stat_matrix[7, i] = test_stats.get('LoRA/sample', 0.0)
+        if bool(getattr(args, 'progressive_rematching', False)):
+            stat_matrix[7, i] = test_stats.get('Stage1StopRate', 0.0)
+            stat_matrix[8, i] = test_stats.get('Stage2StopRate', 0.0)
+            stat_matrix[9, i] = test_stats.get('FullFallbackRate', 0.0)
+            stat_matrix[10, i] = test_stats.get('LoRA/sample', 0.0)
 
         acc_matrix[i, task_id] = test_stats['Acc@1']
 
@@ -912,6 +962,11 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
     if bool(getattr(args, 'selective_rematching', False)):
         result_str += "\tCandidateRecall: {:.4f}\tLoRA/sample: {:.4f}".format(
             avg_stat[4], avg_stat[5])
+    if bool(getattr(args, 'progressive_rematching', False)):
+        result_str += (
+            "\tStage1Stop: {:.4f}\tStage2Stop: {:.4f}"
+            "\tFullFallback: {:.4f}\tLoRA/sample: {:.4f}"
+        ).format(avg_stat[7], avg_stat[8], avg_stat[9], avg_stat[10])
     if task_id > 0:
         forgetting = np.mean((np.max(acc_matrix, axis=1) -
                               acc_matrix[:, task_id])[:task_id])
