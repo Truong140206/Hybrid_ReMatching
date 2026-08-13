@@ -15,6 +15,7 @@ STAGE2_MIN_SAMPLES_PER_CLASS="${STAGE2_MIN_SAMPLES_PER_CLASS:-4}"
 STAGE2_CONTEXT_RATIO="${STAGE2_CONTEXT_RATIO:-0.25}"
 STAGE2_TARGET_PRECISION="${STAGE2_TARGET_PRECISION:-1.0}"
 STAGE2_LOSS_TOLERANCE="${STAGE2_LOSS_TOLERANCE:-0.0}"
+LORA_BATCH_RANKS="${LORA_BATCH_RANKS:-2}"
 TII_DIR="${TII_DIR:-${OUTPUT_ROOT}/imr_tii_original_10tasks_seed42}"
 
 if [[ -z "${RUN_DIR}" ]]; then
@@ -54,7 +55,7 @@ PRECISION_TAG="$(tag_value "${TARGET_PRECISION}")"
 MARGIN_TAG="$(tag_value "${EXCLUDED_LOGIT_MARGIN}")"
 CONTEXT_TAG="$(tag_value "${STAGE2_CONTEXT_RATIO}")"
 STAGE2_PRECISION_TAG="$(tag_value "${STAGE2_TARGET_PRECISION}")"
-LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_calibrated_progressive_smooth05_s${SAMPLES_PER_CLASS}_q${PRECISION_TAG}_q2${STAGE2_PRECISION_TAG}_c${CONTEXT_TAG}_m${MARGIN_TAG}.log"
+LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_calibrated_progressive_batch${LORA_BATCH_RANKS}_smooth05_s${SAMPLES_PER_CLASS}_q${PRECISION_TAG}_q2${STAGE2_PRECISION_TAG}_c${CONTEXT_TAG}_m${MARGIN_TAG}.log"
 if [[ -s "${LOG_PATH}" ]]; then
   echo "Refusing to overwrite existing evaluation log: ${LOG_PATH}" >&2
   exit 3
@@ -67,6 +68,7 @@ echo "Run=${RUN_DIR}; samples/class=${SAMPLES_PER_CLASS}; target precision=${TAR
 echo "Stage-2 calibration is conditioned on Stage-1 rejects; excluded-logit margin=${EXCLUDED_LOGIT_MARGIN}"
 echo "Stage-2 boundary context=${STAGE2_CONTEXT_RATIO}; target precision=${STAGE2_TARGET_PRECISION}; loss tolerance=${STAGE2_LOSS_TOLERANCE}"
 echo "Rank-preserving uncertainty smoothing is applied only to early exits; exhaustive fallbacks are unchanged."
+echo "Adjacent LoRA ranks per GPU forward=${LORA_BATCH_RANKS}; gate boundaries remain 2 -> 4 -> all."
 
 START_TIME="$(date +%s)"
 PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
@@ -109,6 +111,7 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --progressive_uncertainty_smoothing \
   --progressive_smoothing_strength 0.5 \
   --progressive_smoothing_max 0.05 \
+  --progressive_lora_batch_ranks "${LORA_BATCH_RANKS}" \
   --eval \
   --output_dir "${RUN_DIR}" \
   2>&1 | tee "${LOG_PATH}"

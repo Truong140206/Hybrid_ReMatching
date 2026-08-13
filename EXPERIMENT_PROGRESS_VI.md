@@ -2367,3 +2367,35 @@ So voi baseline rerun:
 - Backward tang tu `-2.9119` len `-2.9014`.
 
 So voi exhaustive, progressive smoothing chi thap hon `0.1067` diem Acc@1 va cao hon `0.0444` loss, nhung giam `45.47%` so luot chay LoRA. Day la cau hinh progressive can bang tot nhat hien tai va la moc dau tien cua nhanh nay cai thien dong thoi tat ca chi so chat luong so voi baseline.
+
+## 58. Toi uu chi phi suy luan bang batched-LoRA execution
+
+### 58.1. Vi sao HRM-PET dat hon PET thong thuong
+
+PET mot-adapter thong thuong chi can mot backbone va mot adapter cho moi mau. HRM-PET con co TII de suy luan task, parameter pool, CTIRD/CRCT khi train va co the thu nhieu LoRA khi rematching. Vi vay HRM-PET tang chi phi train, bo nho checkpoint va dac biet la chi phi inference khi task ID khong duoc cung cap.
+
+Cau hinh progressive tot nhat hien tai da giam tu `10` xuong `5.4531` LoRA/mau so voi exhaustive, nhung cac LoRA van duoc chay tuan tu. Day la nut that trien khai tiep theo.
+
+### 58.2. Batched-LoRA execution
+
+Toi uu moi khong thay doi quyet dinh cua thuat toan:
+
+1. Van xep hang LoRA bang TII.
+2. Van dung gate tai cac moc `2 -> 4 -> all`.
+3. Van tinh du `5.4531` LoRA/mau trung binh.
+4. Hai LoRA ke nhau duoc ghep vao mot batch GPU duy nhat.
+5. Khong bao gio batch vuot qua moc gate; vi vay mau da du an toan van dung dung cho cu.
+
+Code ghi them `ForwardCalls/sample` de tach hai khai niem:
+
+- `LoRA/sample`: khoi luong tinh toan ly thuyet, khong doi.
+- `ForwardCalls/sample`: so luot goi GPU tuan tu, du kien giam tu `5.4531` xuong khoang `2.7265` khi batch hai rank.
+
+Voi routing hien tai (`55.3059%` dung sau 2 LoRA, `2.0407%` dung sau 4 LoRA, `42.6534%` chay du 10 LoRA), batch hai rank giam dung `50%` so forward call tuan tu. FLOPs khong giam, batch tam thoi lon hon va bo nho dinh co the tang; toc do wall-clock thuc te phai do tren RTX 4090. Muc tieu cua thay doi nay la giam latency va tang GPU utilization trong khi giu nguyen accuracy, loss, forgetting, backward va LoRA/mau.
+
+### 58.3. Tieu chi chap nhan
+
+- Unit test phai xac nhan batch `1` va batch `2` cho cung logits, task routing, LoRA count va stop stage.
+- Ket qua ImageNet-R phai giu gan nhu nguyen moc `80.5329 / 75.0731 / 87.9394`, loss `1.1253`, forgetting `2.9413`, backward `-2.9014`.
+- `ForwardCalls/sample` phai xap xi `2.7265`.
+- Wall time phai thap hon ban serial; neu khong, khong coi day la cai tien chi phi.

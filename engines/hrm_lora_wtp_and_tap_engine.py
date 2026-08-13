@@ -584,7 +584,7 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     raise NotImplementedError("original model is None")
 
             if bool(getattr(args, 'calibrated_progressive_rematching', False)):
-                logits, prompt_id, lora_counts, stop_stage = calibrated_progressive_rematching(
+                logits, prompt_id, lora_counts, forward_calls, stop_stage = calibrated_progressive_rematching(
                     model=model,
                     inputs=input,
                     tii_logits=old_logits,
@@ -608,6 +608,8 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     task_inference_acc.item(), n=input.shape[0])
                 metric_logger.meters['LoRA/sample'].update(
                     lora_counts.mean().item(), n=input.shape[0])
+                metric_logger.meters['ForwardCalls/sample'].update(
+                    forward_calls.mean().item(), n=input.shape[0])
                 metric_logger.meters['Stage1StopRate'].update(
                     stop_stage.eq(1).float().mean().mul(100.0).item(),
                     n=input.shape[0])
@@ -681,6 +683,7 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     task_inference_acc.item(), n=input.shape[0])
                 metric_logger.meters['LoRA/sample'].update(
                     lora_counts.mean().item(), n=input.shape[0])
+
                 metric_logger.meters['Stage1StopRate'].update(
                     stop_stage.eq(1).float().mean().mul(100.0).item(),
                     n=input.shape[0])
@@ -1007,12 +1010,13 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
         print(
             '* CalibratedProgressive Stage1Stop {stage1.global_avg:.3f} '
             'Stage2Stop {stage2.global_avg:.3f} FullFallback {fallback.global_avg:.3f} '
-            'LoRA/sample {cost.global_avg:.3f}'
+            'LoRA/sample {cost.global_avg:.3f} ForwardCalls/sample {calls.global_avg:.3f}'
             .format(
                 stage1=metric_logger.meters['Stage1StopRate'],
                 stage2=metric_logger.meters['Stage2StopRate'],
                 fallback=metric_logger.meters['FullFallbackRate'],
-                cost=metric_logger.meters['LoRA/sample']))
+                cost=metric_logger.meters['LoRA/sample'],
+                calls=metric_logger.meters['ForwardCalls/sample']))
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
@@ -1022,7 +1026,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((17, args.num_tasks))
+    stat_matrix = np.zeros((18, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -1059,6 +1063,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
             stat_matrix[8, i] = test_stats.get('Stage2StopRate', 0.0)
             stat_matrix[9, i] = test_stats.get('FullFallbackRate', 0.0)
             stat_matrix[10, i] = test_stats.get('LoRA/sample', 0.0)
+            stat_matrix[17, i] = test_stats.get('ForwardCalls/sample', 0.0)
 
         acc_matrix[i, task_id] = test_stats['Acc@1']
 
@@ -1095,7 +1100,9 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         result_str += (
             "\tStage1Stop: {:.4f}\tStage2Stop: {:.4f}"
             "\tFullFallback: {:.4f}\tLoRA/sample: {:.4f}"
-        ).format(avg_stat[7], avg_stat[8], avg_stat[9], avg_stat[10])
+            "\tForwardCalls/sample: {:.4f}"
+        ).format(
+            avg_stat[7], avg_stat[8], avg_stat[9], avg_stat[10], avg_stat[17])
     if task_id > 0:
         forgetting = np.mean((np.max(acc_matrix, axis=1) -
                               acc_matrix[:, task_id])[:task_id])

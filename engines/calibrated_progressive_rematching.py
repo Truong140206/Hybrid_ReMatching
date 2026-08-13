@@ -27,6 +27,19 @@ def _finalize_partial_logits(logits, excluded_margin=20.0):
     return torch.where(finite, logits, row_min - float(excluded_margin))
 
 
+def _run_lora_rank_batch(model, inputs, task_ids):
+    """Evaluate several candidate LoRAs in one batched model call."""
+    if task_ids.ndim != 2:
+        raise ValueError('task_ids must have shape [batch, rank_count]')
+    rank_count = task_ids.shape[1]
+    if rank_count == 1:
+        return model(inputs, task_id=task_ids[:, 0])['logits'].unsqueeze(1)
+    expanded_inputs = inputs.repeat_interleave(rank_count, dim=0)
+    flat_task_ids = task_ids.reshape(-1)
+    logits = model(expanded_inputs, task_id=flat_task_ids)['logits']
+    return logits.reshape(inputs.shape[0], rank_count, -1)
+
+
 class HaltingGate(nn.Module):
     def __init__(self, feature_dim, hidden_dim=64, dropout=0.1):
         super().__init__()
@@ -216,6 +229,8 @@ def _collect_gate_dataset(model, original_model, data_loader_per_cls,
     class_targets = []
     model.eval()
     original_model.eval()
+    rank_batch_size = max(1, int(getattr(
+        args, 'progressive_lora_batch_ranks', 1)))
     for task_index in range(seen_task_count):
         for class_id in class_mask[task_index]:
             collected = 0
@@ -241,30 +256,37 @@ def _collect_gate_dataset(model, original_model, data_loader_per_cls,
                     args, 'progressive_logit_temperature', 1.0)))
                 prior_weight = max(0.0, float(getattr(
                     args, 'progressive_tii_prior_weight', 0.3)))
-                for rank in range(seen_task_count):
-                    active_tasks = candidate_tasks[:, rank]
-                    adapter_logits = model(
-                        inputs, task_id=active_tasks)['logits']
-                    for selected_task in active_tasks.unique().tolist():
-                        rows = torch.nonzero(
-                            active_tasks == selected_task).flatten()
-                        class_index = torch.as_tensor(
-                            class_mask[selected_task], dtype=torch.long,
-                            device=device)
-                        local_logits = adapter_logits.index_select(
-                            0, rows).index_select(1, class_index) / temperature
-                        calibrated = local_logits + prior_weight * tii_prior[
-                            rows, selected_task].unsqueeze(1)
-                        rank_logits[
-                            rows.unsqueeze(1), rank, class_index.unsqueeze(0)
-                        ] = calibrated
-                        task_evidence[rows, rank] = calibrated.max(1).values
-                        local_top = torch.topk(
-                            calibrated, k=min(2, calibrated.shape[1]),
-                            dim=1).values
-                        class_margins[rows, rank] = (
-                            local_top[:, 0] - local_top[:, 1]
-                            if local_top.shape[1] > 1 else float('inf'))
+                for rank_start in range(
+                        0, seen_task_count, rank_batch_size):
+                    rank_end = min(
+                        seen_task_count, rank_start + rank_batch_size)
+                    rank_tasks = candidate_tasks[:, rank_start:rank_end]
+                    rank_adapter_logits = _run_lora_rank_batch(
+                        model, inputs, rank_tasks)
+                    for rank_offset, rank in enumerate(
+                            range(rank_start, rank_end)):
+                        active_tasks = rank_tasks[:, rank_offset]
+                        adapter_logits = rank_adapter_logits[:, rank_offset]
+                        for selected_task in active_tasks.unique().tolist():
+                            rows = torch.nonzero(
+                                active_tasks == selected_task).flatten()
+                            class_index = torch.as_tensor(
+                                class_mask[selected_task], dtype=torch.long,
+                                device=device)
+                            local_logits = adapter_logits.index_select(
+                                0, rows).index_select(1, class_index) / temperature
+                            calibrated = local_logits + prior_weight * tii_prior[
+                                rows, selected_task].unsqueeze(1)
+                            rank_logits[
+                                rows.unsqueeze(1), rank, class_index.unsqueeze(0)
+                            ] = calibrated
+                            task_evidence[rows, rank] = calibrated.max(1).values
+                            local_top = torch.topk(
+                                calibrated, k=min(2, calibrated.shape[1]),
+                                dim=1).values
+                            class_margins[rows, rank] = (
+                                local_top[:, 0] - local_top[:, 1]
+                                if local_top.shape[1] > 1 else float('inf'))
                 winner_rank = task_evidence.argmax(1)
                 full_logits = rank_logits.max(dim=1).values
                 full_predictions = full_logits.argmax(dim=1)
@@ -527,37 +549,52 @@ def calibrated_progressive_rematching(model, inputs, tii_logits, class_mask,
     class_margins = torch.zeros_like(task_evidence)
     active = torch.ones(batch_size, dtype=torch.bool, device=device)
     counts = torch.zeros(batch_size, dtype=torch.float32, device=device)
+    forward_calls = torch.zeros_like(counts)
     stages = torch.zeros(batch_size, dtype=torch.long, device=device)
     halt_confidence = torch.ones(
         batch_size, dtype=tii_logits.dtype, device=device)
 
-    for rank in range(seen_task_count):
+    rank_batch_size = max(1, int(getattr(
+        args, 'progressive_lora_batch_ranks', 1)))
+    rank = 0
+    while rank < seen_task_count:
         active_index = torch.nonzero(active).flatten()
         if active_index.numel() == 0:
             break
-        active_tasks = candidate_tasks.index_select(0, active_index)[:, rank]
-        adapter_logits = model(
-            inputs.index_select(0, active_index), task_id=active_tasks)['logits']
-        counts[active_index] += 1.0
-        for task_index in active_tasks.unique().tolist():
-            local_rows = torch.nonzero(active_tasks == task_index).flatten()
-            batch_rows = active_index.index_select(0, local_rows)
-            class_index = torch.as_tensor(
-                class_mask[task_index], dtype=torch.long, device=device)
-            local_logits = adapter_logits.index_select(
-                0, local_rows).index_select(1, class_index) / temperature
-            calibrated = local_logits + prior_weight * tii_prior[
-                batch_rows, task_index].unsqueeze(1)
-            merged_logits[
-                batch_rows.unsqueeze(1), class_index.unsqueeze(0)] = calibrated
-            task_evidence[batch_rows, rank] = calibrated.max(dim=1).values
-            local_top = torch.topk(
-                calibrated, k=min(2, calibrated.shape[1]), dim=1).values
-            class_margins[batch_rows, rank] = (
-                local_top[:, 0] - local_top[:, 1]
-                if local_top.shape[1] > 1 else float('inf'))
+        next_boundary = min(
+            boundary for boundary in (2, 4, seen_task_count)
+            if boundary > rank)
+        rank_end = min(rank + rank_batch_size, next_boundary)
+        active_rank_tasks = candidate_tasks.index_select(
+            0, active_index)[:, rank:rank_end]
+        rank_adapter_logits = _run_lora_rank_batch(
+            model, inputs.index_select(0, active_index), active_rank_tasks)
+        counts[active_index] += float(rank_end - rank)
+        forward_calls[active_index] += 1.0
+        for rank_offset, current_rank in enumerate(range(rank, rank_end)):
+            active_tasks = active_rank_tasks[:, rank_offset]
+            adapter_logits = rank_adapter_logits[:, rank_offset]
+            for task_index in active_tasks.unique().tolist():
+                local_rows = torch.nonzero(active_tasks == task_index).flatten()
+                batch_rows = active_index.index_select(0, local_rows)
+                class_index = torch.as_tensor(
+                    class_mask[task_index], dtype=torch.long, device=device)
+                local_logits = adapter_logits.index_select(
+                    0, local_rows).index_select(1, class_index) / temperature
+                calibrated = local_logits + prior_weight * tii_prior[
+                    batch_rows, task_index].unsqueeze(1)
+                merged_logits[
+                    batch_rows.unsqueeze(1), class_index.unsqueeze(0)] = calibrated
+                task_evidence[batch_rows, current_rank] = calibrated.max(
+                    dim=1).values
+                local_top = torch.topk(
+                    calibrated, k=min(2, calibrated.shape[1]), dim=1).values
+                class_margins[batch_rows, current_rank] = (
+                    local_top[:, 0] - local_top[:, 1]
+                    if local_top.shape[1] > 1 else float('inf'))
 
-        boundary = rank + 1
+        rank = rank_end
+        boundary = rank
         if boundary >= seen_task_count:
             stages[active] = 3
             active.zero_()
@@ -601,4 +638,4 @@ def calibrated_progressive_rematching(model, inputs, tii_logits, class_mask,
             stages.lt(3), smoothing, torch.zeros_like(smoothing))
         merged_logits = _apply_rank_preserving_smoothing(
             merged_logits, smoothing)
-    return merged_logits, routed_tasks, counts, stages
+    return merged_logits, routed_tasks, counts, forward_calls, stages

@@ -272,6 +272,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--progressive_uncertainty_smoothing', action='store_true')
     subparsers.add_argument('--progressive_smoothing_strength', default=0.5, type=float)
     subparsers.add_argument('--progressive_smoothing_max', default=0.05, type=float)
+    subparsers.add_argument('--progressive_lora_batch_ranks', default=1, type=int, help='evaluate this many adjacent TII-ranked LoRAs in one GPU forward without crossing a halting boundary')
     subparsers.add_argument('--progressive_rematching', action='store_true', help='evaluate LoRAs in TII-ranked stages and expand uncertain samples to exhaustive')
     subparsers.add_argument('--progressive_initial_candidates', default=2, type=int)
     subparsers.add_argument('--progressive_intermediate_candidates', default=4, type=int)

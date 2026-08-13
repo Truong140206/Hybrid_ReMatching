@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import torch
 
 from engines.calibrated_progressive_rematching import (
@@ -7,8 +9,63 @@ from engines.calibrated_progressive_rematching import (
     _choose_output_temperature,
     _choose_precision_threshold,
     _finalize_partial_logits,
+    _run_lora_rank_batch,
+    calibrated_progressive_rematching,
     _stage_features,
 )
+
+
+class _TaskAwareDummy(torch.nn.Module):
+    def forward(self, inputs, task_id):
+        task_id = task_id.to(inputs.dtype).unsqueeze(1)
+        class_scale = torch.arange(
+            1, inputs.shape[1] + 1, dtype=inputs.dtype, device=inputs.device)
+        return {'logits': inputs + task_id * class_scale.unsqueeze(0)}
+
+
+def test_rank_batch_matches_serial_lora_evaluation():
+    model = _TaskAwareDummy()
+    inputs = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+    task_ids = torch.tensor([[0, 2], [1, 3]])
+
+    batched = _run_lora_rank_batch(model, inputs, task_ids)
+    serial = torch.stack([
+        model(inputs, task_id=task_ids[:, rank])['logits']
+        for rank in range(task_ids.shape[1])
+    ], dim=1)
+
+    assert torch.equal(batched, serial)
+
+
+def test_progressive_rank_batch_preserves_outputs_and_halting():
+    model = _TaskAwareDummy()
+    inputs = torch.tensor([
+        [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        [6.0, 5.0, 4.0, 3.0, 2.0, 1.0],
+    ])
+    tii_logits = torch.tensor([
+        [3.0, 2.0, 1.0, 0.0, -1.0, -2.0],
+        [-2.0, -1.0, 0.0, 1.0, 2.0, 3.0],
+    ])
+    class_mask = [[0, 1], [2, 3], [4, 5]]
+    common = dict(
+        progressive_logit_temperature=1.0,
+        progressive_tii_prior_weight=0.3,
+        progressive_excluded_logit_margin=8.0,
+        progressive_uncertainty_smoothing=False,
+    )
+    serial = calibrated_progressive_rematching(
+        model, inputs, tii_logits, class_mask, 3,
+        SimpleNamespace(**common, progressive_lora_batch_ranks=1), {})
+    batched = calibrated_progressive_rematching(
+        model, inputs, tii_logits, class_mask, 3,
+        SimpleNamespace(**common, progressive_lora_batch_ranks=2), {})
+
+    for serial_value, batched_value in zip(serial[:3], batched[:3]):
+        assert torch.equal(serial_value, batched_value)
+    assert torch.equal(serial[4], batched[4])
+    assert torch.equal(serial[3], torch.full((2,), 3.0))
+    assert torch.equal(batched[3], torch.full((2,), 2.0))
 
 
 def test_precision_threshold_prefers_largest_safe_coverage():
