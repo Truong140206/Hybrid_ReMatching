@@ -148,3 +148,34 @@ Các cờ CFS được dùng:
 - cfs_paper_style;
 - cfs_selection_ratio=0.5;
 - cfs_selection_steps=5.
+
+## 11. Kết quả pilot CTIRD mean + CFS
+
+Kết quả sau 3 task:
+
+| Cấu hình | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|
+| CTIRD aligned mean | 89.2370 | 81.6272 | 93.7971 | 0.8184 | 2.6923 | -2.6923 |
+| CTIRD aligned mean + CFS | 89.0005 | 80.8871 | 93.7612 | 0.8346 | 3.0821 | -3.0821 |
+| CFS trừ mean-only | -0.2365 | -0.7401 | -0.0359 | +0.0162 | +0.3898 | -0.3898 |
+
+CFS làm xấu cả sáu chỉ số so với CTIRD mean-only. So với baseline rank 8, bản ghép chỉ tăng rất nhẹ Acc@5 0.0490 và giảm Loss 0.0026, nhưng:
+
+- Acc@task giảm 0.1316;
+- Acc@1 giảm 0.0911;
+- Forgetting tăng 0.2359;
+- Backward giảm 0.5693.
+
+Kết luận:
+
+1. Không chạy full cấu hình CTIRD mean + CFS này.
+2. CFS không khắc phục phần Backward còn yếu của CTIRD mean trong setting hiện tại.
+3. Đây chưa chứng minh CFS và CTIRD xung đột về lý thuyết. Nó chứng minh cách ghép CFS paper-style trực tiếp vào CRCT hiện tại không phù hợp trên ImageNet-R.
+4. CFS tối ưu độ đa dạng trong embedding của CFS nhưng không buộc candidate phải được classifier nhận đúng lớp đích. Candidate đa dạng có thể nằm ở đuôi Gaussian hoặc phía sai của decision boundary; CRCT sau đó học chúng với nhãn lớp đích và làm classifier lệch.
+5. Không thêm distribution filter hoặc boundary/full replay ngay: các ablation trước đã cho thấy những cơ chế này tạo trade-off và không giải quyết đồng thời mọi chỉ số.
+
+Quyết định thực nghiệm:
+
+- giữ CTIRD aligned mean là ứng viên hiện tại;
+- coi CFS paper-style là ablation âm trên ImageNet-R;
+- chỉ thử lại CFS nếu có thay đổi về nguyên lý chọn mẫu, ví dụ ràng buộc class-consistency bằng classifier hoặc dùng feature thật để xác thực, thay vì chỉ đổi hệ số CFS.
