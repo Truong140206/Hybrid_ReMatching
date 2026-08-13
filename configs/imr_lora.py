@@ -95,6 +95,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--ctird_online_aligned', action='store_true', help='compute CTIRD teachers online on the exact current batch instead of using batch-indexed cached relations')
     subparsers.add_argument('--ctird_online_temperature', default=1.0, type=float, help='temperature for aggregating TII class logits into old-task probability mass')
     subparsers.add_argument('--ctird_online_ranks_per_batch', default=1, type=int, help='number of cyclic top-K old-task ranks evaluated per online CTIRD batch')
+    subparsers.add_argument('--ctird_online_reduction', default='sum', choices=['sum', 'mean'], type=str, help='preserve the paper K-loss sum or keep total online CTIRD strength constant as K grows')
     subparsers.add_argument('--K', default=5, type=int,)
     subparsers.add_argument('--En', default='gen', choices=['msp', 'gen'])
     subparsers.add_argument('--tau', default=-10, type=float)

@@ -66,6 +66,17 @@ def select_ctird_source_tasks(logits, class_mask, num_old_tasks, top_k,
         logits, class_mask, num_old_tasks, temperature=temperature)
     return torch.topk(task_scores, k=count, dim=1, largest=True).indices
 
+
+def online_ctird_rank_weight(num_selected_tasks, evaluated_ranks,
+                             reduction='sum'):
+    evaluated_ranks = max(1, int(evaluated_ranks))
+    reduction = str(reduction).lower()
+    if reduction == 'mean':
+        return 1.0 / float(evaluated_ranks)
+    if reduction == 'sum':
+        return float(num_selected_tasks) / float(evaluated_ranks)
+    raise ValueError('Unknown online CTIRD reduction: {}'.format(reduction))
+
 def compute_ctird_rank_weights(top_values, args):
     temperature = max(float(getattr(args, 'ctird_weight_temperature', 1.0)), 1e-6)
     weights = F.softmax(top_values.float() / temperature, dim=1)
@@ -248,9 +259,11 @@ def train_one_epoch(model: torch.nn.Module, original_model: torch.nn.Module,
                         old_output = model(input, task_id=prompt_id)
                         robust_logits.append(
                             compute_relation_matrix(old_output['features']))
-                # Scaling preserves the expected sum over all top-K CTIRD teachers.
+                reduction = getattr(args, 'ctird_online_reduction', 'sum')
+                rank_weight = online_ctird_rank_weight(
+                    m, rank_count, reduction=reduction)
                 ctird_rank_weights = output['features'].new_full(
-                    (rank_count,), float(m) / float(rank_count))
+                    (rank_count,), rank_weight)
             else:
                 #robust_logits = robust_loss(model, input, output['features'], target,device,task_id,class_mask,top5_id)
                 robust_bundle = old_features[global_index]

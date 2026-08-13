@@ -75,3 +75,46 @@ Giảm CRCT xuống 3-4 epoch đưa tổng số update về gần ngân sách ba
 2. Nếu cần kết quả chuẩn publication, huấn luyện lại toàn bộ TII + LoRA/CRCT cho từng seed độc lập.
 3. Báo cáo mean và độ lệch chuẩn khi có ít nhất 3 seed.
 4. Không tiếp tục tối ưu riêng seed 42 để tránh chọn siêu tham số theo một lần chạy.
+
+## 8. Kết quả CTIRD online căn chỉnh đúng batch
+
+Mục tiêu của ablation này là sửa hai điểm của CTIRD cũ:
+
+1. Feature của teacher LoRA cũ được tính trực tiếp trên đúng batch ảnh đang dùng cho student, thay vì lấy relation theo chỉ số batch từ cache.
+2. Các nguồn teacher được chọn theo tổng xác suất của từng task cũ, tránh chọn trùng nhiều lớp thuộc cùng một task.
+
+CFS, semantic, prototype routing và exhaustive routing đều tắt để chỉ đo tác động của CTIRD.
+
+| Cấu hình rank 8, seed 42 | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|
+| Baseline | 77.7914 | 74.0191 | 86.8893 | 1.2305 | 3.2801 | -2.9119 |
+| CTIRD online aligned, cộng K loss | 78.0159 | 74.2252 | 86.6528 | 1.2367 | 3.6520 | -3.4288 |
+| Chênh lệch | +0.2245 | +0.2061 | -0.2365 | +0.0062 | +0.3719 | -0.5169 |
+
+Kết luận:
+
+- Căn chỉnh đúng batch và chọn đúng task có tín hiệu tích cực cho Acc@task và Acc@1.
+- Tuy nhiên, cấu hình cộng K loss làm Acc@5, Loss, Forgetting và Backward xấu đi.
+- Pilot 3 task từng cải thiện cả sáu chỉ số, nhưng kết quả full 10 task không giữ được xu hướng đó.
+- Quan sát theo từng task cho thấy vấn đề xuất hiện rõ từ khoảng task 5, đúng lúc số teacher cũ được chọn tăng lên.
+
+Nguyên nhân trong triển khai cũ: mỗi batch chỉ chạy một teacher để tiết kiệm chi phí, sau đó nhân loss với số task cũ được chọn. Vì vậy tổng lực CTIRD tăng dần từ 1 lên tối đa 5 khi quá trình continual learning tiến về các task cuối. Điều này giữ relation quá mạnh và cản trở học feature mới, làm forgetting toàn chuỗi tăng.
+
+## 9. Ablation tiếp theo: CTIRD mean reduction
+
+Bản mới giữ nguyên căn chỉnh batch và cách chọn teacher, nhưng thay cách tổng hợp:
+
+- sum: tổng loss của K teacher, tương đương hành vi vừa chạy;
+- mean: lấy trung bình loss của K teacher, giữ tổng cường độ CTIRD không đổi khi K tăng.
+
+Với một rank teacher được chạy luân phiên mỗi batch:
+
+- chế độ sum dùng trọng số K;
+- chế độ mean dùng trọng số 1.
+
+Nếu chạy R rank trên mỗi batch:
+
+- chế độ sum dùng trọng số K/R cho mỗi rank;
+- chế độ mean dùng trọng số 1/R cho mỗi rank.
+
+Đây là ablation một biến: CFS và semantic vẫn tắt. Mục tiêu là giữ phần tăng Acc@1 do alignment mang lại nhưng loại bỏ hiện tượng regularization mạnh dần ở các task cuối. Cấu hình mới được chạy bằng tùy chọn ctird_online_reduction=mean.

@@ -27,11 +27,11 @@ fi
 TII_DIR="${TII_DIR:-${OUTPUT_ROOT}/imr_tii_original_10tasks_seed${SEED}}"
 BASELINE_LOG="${BASELINE_LOG:-${OUTPUT_ROOT}/imr_lora_rank8_baseline_10tasks_seed${SEED}.log}"
 MAX_TRAIN_TASKS=10
-RUN_NAME="${RUN_NAME_OVERRIDE:-imr_rank8_aligned_ctird_10tasks_seed${SEED}}"
+RUN_NAME="${RUN_NAME_OVERRIDE:-imr_rank8_aligned_ctird_mean_10tasks_seed${SEED}}"
 
 if [[ "${MODE}" == "pilot" ]]; then
   MAX_TRAIN_TASKS="${PILOT_TASKS:-3}"
-  RUN_NAME="${RUN_NAME_OVERRIDE:-imr_rank8_aligned_ctird_pilot${MAX_TRAIN_TASKS}_seed${SEED}}"
+  RUN_NAME="${RUN_NAME_OVERRIDE:-imr_rank8_aligned_ctird_mean_pilot${MAX_TRAIN_TASKS}_seed${SEED}}"
 fi
 
 OUTPUT_DIR="${OUTPUT_ROOT}/${RUN_NAME}"
@@ -80,7 +80,8 @@ echo "Mode: ${MODE}"
 echo "Dataset: ${IMR_DATA_PATH}"
 echo "Output: ${OUTPUT_DIR}"
 echo "Method: rank-8 HRM-PET with online batch-aligned CTIRD"
-echo "Only method change: aligned top-K CTIRD teacher relations"
+echo "Only method change: aligned top-K CTIRD with mean rank reduction"
+echo "Online CTIRD reduction: ${CTIRD_ONLINE_REDUCTION:-mean}"
 echo "CFS/semantic/prototype/exhaustive: disabled"
 
 PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
@@ -112,6 +113,7 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --ctird_online_aligned \
   --ctird_online_temperature "${CTIRD_ONLINE_TEMPERATURE:-1.0}" \
   --ctird_online_ranks_per_batch "${CTIRD_RANKS_PER_BATCH:-1}" \
+  --ctird_online_reduction "${CTIRD_ONLINE_REDUCTION:-mean}" \
   --output_dir "${OUTPUT_DIR}" \
   2>&1 | tee "${LOG_PATH}"
 

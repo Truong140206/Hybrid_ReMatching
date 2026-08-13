@@ -2,6 +2,7 @@ import torch
 
 from engines.hrm_lora_wtp_and_tap_engine import (
     compute_relation_matrix,
+    online_ctird_rank_weight,
     select_ctird_source_tasks,
 )
 
@@ -44,3 +45,10 @@ def test_relation_matrix_is_a_finite_row_distribution():
     assert torch.isfinite(relation).all()
     assert torch.all(relation > 0)
     assert torch.allclose(relation.sum(dim=1), torch.ones(3))
+
+
+def test_online_ctird_rank_weight_supports_sum_and_mean_reductions():
+    assert online_ctird_rank_weight(5, 1, reduction='sum') == 5.0
+    assert online_ctird_rank_weight(5, 2, reduction='sum') == 2.5
+    assert online_ctird_rank_weight(5, 1, reduction='mean') == 1.0
+    assert online_ctird_rank_weight(5, 2, reduction='mean') == 0.5
