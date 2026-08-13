@@ -2399,3 +2399,24 @@ Voi routing hien tai (`55.3059%` dung sau 2 LoRA, `2.0407%` dung sau 4 LoRA, `42
 - Ket qua ImageNet-R phai giu gan nhu nguyen moc `80.5329 / 75.0731 / 87.9394`, loss `1.1253`, forgetting `2.9413`, backward `-2.9014`.
 - `ForwardCalls/sample` phai xap xi `2.7265`.
 - Wall time phai thap hon ban serial; neu khong, khong coi day la cai tien chi phi.
+### 58.4. Ket qua batched-LoRA tren RTX 4090
+
+Ket qua batch hai LoRA giu nguyen chinh xac toan bo metric cua ban serial:
+
+| Chi so | Serial | Batch 2 |
+|---|---:|---:|
+| Acc@task | 80.5329 | 80.5329 |
+| Acc@1 | 75.0731 | 75.0731 |
+| Acc@5 | 87.9394 | 87.9394 |
+| Loss | 1.1253 | 1.1253 |
+| Forgetting | 2.9413 | 2.9413 |
+| Backward | -2.9014 | -2.9014 |
+| LoRA/mau | 5.4531 | 5.4531 |
+| ForwardCalls/mau | 5.4531 | 2.7265 |
+| Tong wall time | 731 s | 718 s |
+
+So forward call tuan tu giam dung `50%`, nhung wall time chi giam `13` giay, tuong duong `1.78%`. Muc giam nay co the nam trong dao dong giua cac lan chay va chua du de cong bo la cai tien toc do dang ke.
+
+Nguyen nhan la input duoc mo rong de hai LoRA chay trong cung batch. So lan goi model giam, nhung backbone van xu ly cung tong so ban sao anh va FLOPs gan nhu khong doi. Ket qua nay chi chung minh vectorization bao toan chat luong; khong chung minh chi phi tinh toan giam 50%.
+
+Huong tiep theo phai tac dong vao chi phi that: giam so LoRA thuc su duoc danh gia, cache gate sau khi hoc, benchmark rieng inference sau khi gate da san sang, hoac thu mixed precision/compile voi ablation chat luong. Khong tiep tuc dung so `ForwardCalls/mau` nhu dai dien truc tiep cho FLOPs hay wall time.
