@@ -155,6 +155,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--cfs_candidate_multiplier', default=3, type=int)
     subparsers.add_argument('--cfs_tau', default=1.0, type=float)
     subparsers.add_argument('--cfs_init_strategy', default='random', choices=['random', 'mean'], type=str, help='initial candidate selection strategy for CFS diversity sampling')
+    subparsers.add_argument('--cfs_old_classes_only', action='store_true', help='use CFS replay only for old classes; keep Gaussian replay for classes from the current task')
     subparsers.add_argument('--cfs_boundary_replay', action='store_true', help='mix diverse CFS samples with samples near the current classifier boundary')
     subparsers.add_argument('--cfs_boundary_ratio', default=0.5, type=float)
     subparsers.add_argument('--cfs_boundary_multiplier', default=3, type=int)

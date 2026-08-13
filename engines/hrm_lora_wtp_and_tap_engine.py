@@ -1999,6 +1999,26 @@ def _select_crct_validation_alpha(base_model, teacher_fc_norm, teacher_head,
     }
 
 
+def _use_cfs_for_crct_class(class_id, old_classes, args):
+    return (
+        not bool(getattr(args, 'cfs_old_classes_only', False))
+        or int(class_id) in {int(value) for value in old_classes}
+    )
+
+
+@torch.no_grad()
+def _sample_crct_class_features(mean, cov, count, args, device, model,
+                                class_id, seen_classes, old_classes,
+                                cfs_model=None):
+    if not _use_cfs_for_crct_class(class_id, old_classes, args):
+        distribution = torch.distributions.MultivariateNormal(
+            mean.float(), cov.float())
+        return distribution.sample(sample_shape=(count,))
+    return utils.sample_boundary_aware_cfs_features(
+        mean.float(), cov.float(), count, args, device, model,
+        class_id, seen_classes, cfs_model=cfs_model)
+
+
 def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_mask=None, task_id=-1):
     model.train()
     run_epochs = args.crct_epochs
@@ -2160,9 +2180,10 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
                         projected_count = int(num_sampled_pcls * float(getattr(args, 'semantic_projection_ratio', 0.25)))
                         projected_count = max(0, min(num_sampled_pcls - 1, projected_count))
                     base_count = num_sampled_pcls - projected_count
-                    sampled_data_single = utils.sample_boundary_aware_cfs_features(
-                        mean.float(), cov.float(), base_count, args, device, model,
-                        c_id, seen_classes, cfs_model=cls_cfs_model.get(c_id))
+                    sampled_data_single = _sample_crct_class_features(
+                        mean, cov, base_count, args, device, model,
+                        c_id, seen_classes, old_classes,
+                        cfs_model=cls_cfs_model.get(c_id))
                     if projected_count > 0:
                         available_classes = []
                         for seen_task in range(task_id + 1):
@@ -2196,9 +2217,10 @@ def train_task_adaptive_prediction(model: torch.nn.Module, args, device, class_m
                            projected_count = int(num_sampled_pcls * float(getattr(args, 'semantic_projection_ratio', 0.25)))
                            projected_count = max(0, min(num_sampled_pcls - 1, projected_count))
                        base_count = num_sampled_pcls - projected_count
-                       sampled_data_single = utils.sample_boundary_aware_cfs_features(
-                           mean.float(), cov, base_count, args, device, model,
-                           c_id, seen_classes, cfs_model=cls_cfs_model.get(c_id))
+                       sampled_data_single = _sample_crct_class_features(
+                           mean, cov, base_count, args, device, model,
+                           c_id, seen_classes, old_classes,
+                           cfs_model=cls_cfs_model.get(c_id))
                        if projected_count > 0:
                            available_classes = []
                            for seen_task in range(task_id + 1):

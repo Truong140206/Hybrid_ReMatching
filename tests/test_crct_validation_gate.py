@@ -6,6 +6,7 @@ from torch import nn
 from engines.hrm_lora_wtp_and_tap_engine import (
     _macro_crct_metrics,
     _select_crct_validation_alpha,
+    _use_cfs_for_crct_class,
 )
 
 
@@ -27,6 +28,13 @@ def _args():
         crct_validation_min_task_gain=0.0,
         crct_validation_min_ce_gain=0.0,
     )
+
+
+def test_old_class_only_cfs_keeps_current_classes_on_gaussian_replay():
+    args = SimpleNamespace(cfs_old_classes_only=True)
+
+    assert _use_cfs_for_crct_class(0, old_classes=[0, 1], args=args)
+    assert not _use_cfs_for_crct_class(2, old_classes=[0, 1], args=args)
 
 
 def test_old_class_metrics_ignore_new_class_targets():

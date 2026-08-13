@@ -2454,3 +2454,8 @@ Ket qua strict exemplar-free CFS-CRCT dau tien:
 | Backward | -2.5128 | -2.2205 | +0.2923 |
 
 Pilot khong dat strict multi-metric gate. CFS cai thien ro kha nang giu kien thuc cu, nhung classifier correction hoi manh, lam Acc@task/Acc@5/loss xau nhe. Ablation tiep theo khong doi nguon du lieu: gioi han noi suy classifier toi da `alpha=0.5`, van chon alpha bang Gaussian validation anchors va van strict exemplar-free.
+### 59.2. Alpha cap 0.5 that bai va CFS old-class-only
+
+Alpha cap `0.5` lam Acc@task `-0.9436`, Acc@1 `-0.4997`, Acc@5 `-0.2826` va loss `+0.0412` so voi baseline; chi retention tot hon. Do do bo alpha cap va quay ve validation gate day du (`max alpha=1.0`).
+
+Ablation moi dua truc tiep tren quan sat cua hai pilot: CFS co loi cho lop cu nhung correction cua toan bo lop lam accuracy giam. CFS chi duoc dung de chon feature replay cho old classes; current-task classes dung Gaussian replay goc. CFS model cua task hien tai van duoc hoc khi du lieu task do dang san sang, nhung chi duoc dung tu task sau. Cach nay khong luu anh/feature that va van strict exemplar-free.

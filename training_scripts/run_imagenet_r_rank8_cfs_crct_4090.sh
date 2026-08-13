@@ -29,11 +29,11 @@ BASELINE_LOG="${BASELINE_LOG:-${OUTPUT_ROOT}/imr_lora_rank8_baseline_10tasks_see
 LORA_EPOCHS="${LORA_EPOCHS:-50}"
 CRCT_EPOCHS="${CRCT_EPOCHS:-30}"
 MAX_TRAIN_TASKS=10
-RUN_NAME="${RUN_NAME_OVERRIDE:-imr_rank8_cfs_vgcrct_a05_10tasks_seed${SEED}}"
+RUN_NAME="${RUN_NAME_OVERRIDE:-imr_rank8_cfs_oldonly_vgcrct_10tasks_seed${SEED}}"
 
 if [[ "${MODE}" == "pilot" ]]; then
   MAX_TRAIN_TASKS="${PILOT_TASKS:-3}"
-  RUN_NAME="${RUN_NAME_OVERRIDE:-imr_rank8_cfs_vgcrct_a05_pilot${MAX_TRAIN_TASKS}_seed${SEED}}"
+  RUN_NAME="${RUN_NAME_OVERRIDE:-imr_rank8_cfs_oldonly_vgcrct_pilot${MAX_TRAIN_TASKS}_seed${SEED}}"
 fi
 
 OUTPUT_DIR="${OUTPUT_ROOT}/${RUN_NAME}"
@@ -74,7 +74,8 @@ echo "Output: ${OUTPUT_DIR}"
 echo "Method: strict exemplar-free rank-8 LoRA + CFS-only validation-gated CRCT"
 echo "Historical images/per-example real features: forbidden by runtime guard"
 echo "Replay source: Gaussian statistics + CFS synthetic features only"
-echo "CRCT classifier interpolation cap: ${CRCT_VALIDATION_MAX_ALPHA:-0.5}"
+echo "CFS scope: old classes only; current-task classes use Gaussian replay"
+echo "CRCT classifier interpolation cap: ${CRCT_VALIDATION_MAX_ALPHA:-1.0}"
 echo "Semantic/prototype/exhaustive: disabled"
 
 PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
@@ -106,6 +107,7 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --strict_exemplar_free \
   --ca_storage_efficient_method variance \
   --cfs_sampling \
+  --cfs_old_classes_only \
   --cfs_epochs "${CFS_EPOCHS:-50}" \
   --cfs_lr "${CFS_LR:-0.01}" \
   --cfs_train_max_samples "${CFS_TRAIN_MAX_SAMPLES:-1024}" \
@@ -128,7 +130,7 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --crct_head_only \
   --crct_validation_gate \
   --crct_validation_steps "${CRCT_VALIDATION_STEPS:-20}" \
-  --crct_validation_max_alpha "${CRCT_VALIDATION_MAX_ALPHA:-0.5}" \
+  --crct_validation_max_alpha "${CRCT_VALIDATION_MAX_ALPHA:-1.0}" \
   --crct_validation_samples_per_component "${CRCT_VALIDATION_SAMPLES:-16}" \
   --crct_validation_cov_scale "${CRCT_VALIDATION_COV_SCALE:-0.20}" \
   --crct_validation_repeats "${CRCT_VALIDATION_REPEATS:-3}" \
