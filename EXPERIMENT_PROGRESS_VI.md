@@ -2440,3 +2440,17 @@ Thay the hop le:
 6. Moi checkpoint duoc audit sau khi train; chi `EXEMPLAR_FREE_AUDIT=PASS` moi duoc dung lam ket qua chinh.
 
 CFS van la phan ap dung tu paper thu hai: feature gia duoc lay tu phan phoi lop va chon da dang trong khong gian contrastive. Pseudo-image do model inversion sinh ra duoc phep vi khong phai anh lich su, nhung khong bat trong thi nghiem CFS-CRCT dau tien de tach ro tac dung cua CFS.
+### 59.1. Strict CFS pilot 3 task
+
+Ket qua strict exemplar-free CFS-CRCT dau tien:
+
+| Chi so | Baseline rank 8 | Strict CFS | Delta |
+|---|---:|---:|---:|
+| Acc@task | 89.1321 | 89.0284 | -0.1037 |
+| Acc@1 | 80.9782 | 81.0398 | +0.0616 |
+| Acc@5 | 93.7122 | 93.6410 | -0.0712 |
+| Loss | 0.8372 | 0.8584 | +0.0212 |
+| Forgetting | 2.8462 | 2.2205 | -0.6257 |
+| Backward | -2.5128 | -2.2205 | +0.2923 |
+
+Pilot khong dat strict multi-metric gate. CFS cai thien ro kha nang giu kien thuc cu, nhung classifier correction hoi manh, lam Acc@task/Acc@5/loss xau nhe. Ablation tiep theo khong doi nguon du lieu: gioi han noi suy classifier toi da `alpha=0.5`, van chon alpha bang Gaussian validation anchors va van strict exemplar-free.

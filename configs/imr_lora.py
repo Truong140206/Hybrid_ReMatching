@@ -128,6 +128,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--crct_old_row_lr_scale', default=1.0, type=float)
     subparsers.add_argument('--crct_validation_gate', action='store_true', help='accept only a proxy-validated interpolation of the post-CRCT classifier')
     subparsers.add_argument('--crct_validation_steps', default=10, type=int)
+    subparsers.add_argument('--crct_validation_max_alpha', default=1.0, type=float, help='maximum accepted interpolation toward the post-CRCT classifier')
     subparsers.add_argument('--crct_validation_samples_per_component', default=8, type=int)
     subparsers.add_argument('--crct_validation_cov_scale', default=0.25, type=float)
     subparsers.add_argument('--crct_validation_repeats', default=1, type=int)

@@ -1924,6 +1924,8 @@ def _select_crct_validation_alpha(base_model, teacher_fc_norm, teacher_head,
     teacher_old = _macro_crct_metrics(
         teacher_logits, targets, old_classes, class_to_task)
     steps = max(1, int(getattr(args, 'crct_validation_steps', 10)))
+    max_alpha = min(
+        1.0, max(0.0, float(getattr(args, 'crct_validation_max_alpha', 1.0))))
     max_old_drop = max(
         0.0, float(getattr(args, 'crct_validation_max_old_acc_drop', 0.0)))
     min_acc_gain = float(getattr(args, 'crct_validation_min_acc_gain', 0.0))
@@ -1939,7 +1941,7 @@ def _select_crct_validation_alpha(base_model, teacher_fc_norm, teacher_head,
         teacher_all['top5'], -teacher_all['ce'], 0.0)
     tolerance = 1e-7
     for step in range(1, steps + 1):
-        alpha = step / float(steps)
+        alpha = max_alpha * step / float(steps)
         candidate_logits = teacher_logits.lerp(student_logits, alpha)
         candidate_all = _macro_crct_metrics(
             candidate_logits, targets, seen_classes, class_to_task)

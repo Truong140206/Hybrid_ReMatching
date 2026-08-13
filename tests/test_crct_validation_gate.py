@@ -62,6 +62,22 @@ def test_gate_accepts_classifier_that_improves_all_classes():
     assert metrics['selected_all']['ce'] < metrics['teacher_all']['ce']
 
 
+def test_gate_respects_maximum_classifier_interpolation():
+    teacher = TinyClassifier([[0.2, 0.0], [0.0, 0.2]])
+    student = TinyClassifier([[2.0, -1.0], [-1.0, 2.0]])
+    anchors = torch.tensor([[1.0, 0.0], [0.8, 0.1], [0.0, 1.0], [0.1, 0.8]])
+    targets = torch.tensor([0, 0, 1, 1])
+    args = _args()
+    args.crct_validation_max_alpha = 0.5
+
+    alpha, _ = _select_crct_validation_alpha(
+        student, teacher.fc_norm, teacher.head, anchors, targets,
+        seen_classes=[0, 1], old_classes=[0],
+        class_to_task={0: 0, 1: 1}, args=args)
+
+    assert alpha == 0.5
+
+
 def test_gate_rolls_back_classifier_that_hurts_old_class():
     teacher = TinyClassifier([[2.0, -1.0], [-1.0, 2.0]])
     student = TinyClassifier([[-2.0, 1.0], [2.0, -1.0]])
