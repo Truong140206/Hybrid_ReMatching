@@ -1842,19 +1842,26 @@ def _blend_crct_classifier(base_model, teacher_head, alpha):
 
 
 @torch.no_grad()
-def _macro_crct_metrics(logits, targets, class_ids, class_to_task=None):
+def _macro_crct_metrics(logits, targets, class_ids, class_to_task=None,
+                        logit_class_ids=None):
     if targets.numel() == 0 or not class_ids:
         return {'accuracy': 0.0, 'top5': 0.0, 'task_accuracy': 0.0,
                 'ce': float('inf'),
                 'per_class_accuracy': {}}
-    class_index = torch.as_tensor(class_ids, dtype=torch.long, device=logits.device)
-    sample_mask = targets.unsqueeze(1).eq(class_index.unsqueeze(0)).any(dim=1)
+    sample_class_index = torch.as_tensor(
+        class_ids, dtype=torch.long, device=logits.device)
+    sample_mask = targets.unsqueeze(1).eq(
+        sample_class_index.unsqueeze(0)).any(dim=1)
     if not bool(sample_mask.any()):
         return {'accuracy': 0.0, 'top5': 0.0, 'task_accuracy': 0.0,
                 'ce': float('inf'),
                 'per_class_accuracy': {}}
     logits = logits[sample_mask]
     targets = targets[sample_mask]
+    if logit_class_ids is None:
+        logit_class_ids = class_ids
+    class_index = torch.as_tensor(
+        logit_class_ids, dtype=torch.long, device=logits.device)
     selected_logits = logits.index_select(1, class_index)
     class_positions = torch.full(
         (logits.shape[1],), -1, dtype=torch.long, device=logits.device)
@@ -1924,10 +1931,12 @@ def _select_crct_validation_alpha(base_model, teacher_fc_norm, teacher_head,
     teacher_all = _macro_crct_metrics(
         teacher_logits, targets, seen_classes, class_to_task)
     teacher_old = _macro_crct_metrics(
-        teacher_logits, targets, old_classes, class_to_task)
+        teacher_logits, targets, old_classes, class_to_task,
+        logit_class_ids=seen_classes)
     teacher_current = (
         _macro_crct_metrics(
-            teacher_logits, targets, current_classes, class_to_task)
+            teacher_logits, targets, current_classes, class_to_task,
+            logit_class_ids=seen_classes)
         if current_classes else None
     )
     steps = max(1, int(getattr(args, 'crct_validation_steps', 10)))
@@ -1958,10 +1967,12 @@ def _select_crct_validation_alpha(base_model, teacher_fc_norm, teacher_head,
         candidate_all = _macro_crct_metrics(
             candidate_logits, targets, seen_classes, class_to_task)
         candidate_old = _macro_crct_metrics(
-            candidate_logits, targets, old_classes, class_to_task)
+            candidate_logits, targets, old_classes, class_to_task,
+            logit_class_ids=seen_classes)
         candidate_current = (
             _macro_crct_metrics(
-                candidate_logits, targets, current_classes, class_to_task)
+                candidate_logits, targets, current_classes, class_to_task,
+                logit_class_ids=seen_classes)
             if current_classes else None
         )
         old_ok = (

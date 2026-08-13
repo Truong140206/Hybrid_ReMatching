@@ -129,3 +129,17 @@ def test_hybrid_gate_rejects_old_class_gain_that_increases_current_ce():
 
     assert alpha == 0.0
     assert metrics['selected_current']['ce'] == metrics['teacher_current']['ce']
+
+def test_subset_metrics_keep_competing_seen_class_logits():
+    logits = torch.tensor([[0.0, 4.0], [4.0, 0.0]])
+    targets = torch.tensor([0, 0])
+
+    metrics = _macro_crct_metrics(
+        logits,
+        targets,
+        class_ids=[0],
+        logit_class_ids=[0, 1],
+    )
+
+    assert metrics['accuracy'] == 50.0
+    assert metrics['ce'] > 1.0

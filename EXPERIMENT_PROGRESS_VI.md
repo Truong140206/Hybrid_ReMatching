@@ -2525,3 +2525,13 @@ giam accuracy, va cac rang buoc toan bo tap van dat. Feature hien tai chi la
 bien cuc bo trong luc CRCT, khong vao global memory/checkpoint va khong duoc
 dung o task sau. Khong doc hoac luu anh/feature cua task cu; strict
 exemplar-free van duoc giu.
+
+### 59.7. Test phat hien loi canh tranh cross-task trong gate
+
+Test hybrid dau tien tra ve `alpha=0.9` thay vi 0. Nguyen nhan la metric loc ca
+mau va cot logit theo nhom dang cham; khi cham current classes, logit old
+classes bi loai bo. Gate vi the khong thay mau hien tai bi lop cu canh tranh.
+
+Da sua metric de chi loc mau theo old/current, nhung luon tinh du doan va CE
+tren tat ca seen classes. Cach tinh nay khop class-incremental evaluation va
+kiem tra truc tiep trade-off plasticity/retention ma hybrid gate can bao ve.
