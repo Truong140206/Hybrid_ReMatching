@@ -21,6 +21,10 @@ from engines.hierarchical_rematching import hierarchical_adapter_rematching
 from engines.budgeted_rematching import budgeted_exhaustive_fallback
 from engines.progressive_rematching import progressive_adapter_rematching
 from engines.progressive_oracle_audit import progressive_oracle_audit
+from engines.calibrated_progressive_rematching import (
+    calibrated_progressive_rematching,
+    get_progressive_halting_gates,
+)
 from engines.selective_rematching import selective_adapter_rematching
 from engines.prototype_rematching import (
     build_prototype_bank, prototype_assisted_rematching)
@@ -579,6 +583,42 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 else:
                     raise NotImplementedError("original model is None")
 
+            if bool(getattr(args, 'calibrated_progressive_rematching', False)):
+                logits, prompt_id, lora_counts, stop_stage = calibrated_progressive_rematching(
+                    model=model,
+                    inputs=input,
+                    tii_logits=old_logits,
+                    class_mask=class_mask,
+                    seen_task_count=task_id + 1,
+                    args=args,
+                    gates=get_progressive_halting_gates(),
+                )
+                filtered_index_tensor = torch.empty(
+                    0, dtype=torch.long, device=device)
+                re_id = None
+                loss = criterion(logits, target)
+                acc1, acc5 = accuracy(logits, target, topk=(1, 5))
+                task_inference_acc = utils.task_inference_accuracy(
+                    prompt_id.unsqueeze(-1), target, target_task_map,
+                    filtered_index_tensor, re_id)
+                metric_logger.meters['Loss'].update(loss.item())
+                metric_logger.meters['Acc@1'].update(acc1.item(), n=input.shape[0])
+                metric_logger.meters['Acc@5'].update(acc5.item(), n=input.shape[0])
+                metric_logger.meters['Acc@task'].update(
+                    task_inference_acc.item(), n=input.shape[0])
+                metric_logger.meters['LoRA/sample'].update(
+                    lora_counts.mean().item(), n=input.shape[0])
+                metric_logger.meters['Stage1StopRate'].update(
+                    stop_stage.eq(1).float().mean().mul(100.0).item(),
+                    n=input.shape[0])
+                metric_logger.meters['Stage2StopRate'].update(
+                    stop_stage.eq(2).float().mean().mul(100.0).item(),
+                    n=input.shape[0])
+                metric_logger.meters['FullFallbackRate'].update(
+                    stop_stage.eq(3).float().mean().mul(100.0).item(),
+                    n=input.shape[0])
+                continue
+
             if bool(getattr(args, 'progressive_oracle_audit', False)):
                 logits, prompt_id, audit = progressive_oracle_audit(
                     model=model,
@@ -963,6 +1003,16 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 agree4=metric_logger.meters['ExactAgreement@4'],
                 oracle_cost=metric_logger.meters['OracleLoRA/sample'],
                 actual_cost=metric_logger.meters['ActualLoRA/sample']))
+    if bool(getattr(args, 'calibrated_progressive_rematching', False)):
+        print(
+            '* CalibratedProgressive Stage1Stop {stage1.global_avg:.3f} '
+            'Stage2Stop {stage2.global_avg:.3f} FullFallback {fallback.global_avg:.3f} '
+            'LoRA/sample {cost.global_avg:.3f}'
+            .format(
+                stage1=metric_logger.meters['Stage1StopRate'],
+                stage2=metric_logger.meters['Stage2StopRate'],
+                fallback=metric_logger.meters['FullFallbackRate'],
+                cost=metric_logger.meters['LoRA/sample']))
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
@@ -1004,6 +1054,11 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
             stat_matrix[14, i] = test_stats.get('ExactAgreement@4', 0.0)
             stat_matrix[15, i] = test_stats.get('OracleLoRA/sample', 0.0)
             stat_matrix[16, i] = test_stats.get('ActualLoRA/sample', 0.0)
+        if bool(getattr(args, 'calibrated_progressive_rematching', False)):
+            stat_matrix[7, i] = test_stats.get('Stage1StopRate', 0.0)
+            stat_matrix[8, i] = test_stats.get('Stage2StopRate', 0.0)
+            stat_matrix[9, i] = test_stats.get('FullFallbackRate', 0.0)
+            stat_matrix[10, i] = test_stats.get('LoRA/sample', 0.0)
 
         acc_matrix[i, task_id] = test_stats['Acc@1']
 
@@ -1036,6 +1091,11 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         ).format(
             avg_stat[11], avg_stat[12], avg_stat[13], avg_stat[14],
             avg_stat[15], avg_stat[16])
+    if bool(getattr(args, 'calibrated_progressive_rematching', False)):
+        result_str += (
+            "\tStage1Stop: {:.4f}\tStage2Stop: {:.4f}"
+            "\tFullFallback: {:.4f}\tLoRA/sample: {:.4f}"
+        ).format(avg_stat[7], avg_stat[8], avg_stat[9], avg_stat[10])
     if task_id > 0:
         forgetting = np.mean((np.max(acc_matrix, axis=1) -
                               acc_matrix[:, task_id])[:task_id])

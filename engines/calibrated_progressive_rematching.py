@@ -1,0 +1,403 @@
+import copy
+
+import torch
+import torch.nn.functional as F
+from torch import nn
+
+from engines.distilled_task_router import _class_stratified_split
+from engines.progressive_rematching import _tii_task_prior
+
+_HALTING_GATES = {}
+
+
+def set_progressive_halting_gates(gates):
+    global _HALTING_GATES
+    _HALTING_GATES = gates or {}
+
+
+def get_progressive_halting_gates():
+    return _HALTING_GATES
+
+
+def _finalize_partial_logits(logits, excluded_margin=20.0):
+    finite = torch.isfinite(logits)
+    row_min = logits.masked_fill(~finite, float('inf')).min(
+        dim=1, keepdim=True).values
+    return torch.where(finite, logits, row_min - float(excluded_margin))
+
+
+class HaltingGate(nn.Module):
+    def __init__(self, feature_dim, hidden_dim=64, dropout=0.1):
+        super().__init__()
+        self.network = nn.Sequential(
+            nn.Linear(feature_dim, hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, 1),
+        )
+
+    def forward(self, features):
+        return self.network(features).squeeze(1)
+
+
+def _stage_features(tii_prior, sorted_tii_scores, task_evidence,
+                    class_margins, boundary):
+    evaluated = task_evidence[:, :boundary]
+    top = torch.topk(evaluated, k=min(2, boundary), dim=1)
+    best_rank = top.indices[:, 0]
+    best_evidence = top.values[:, 0]
+    adapter_margin = (
+        best_evidence - top.values[:, 1]
+        if boundary > 1 else torch.zeros_like(best_evidence))
+    best_class_margin = class_margins[:, :boundary].gather(
+        1, best_rank.unsqueeze(1)).squeeze(1)
+    selected_tii = sorted_tii_scores.gather(
+        1, best_rank.unsqueeze(1)).squeeze(1)
+    unseen_tii_margin = (
+        selected_tii - sorted_tii_scores[:, boundary]
+        if boundary < sorted_tii_scores.shape[1]
+        else torch.full_like(selected_tii, 10.0))
+    tii_probability = F.softmax(tii_prior, dim=1)
+    tii_entropy = -(tii_probability * tii_probability.clamp_min(1e-8).log()).sum(1)
+    adapter_probability = F.softmax(evaluated, dim=1)
+    adapter_entropy = -(
+        adapter_probability * adapter_probability.clamp_min(1e-8).log()).sum(1)
+    return torch.stack([
+        best_evidence,
+        adapter_margin,
+        best_class_margin,
+        selected_tii,
+        unseen_tii_margin,
+        tii_entropy,
+        adapter_entropy,
+        best_rank.float() / max(1, boundary - 1),
+    ], dim=1)
+
+
+def _choose_precision_threshold(probabilities, labels, target_precision,
+                                minimum_coverage):
+    best = None
+    for threshold in torch.unique(probabilities).sort(descending=True).values.tolist():
+        selected = probabilities >= float(threshold)
+        coverage = float(selected.float().mean().item())
+        if coverage < minimum_coverage or not bool(selected.any()):
+            continue
+        precision = float(labels[selected].float().mean().item())
+        if precision >= target_precision and (
+                best is None or coverage > best[2]):
+            best = (float(threshold), precision, coverage)
+    return best if best is not None else (None, 0.0, 0.0)
+
+
+def _fit_gate(features, labels, class_targets, args, device, seed_offset):
+    train_index, validation_index = _class_stratified_split(
+        class_targets,
+        float(getattr(args, 'progressive_gate_validation_ratio', 0.25)),
+        int(getattr(args, 'seed', 42)) + seed_offset)
+    generator = torch.Generator().manual_seed(
+        int(getattr(args, 'seed', 42)) + seed_offset + 1000)
+    validation_index = validation_index[torch.randperm(
+        validation_index.numel(), generator=generator)]
+    calibration_count = max(1, validation_index.numel() // 2)
+    calibration_count = min(calibration_count, validation_index.numel() - 1)
+    calibration_index = validation_index[:calibration_count]
+    report_index = validation_index[calibration_count:]
+
+    mean = features.index_select(0, train_index).mean(0, keepdim=True)
+    std = features.index_select(0, train_index).std(
+        0, keepdim=True, unbiased=False).clamp_min(1e-6)
+    features = ((features - mean) / std).to(device)
+    labels = labels.float().to(device)
+    train_index = train_index.to(device)
+    calibration_index = calibration_index.to(device)
+    report_index = report_index.to(device)
+
+    gate = HaltingGate(
+        features.shape[1],
+        max(8, int(getattr(args, 'progressive_gate_hidden_dim', 64))),
+        min(0.9, max(0.0, float(getattr(args, 'progressive_gate_dropout', 0.1)))),
+    ).to(device)
+    train_labels = labels.index_select(0, train_index)
+    positives = train_labels.sum().clamp_min(1.0)
+    pos_weight = ((train_labels.numel() - positives) / positives).clamp(0.25, 4.0)
+    optimizer = torch.optim.AdamW(
+        gate.parameters(),
+        lr=float(getattr(args, 'progressive_gate_lr', 0.001)),
+        weight_decay=float(getattr(args, 'progressive_gate_weight_decay', 0.01)))
+    batch_size = max(16, int(getattr(args, 'progressive_gate_batch_size', 256)))
+    patience = max(1, int(getattr(args, 'progressive_gate_patience', 10)))
+    best_loss = float('inf')
+    best_state = copy.deepcopy(gate.state_dict())
+    stale = 0
+    for _ in range(max(1, int(getattr(args, 'progressive_gate_epochs', 60)))):
+        gate.train()
+        order = train_index[torch.randperm(train_index.numel(), device=device)]
+        for start in range(0, order.numel(), batch_size):
+            index = order[start:start + batch_size]
+            loss = F.binary_cross_entropy_with_logits(
+                gate(features.index_select(0, index)),
+                labels.index_select(0, index), pos_weight=pos_weight)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        gate.eval()
+        with torch.no_grad():
+            validation_loss = F.binary_cross_entropy_with_logits(
+                gate(features.index_select(0, calibration_index)),
+                labels.index_select(0, calibration_index)).item()
+        if validation_loss < best_loss - 1e-6:
+            best_loss = validation_loss
+            best_state = copy.deepcopy(gate.state_dict())
+            stale = 0
+        else:
+            stale += 1
+            if stale >= patience:
+                break
+
+    gate.load_state_dict(best_state)
+    gate.eval()
+    with torch.no_grad():
+        calibration_probability = torch.sigmoid(gate(
+            features.index_select(0, calibration_index)))
+    threshold, calibration_precision, calibration_coverage = _choose_precision_threshold(
+        calibration_probability,
+        labels.index_select(0, calibration_index),
+        min(1.0, max(0.5, float(getattr(
+            args, 'progressive_gate_target_precision', 0.995)))),
+        min(1.0, max(0.0, float(getattr(
+            args, 'progressive_gate_min_coverage', 0.02)))))
+    report_precision = 0.0
+    report_coverage = 0.0
+    if threshold is not None:
+        with torch.no_grad():
+            report_probability = torch.sigmoid(gate(
+                features.index_select(0, report_index)))
+        selected = report_probability >= threshold
+        report_coverage = float(selected.float().mean().item())
+        if bool(selected.any()):
+            report_precision = float(labels.index_select(
+                0, report_index)[selected].mean().item())
+    target_precision = min(1.0, max(0.5, float(getattr(
+        args, 'progressive_gate_target_precision', 0.995))))
+    minimum_coverage = min(1.0, max(0.0, float(getattr(
+        args, 'progressive_gate_min_coverage', 0.02))))
+    accepted = (threshold is not None and report_precision >= target_precision
+                and report_coverage >= minimum_coverage)
+
+    gate.register_buffer('feature_mean', mean.to(device))
+    gate.register_buffer('feature_std', std.to(device))
+    gate.threshold = threshold if accepted else None
+    return gate, {
+        'accepted': accepted,
+        'samples': int(features.shape[0]),
+        'safe_rate': float(labels.mean().item()),
+        'calibration_precision': calibration_precision,
+        'calibration_coverage': calibration_coverage,
+        'report_precision': report_precision,
+        'report_coverage': report_coverage,
+        'threshold': threshold,
+    }
+
+
+@torch.no_grad()
+def _collect_gate_dataset(model, original_model, data_loader_per_cls,
+                          class_mask, seen_task_count, args, device):
+    sample_limit = max(2, int(getattr(
+        args, 'progressive_gate_samples_per_class', 12)))
+    stage_features = {2: [], 4: []}
+    labels = {2: [], 4: []}
+    class_targets = []
+    model.eval()
+    original_model.eval()
+    for task_index in range(seen_task_count):
+        for class_id in class_mask[task_index]:
+            collected = 0
+            for inputs, targets in data_loader_per_cls[class_id]['train']:
+                remaining = sample_limit - collected
+                if remaining <= 0:
+                    break
+                inputs = inputs[:remaining].to(device, non_blocking=True)
+                targets = targets[:remaining].to(device, non_blocking=True)
+                tii_logits = original_model(inputs)['logits']
+                tii_prior = _tii_task_prior(
+                    tii_logits, class_mask, seen_task_count)
+                sorted_tii_scores, candidate_tasks = torch.sort(
+                    tii_prior, dim=1, descending=True)
+                rank_logits = torch.full(
+                    (inputs.shape[0], seen_task_count, tii_logits.shape[1]),
+                    float('-inf'), dtype=tii_logits.dtype, device=device)
+                task_evidence = torch.full(
+                    (inputs.shape[0], seen_task_count), float('-inf'),
+                    dtype=tii_logits.dtype, device=device)
+                class_margins = torch.zeros_like(task_evidence)
+                temperature = max(1e-6, float(getattr(
+                    args, 'progressive_logit_temperature', 1.0)))
+                prior_weight = max(0.0, float(getattr(
+                    args, 'progressive_tii_prior_weight', 0.3)))
+                for rank in range(seen_task_count):
+                    active_tasks = candidate_tasks[:, rank]
+                    adapter_logits = model(
+                        inputs, task_id=active_tasks)['logits']
+                    for selected_task in active_tasks.unique().tolist():
+                        rows = torch.nonzero(
+                            active_tasks == selected_task).flatten()
+                        class_index = torch.as_tensor(
+                            class_mask[selected_task], dtype=torch.long,
+                            device=device)
+                        local_logits = adapter_logits.index_select(
+                            0, rows).index_select(1, class_index) / temperature
+                        calibrated = local_logits + prior_weight * tii_prior[
+                            rows, selected_task].unsqueeze(1)
+                        rank_logits[
+                            rows.unsqueeze(1), rank, class_index.unsqueeze(0)
+                        ] = calibrated
+                        task_evidence[rows, rank] = calibrated.max(1).values
+                        local_top = torch.topk(
+                            calibrated, k=min(2, calibrated.shape[1]),
+                            dim=1).values
+                        class_margins[rows, rank] = (
+                            local_top[:, 0] - local_top[:, 1]
+                            if local_top.shape[1] > 1 else float('inf'))
+                winner_rank = task_evidence.argmax(1)
+                full_logits = rank_logits.max(dim=1).values
+                full_predictions = full_logits.argmax(dim=1)
+                full_top5_correct = torch.topk(
+                    full_logits, k=min(5, full_logits.shape[1]), dim=1
+                ).indices.eq(targets.unsqueeze(1)).any(dim=1)
+                full_loss = F.cross_entropy(
+                    full_logits, targets, reduction='none')
+                loss_tolerance = max(0.0, float(getattr(
+                    args, 'progressive_gate_loss_tolerance', 0.05)))
+                for boundary in (2, 4):
+                    effective = min(boundary, seen_task_count)
+                    stage_features[boundary].append(_stage_features(
+                        tii_prior, sorted_tii_scores, task_evidence,
+                        class_margins, effective).cpu())
+                    partial_logits = _finalize_partial_logits(
+                        rank_logits[:, :effective].max(dim=1).values)
+                    partial_top5_correct = torch.topk(
+                        partial_logits, k=min(5, partial_logits.shape[1]), dim=1
+                    ).indices.eq(targets.unsqueeze(1)).any(dim=1)
+                    partial_loss = F.cross_entropy(
+                        partial_logits, targets, reduction='none')
+                    safe = (
+                        winner_rank.lt(effective)
+                        & partial_logits.argmax(dim=1).eq(full_predictions)
+                        & partial_top5_correct.eq(full_top5_correct)
+                        & partial_loss.le(full_loss + loss_tolerance)
+                    )
+                    labels[boundary].append(safe.cpu())
+                class_targets.append(torch.full(
+                    (inputs.shape[0],), int(class_id), dtype=torch.long))
+                collected += inputs.shape[0]
+    class_targets = torch.cat(class_targets)
+    return {
+        boundary: (
+            torch.cat(stage_features[boundary]),
+            torch.cat(labels[boundary]), class_targets)
+        for boundary in (2, 4)
+    }
+
+
+def train_progressive_halting_gates(model, original_model,
+                                    data_loader_per_cls, class_mask,
+                                    seen_task_count, args, device):
+    if seen_task_count <= 2:
+        return {}, {}
+    datasets = _collect_gate_dataset(
+        model, original_model, data_loader_per_cls, class_mask,
+        seen_task_count, args, device)
+    gates = {}
+    stats = {}
+    for boundary in (2, 4):
+        if boundary >= seen_task_count:
+            continue
+        features, labels, class_targets = datasets[boundary]
+        gates[boundary], stats[boundary] = _fit_gate(
+            features, labels, class_targets, args, device,
+            seen_task_count * 10 + boundary)
+    return gates, stats
+
+
+def _gate_decision(gate, features):
+    if gate is None or gate.threshold is None:
+        return torch.zeros(features.shape[0], dtype=torch.bool,
+                           device=features.device)
+    normalized = (features - gate.feature_mean) / gate.feature_std
+    return torch.sigmoid(gate(normalized)) >= float(gate.threshold)
+
+
+@torch.no_grad()
+def calibrated_progressive_rematching(model, inputs, tii_logits, class_mask,
+                                      seen_task_count, args, gates):
+    device = inputs.device
+    temperature = max(1e-6, float(getattr(
+        args, 'progressive_logit_temperature', 1.0)))
+    prior_weight = max(0.0, float(getattr(
+        args, 'progressive_tii_prior_weight', 0.3)))
+    excluded_margin = max(1.0, float(getattr(
+        args, 'progressive_excluded_logit_margin', 20.0)))
+    tii_prior = _tii_task_prior(tii_logits, class_mask, seen_task_count)
+    sorted_tii_scores, candidate_tasks = torch.sort(
+        tii_prior, dim=1, descending=True)
+    batch_size = inputs.shape[0]
+    merged_logits = torch.full_like(tii_logits, float('-inf'))
+    task_evidence = torch.full(
+        (batch_size, seen_task_count), float('-inf'),
+        dtype=tii_logits.dtype, device=device)
+    class_margins = torch.zeros_like(task_evidence)
+    active = torch.ones(batch_size, dtype=torch.bool, device=device)
+    counts = torch.zeros(batch_size, dtype=torch.float32, device=device)
+    stages = torch.zeros(batch_size, dtype=torch.long, device=device)
+
+    for rank in range(seen_task_count):
+        active_index = torch.nonzero(active).flatten()
+        if active_index.numel() == 0:
+            break
+        active_tasks = candidate_tasks.index_select(0, active_index)[:, rank]
+        adapter_logits = model(
+            inputs.index_select(0, active_index), task_id=active_tasks)['logits']
+        counts[active_index] += 1.0
+        for task_index in active_tasks.unique().tolist():
+            local_rows = torch.nonzero(active_tasks == task_index).flatten()
+            batch_rows = active_index.index_select(0, local_rows)
+            class_index = torch.as_tensor(
+                class_mask[task_index], dtype=torch.long, device=device)
+            local_logits = adapter_logits.index_select(
+                0, local_rows).index_select(1, class_index) / temperature
+            calibrated = local_logits + prior_weight * tii_prior[
+                batch_rows, task_index].unsqueeze(1)
+            merged_logits[
+                batch_rows.unsqueeze(1), class_index.unsqueeze(0)] = calibrated
+            task_evidence[batch_rows, rank] = calibrated.max(dim=1).values
+            local_top = torch.topk(
+                calibrated, k=min(2, calibrated.shape[1]), dim=1).values
+            class_margins[batch_rows, rank] = (
+                local_top[:, 0] - local_top[:, 1]
+                if local_top.shape[1] > 1 else float('inf'))
+
+        boundary = rank + 1
+        if boundary >= seen_task_count:
+            stages[active] = 3
+            active.zero_()
+            break
+        if boundary not in (2, 4):
+            continue
+        active_index = torch.nonzero(active).flatten()
+        features = _stage_features(
+            tii_prior.index_select(0, active_index),
+            sorted_tii_scores.index_select(0, active_index),
+            task_evidence.index_select(0, active_index),
+            class_margins.index_select(0, active_index), boundary)
+        stopped = active_index[_gate_decision(gates.get(boundary), features)]
+        stages[stopped] = 1 if boundary == 2 else 2
+        active[stopped] = False
+
+    selected_rank = task_evidence.argmax(dim=1)
+    routed_tasks = candidate_tasks.gather(
+        1, selected_rank.unsqueeze(1)).squeeze(1)
+    finite = torch.isfinite(merged_logits)
+    row_min = merged_logits.masked_fill(~finite, float('inf')).min(
+        dim=1, keepdim=True).values
+    merged_logits = torch.where(finite, merged_logits, row_min - excluded_margin)
+    return merged_logits, routed_tasks, counts, stages

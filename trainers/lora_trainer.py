@@ -14,6 +14,10 @@ from engines.hrm_lora_wtp_and_tap_engine import (
 from engines.replay_logit_calibration import calibrate_task_logits
 from engines.replay_task_router import train_replay_task_router
 from engines.distilled_task_router import train_distilled_task_router
+from engines.calibrated_progressive_rematching import (
+    set_progressive_halting_gates,
+    train_progressive_halting_gates,
+)
 import vits.hrm_lora_vision_transformer as hide_lora_vision_transformer
 import torch.nn as nn
 import torch.nn.init as init
@@ -70,6 +74,8 @@ def train(args):
         learned_router_enabled = bool(getattr(args, 'replay_task_router', False))
         distilled_router_enabled = bool(
             getattr(args, 'distilled_router_rematching', False))
+        calibrated_progressive_enabled = bool(getattr(
+            args, 'calibrated_progressive_rematching', False))
         if (prototype_enabled or local_prototype_enabled
                 or shared_router_enabled or calibration_enabled
                 or learned_router_enabled or distilled_router_enabled):
@@ -103,7 +109,34 @@ def train(args):
             else:
                 print('No checkpoint found at:', original_checkpoint_path)
                 return
-            if distilled_router_enabled:
+            if calibrated_progressive_enabled:
+                print(
+                    'Training calibrated progressive halting gates for task',
+                    task_id + 1)
+                gates, gate_stats = train_progressive_halting_gates(
+                    model=model,
+                    original_model=original_model,
+                    data_loader_per_cls=data_loader_per_cls,
+                    class_mask=class_mask,
+                    seen_task_count=task_id + 1,
+                    args=args,
+                    device=device,
+                )
+                set_progressive_halting_gates(gates)
+                for boundary, stats in sorted(gate_stats.items()):
+                    print(
+                        'Halting gate@{}:'.format(boundary),
+                        'accepted=', stats['accepted'],
+                        'samples=', stats['samples'],
+                        'safe_rate=', stats['safe_rate'] * 100.0,
+                        'calibration_precision/coverage=',
+                        stats['calibration_precision'] * 100.0,
+                        stats['calibration_coverage'] * 100.0,
+                        'report_precision/coverage=',
+                        stats['report_precision'] * 100.0,
+                        stats['report_coverage'] * 100.0,
+                        'threshold=', stats['threshold'])
+            elif distilled_router_enabled:
                 print('Training exhaustive-teacher top-k router for task', task_id + 1)
                 distilled_router, router_stats = train_distilled_task_router(
                     model=model,
