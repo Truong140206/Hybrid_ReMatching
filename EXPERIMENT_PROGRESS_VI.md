@@ -2420,3 +2420,23 @@ So forward call tuan tu giam dung `50%`, nhung wall time chi giam `13` giay, tuo
 Nguyen nhan la input duoc mo rong de hai LoRA chay trong cung batch. So lan goi model giam, nhung backbone van xu ly cung tong so ban sao anh va FLOPs gan nhu khong doi. Ket qua nay chi chung minh vectorization bao toan chat luong; khong chung minh chi phi tinh toan giam 50%.
 
 Huong tiep theo phai tac dong vao chi phi that: giam so LoRA thuc su duoc danh gia, cache gate sau khi hoc, benchmark rieng inference sau khi gate da san sang, hoac thu mixed precision/compile voi ablation chat luong. Khong tiep tuc dung so `ForwardCalls/mau` nhu dai dien truc tiep cho FLOPs hay wall time.
+## 59. Sua giao thuc: strict exemplar-free
+
+Kiem tra lai hai paper cho thay checkpoint `imr_lora_hybrid_real_ageaware...` khong tuan thu giao thuc ket qua chinh:
+
+- HRM-PET goc la rehearsal-free, khong luu historical exemplars.
+- PMI-CFS la data-free: luu thong ke phan phoi va sinh mau gia; khong replay feature that tung mau.
+- Checkpoint cu luu toi da 48 feature that/lop va calibrated gate doc lai 12 anh train/lop. Hai co che nay khong co trong HRM-PET goc va khong phu hop data-free CL.
+
+Tu commit nay, ket qua `80.5329 Acc@task / 75.0731 Acc@1` chi duoc ghi la ablation feature-memory ngoai giao thuc, khong phai ket qua exemplar-free chinh.
+
+Thay the hop le:
+
+1. CRCT chi luu mean/covariance va CFS model, sau do sinh feature tong hop Gaussian+CFS.
+2. Khong bat `crct_real_feature_replay`; checkpoint khong duoc co `real_feature_memory`.
+3. Khong dung calibrated gate, prototype hay distilled router hoc tu historical train images.
+4. Routing dung hybrid rematching goc hoac progressive rule co dinh chi dua tren tin hieu cua mau test.
+5. `--strict_exemplar_free` tu dong tu choi cau hinh vi pham.
+6. Moi checkpoint duoc audit sau khi train; chi `EXEMPLAR_FREE_AUDIT=PASS` moi duoc dung lam ket qua chinh.
+
+CFS van la phan ap dung tu paper thu hai: feature gia duoc lay tu phan phoi lop va chon da dang trong khong gian contrastive. Pseudo-image do model inversion sinh ra duoc phep vi khong phai anh lich su, nhung khong bat trong thi nghiem CFS-CRCT dau tien de tach ro tac dung cua CFS.

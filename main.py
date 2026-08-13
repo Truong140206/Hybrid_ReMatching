@@ -17,6 +17,7 @@ from timm.optim import create_optimizer
 from datasets import build_continual_dataloader
 
 import utils
+from protocols import validate_exemplar_free_protocol
 import warnings
 
 
@@ -61,6 +62,7 @@ def get_args():
     return args
 
 def main(args):
+    validate_exemplar_free_protocol(args)
     utils.init_distributed_mode(args)
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)

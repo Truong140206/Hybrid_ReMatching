@@ -71,8 +71,9 @@ cd "${REPO_ROOT}"
 echo "Mode: ${MODE}"
 echo "Dataset: ${IMR_DATA_PATH}"
 echo "Output: ${OUTPUT_DIR}"
-echo "Method: rank-8 LoRA + CFS-only validation-gated CRCT"
-echo "LoRA replay: disabled"
+echo "Method: strict exemplar-free rank-8 LoRA + CFS-only validation-gated CRCT"
+echo "Historical images/per-example real features: forbidden by runtime guard"
+echo "Replay source: Gaussian statistics + CFS synthetic features only"
 echo "Semantic/prototype/exhaustive: disabled"
 
 PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
@@ -101,6 +102,7 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --trained_original_model "${TII_DIR}" \
   --num_tasks 10 \
   --max_train_tasks "${MAX_TRAIN_TASKS}" \
+  --strict_exemplar_free \
   --ca_storage_efficient_method variance \
   --cfs_sampling \
   --cfs_epochs "${CFS_EPOCHS:-50}" \
@@ -138,6 +140,7 @@ for task_id in $(seq 1 "${MAX_TRAIN_TASKS}"); do
     echo "Missing checkpoint after training: ${checkpoint}" >&2
     exit 5
   fi
+  "${PYTHON_BIN}" tools/audit_exemplar_free_checkpoint.py "${checkpoint}"
 done
 
 FINAL_ROW=$(grep "Average accuracy till task${MAX_TRAIN_TASKS}" "${LOG_PATH}" | tail -n 1 || true)

@@ -168,6 +168,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--cfs_selection_ratio', default=0.5, type=float)
     subparsers.add_argument('--cfs_selection_steps', default=5, type=int)
     subparsers.add_argument('--cfs_step_candidates', default=0, type=int)
+    subparsers.add_argument('--strict_exemplar_free', action='store_true', help='reject any configuration that stores per-example real features or rereads historical train images')
     subparsers.add_argument('--replay_anchor_ctird', action='store_true', help='generate cached CFS-PMI pseudo-images and preserve old LoRA relations while training each new LoRA')
     subparsers.add_argument('--replay_anchor_weight', default=0.05, type=float)
     subparsers.add_argument('--replay_anchor_batch_size', default=20, type=int)

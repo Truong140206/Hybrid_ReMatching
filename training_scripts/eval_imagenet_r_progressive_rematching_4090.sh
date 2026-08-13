@@ -10,6 +10,7 @@ OUTPUT_ROOT="${OUTPUT_ROOT:-${WORK_ROOT}/hrm-pet-output}"
 RUN_DIR="${1:-}"
 PROFILE="${2:-conservative}"
 TII_DIR="${TII_DIR:-${OUTPUT_ROOT}/imr_tii_original_10tasks_seed42}"
+LORA_RANK="${LORA_RANK:-8}"
 
 if [[ -z "${RUN_DIR}" ]]; then
   echo "Usage: $0 RUN_DIR [conservative|balanced|aggressive]" >&2
@@ -37,6 +38,8 @@ for task_id in $(seq 1 10); do
     echo "Missing TII checkpoint: ${TII_DIR}/checkpoint/task${task_id}_checkpoint.pth" >&2
     exit 2
   }
+  "${PYTHON_BIN}" "${REPO_ROOT}/tools/audit_exemplar_free_checkpoint.py" \
+    "${RUN_DIR}/checkpoint/task${task_id}_checkpoint.pth"
 done
 
 case "${PROFILE}" in
@@ -85,7 +88,7 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --seed 42 \
   --lr 0.03 \
   --con 0.2 \
-  --lora_rank 5 \
+  --lora_rank "${LORA_RANK}" \
   --En gen \
   --tau -10 \
   --K 5 \
@@ -95,6 +98,7 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --lora_type hide \
   --trained_original_model "${TII_DIR}" \
   --num_tasks 10 \
+  --strict_exemplar_free \
   --progressive_rematching \
   --progressive_initial_candidates 2 \
   --progressive_intermediate_candidates 4 \
