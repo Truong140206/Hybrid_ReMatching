@@ -246,6 +246,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--budgeted_logit_temperature', default=1.0, type=float)
     subparsers.add_argument('--budgeted_disagreement_weight', default=2.0, type=float)
     subparsers.add_argument('--budgeted_classifier_weight', default=0.5, type=float)
+    subparsers.add_argument('--progressive_oracle_audit', action='store_true', help='run exhaustive once and audit the theoretical 2-to-4-to-all cascade')
     subparsers.add_argument('--progressive_rematching', action='store_true', help='evaluate LoRAs in TII-ranked stages and expand uncertain samples to exhaustive')
     subparsers.add_argument('--progressive_initial_candidates', default=2, type=int)
     subparsers.add_argument('--progressive_intermediate_candidates', default=4, type=int)

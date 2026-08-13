@@ -20,6 +20,7 @@ from engines.exhaustive_rematching import exhaustive_adapter_rematching
 from engines.hierarchical_rematching import hierarchical_adapter_rematching
 from engines.budgeted_rematching import budgeted_exhaustive_fallback
 from engines.progressive_rematching import progressive_adapter_rematching
+from engines.progressive_oracle_audit import progressive_oracle_audit
 from engines.selective_rematching import selective_adapter_rematching
 from engines.prototype_rematching import (
     build_prototype_bank, prototype_assisted_rematching)
@@ -578,6 +579,44 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 else:
                     raise NotImplementedError("original model is None")
 
+            if bool(getattr(args, 'progressive_oracle_audit', False)):
+                logits, prompt_id, audit = progressive_oracle_audit(
+                    model=model,
+                    inputs=input,
+                    tii_logits=old_logits,
+                    class_mask=class_mask,
+                    seen_task_count=task_id + 1,
+                    args=args,
+                )
+                filtered_index_tensor = torch.empty(
+                    0, dtype=torch.long, device=device)
+                re_id = None
+                loss = criterion(logits, target)
+                acc1, acc5 = accuracy(logits, target, topk=(1, 5))
+                task_inference_acc = utils.task_inference_accuracy(
+                    prompt_id.unsqueeze(-1), target, target_task_map,
+                    filtered_index_tensor, re_id)
+                metric_logger.meters['Loss'].update(loss.item())
+                metric_logger.meters['Acc@1'].update(acc1.item(), n=input.shape[0])
+                metric_logger.meters['Acc@5'].update(acc5.item(), n=input.shape[0])
+                metric_logger.meters['Acc@task'].update(
+                    task_inference_acc.item(), n=input.shape[0])
+                audit_percent_metrics = {
+                    'WinnerRecall@2': 'winner_recall_2',
+                    'WinnerRecall@4': 'winner_recall_4',
+                    'ExactAgreement@2': 'exact_agreement_2',
+                    'ExactAgreement@4': 'exact_agreement_4',
+                }
+                for metric_name, audit_name in audit_percent_metrics.items():
+                    metric_logger.meters[metric_name].update(
+                        audit[audit_name].float().mean().mul(100.0).item(),
+                        n=input.shape[0])
+                metric_logger.meters['OracleLoRA/sample'].update(
+                    audit['oracle_lora_counts'].mean().item(), n=input.shape[0])
+                metric_logger.meters['ActualLoRA/sample'].update(
+                    audit['actual_lora_counts'].mean().item(), n=input.shape[0])
+                continue
+
             if bool(getattr(args, 'progressive_rematching', False)):
                 logits, prompt_id, lora_counts, stop_stage = progressive_adapter_rematching(
                     model=model,
@@ -909,6 +948,21 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 stage2=metric_logger.meters['Stage2StopRate'],
                 fallback=metric_logger.meters['FullFallbackRate'],
                 cost=metric_logger.meters['LoRA/sample']))
+    if bool(getattr(args, 'progressive_oracle_audit', False)):
+        print(
+            '* OracleAudit WinnerRecall@2 {winner2.global_avg:.3f} '
+            'WinnerRecall@4 {winner4.global_avg:.3f} '
+            'ExactAgreement@2 {agree2.global_avg:.3f} '
+            'ExactAgreement@4 {agree4.global_avg:.3f} '
+            'OracleLoRA/sample {oracle_cost.global_avg:.3f} '
+            'ActualLoRA/sample {actual_cost.global_avg:.3f}'
+            .format(
+                winner2=metric_logger.meters['WinnerRecall@2'],
+                winner4=metric_logger.meters['WinnerRecall@4'],
+                agree2=metric_logger.meters['ExactAgreement@2'],
+                agree4=metric_logger.meters['ExactAgreement@4'],
+                oracle_cost=metric_logger.meters['OracleLoRA/sample'],
+                actual_cost=metric_logger.meters['ActualLoRA/sample']))
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
@@ -918,7 +972,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((11, args.num_tasks))
+    stat_matrix = np.zeros((17, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -943,6 +997,13 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
             stat_matrix[8, i] = test_stats.get('Stage2StopRate', 0.0)
             stat_matrix[9, i] = test_stats.get('FullFallbackRate', 0.0)
             stat_matrix[10, i] = test_stats.get('LoRA/sample', 0.0)
+        if bool(getattr(args, 'progressive_oracle_audit', False)):
+            stat_matrix[11, i] = test_stats.get('WinnerRecall@2', 0.0)
+            stat_matrix[12, i] = test_stats.get('WinnerRecall@4', 0.0)
+            stat_matrix[13, i] = test_stats.get('ExactAgreement@2', 0.0)
+            stat_matrix[14, i] = test_stats.get('ExactAgreement@4', 0.0)
+            stat_matrix[15, i] = test_stats.get('OracleLoRA/sample', 0.0)
+            stat_matrix[16, i] = test_stats.get('ActualLoRA/sample', 0.0)
 
         acc_matrix[i, task_id] = test_stats['Acc@1']
 
@@ -967,6 +1028,14 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
             "\tStage1Stop: {:.4f}\tStage2Stop: {:.4f}"
             "\tFullFallback: {:.4f}\tLoRA/sample: {:.4f}"
         ).format(avg_stat[7], avg_stat[8], avg_stat[9], avg_stat[10])
+    if bool(getattr(args, 'progressive_oracle_audit', False)):
+        result_str += (
+            "\tWinnerRecall@2: {:.4f}\tWinnerRecall@4: {:.4f}"
+            "\tExactAgreement@2: {:.4f}\tExactAgreement@4: {:.4f}"
+            "\tOracleLoRA/sample: {:.4f}\tActualLoRA/sample: {:.4f}"
+        ).format(
+            avg_stat[11], avg_stat[12], avg_stat[13], avg_stat[14],
+            avg_stat[15], avg_stat[16])
     if task_id > 0:
         forgetting = np.mean((np.max(acc_matrix, axis=1) -
                               acc_matrix[:, task_id])[:task_id])
