@@ -83,13 +83,14 @@ def _choose_precision_threshold(probabilities, labels, target_precision,
         if coverage < minimum_coverage or not bool(selected.any()):
             continue
         precision = float(labels[selected].float().mean().item())
-        if precision >= target_precision and (
+        if precision >= target_precision - 1e-6 and (
                 best is None or coverage > best[2]):
             best = (float(threshold), precision, coverage)
     return best if best is not None else (None, 0.0, 0.0)
 
 
-def _fit_gate(features, labels, class_targets, args, device, seed_offset):
+def _fit_gate(features, labels, class_targets, args, device, seed_offset,
+              target_precision=None):
     train_index, validation_index = _class_stratified_split(
         class_targets,
         float(getattr(args, 'progressive_gate_validation_ratio', 0.25)),
@@ -159,11 +160,14 @@ def _fit_gate(features, labels, class_targets, args, device, seed_offset):
     with torch.no_grad():
         calibration_probability = torch.sigmoid(gate(
             features.index_select(0, calibration_index)))
+    if target_precision is None:
+        target_precision = float(getattr(
+            args, 'progressive_gate_target_precision', 0.995))
+    target_precision = min(1.0, max(0.5, float(target_precision)))
     threshold, calibration_precision, calibration_coverage = _choose_precision_threshold(
         calibration_probability,
         labels.index_select(0, calibration_index),
-        min(1.0, max(0.5, float(getattr(
-            args, 'progressive_gate_target_precision', 0.995)))),
+        target_precision,
         min(1.0, max(0.0, float(getattr(
             args, 'progressive_gate_min_coverage', 0.02)))))
     report_precision = 0.0
@@ -177,11 +181,10 @@ def _fit_gate(features, labels, class_targets, args, device, seed_offset):
         if bool(selected.any()):
             report_precision = float(labels.index_select(
                 0, report_index)[selected].mean().item())
-    target_precision = min(1.0, max(0.5, float(getattr(
-        args, 'progressive_gate_target_precision', 0.995))))
     minimum_coverage = min(1.0, max(0.0, float(getattr(
         args, 'progressive_gate_min_coverage', 0.02))))
-    accepted = (threshold is not None and report_precision >= target_precision
+    accepted = (threshold is not None
+                and report_precision >= target_precision - 1e-6
                 and report_coverage >= minimum_coverage)
 
     gate.register_buffer('feature_mean', mean.to(device))
@@ -266,7 +269,7 @@ def _collect_gate_dataset(model, original_model, data_loader_per_cls,
                 ).indices.eq(targets.unsqueeze(1)).any(dim=1)
                 full_loss = F.cross_entropy(
                     full_logits, targets, reduction='none')
-                loss_tolerance = max(0.0, float(getattr(
+                default_loss_tolerance = max(0.0, float(getattr(
                     args, 'progressive_gate_loss_tolerance', 0.05)))
                 excluded_margin = max(1.0, float(getattr(
                     args, 'progressive_excluded_logit_margin', 20.0)))
@@ -283,6 +286,10 @@ def _collect_gate_dataset(model, original_model, data_loader_per_cls,
                     ).indices.eq(targets.unsqueeze(1)).any(dim=1)
                     partial_loss = F.cross_entropy(
                         partial_logits, targets, reduction='none')
+                    loss_tolerance = default_loss_tolerance
+                    if boundary == 4:
+                        loss_tolerance = max(0.0, float(getattr(
+                            args, 'progressive_gate_stage2_loss_tolerance', 0.0)))
                     safe = (
                         winner_rank.lt(effective)
                         & partial_logits.argmax(dim=1).eq(full_predictions)
@@ -303,7 +310,7 @@ def _collect_gate_dataset(model, original_model, data_loader_per_cls,
 
 
 def _cascade_stage2_mask(stage1_gate, stage1_features, class_targets,
-                         minimum_per_class=4):
+                         minimum_per_class=4, context_ratio=0.25):
     if stage1_gate is None or stage1_gate.threshold is None:
         return torch.ones(
             stage1_features.shape[0], dtype=torch.bool,
@@ -319,6 +326,7 @@ def _cascade_stage2_mask(stage1_gate, stage1_features, class_targets,
     class_targets_cpu = class_targets.detach().cpu()
     selected = halt_probability.lt(float(stage1_gate.threshold))
     minimum_per_class = max(2, int(minimum_per_class))
+    context_ratio = min(1.0, max(0.0, float(context_ratio)))
 
     # Stage 2 sees the hard residual from Stage 1. Keep a small hard subset
     # from every class so the class-stratified train/report split stays valid.
@@ -326,11 +334,22 @@ def _cascade_stage2_mask(stage1_gate, stage1_features, class_targets,
         class_index = torch.nonzero(
             class_targets_cpu == int(class_id), as_tuple=False).flatten()
         required = min(minimum_per_class, class_index.numel())
-        if int(selected.index_select(0, class_index).sum().item()) >= required:
-            continue
-        hard_order = torch.argsort(
-            halt_probability.index_select(0, class_index))
-        selected[class_index.index_select(0, hard_order[:required])] = True
+        if int(selected.index_select(0, class_index).sum().item()) < required:
+            hard_order = torch.argsort(
+                halt_probability.index_select(0, class_index))
+            selected[class_index.index_select(0, hard_order[:required])] = True
+
+        accepted_index = class_index[~selected.index_select(0, class_index)]
+        context_count = int(round(accepted_index.numel() * context_ratio))
+        if context_ratio > 0.0 and accepted_index.numel() > 0:
+            context_count = max(1, context_count)
+        if context_count > 0:
+            # The least-confident Stage-1 accepts are the most useful
+            # regularization context for the downstream gate.
+            context_order = torch.argsort(
+                halt_probability.index_select(0, accepted_index))
+            selected[accepted_index.index_select(
+                0, context_order[:context_count])] = True
     return selected.to(stage1_features.device)
 
 
@@ -353,13 +372,16 @@ def train_progressive_halting_gates(model, original_model,
         stage2_features, stage2_labels, stage2_targets = datasets[4]
         stage2_mask = _cascade_stage2_mask(
             gates[2], stage1_features, class_targets,
-            getattr(args, 'progressive_gate_stage2_min_samples_per_class', 4))
+            getattr(args, 'progressive_gate_stage2_min_samples_per_class', 4),
+            getattr(args, 'progressive_gate_stage2_context_ratio', 0.25))
         stage2_features = stage2_features[stage2_mask]
         stage2_labels = stage2_labels[stage2_mask]
         stage2_targets = stage2_targets[stage2_mask]
         gates[4], stats[4] = _fit_gate(
             stage2_features, stage2_labels, stage2_targets, args, device,
-            seen_task_count * 10 + 4)
+            seen_task_count * 10 + 4,
+            target_precision=getattr(
+                args, 'progressive_gate_stage2_target_precision', 1.0))
         stats[4]['cascade_samples'] = int(stage2_mask.sum().item())
         stats[4]['cascade_candidate_rate'] = float(
             stage2_mask.float().mean().item())

@@ -2252,4 +2252,31 @@ Ban nay giam `45.87%` so luot chay LoRA so voi exhaustive 10 LoRA, trong khi Acc
 - Giu target precision doc lap `99.5%`; khong ha hang rao an toan de doi lay coverage.
 - Giam excluded-logit margin tu `20` xuong `8`. Top-1 va top-5 trong cac lop da cham khong doi, nhung mot loi halt hiem hoi khong con tao cross-entropy qua lon.
 
-Ket qua cua bien the cascade-aware Stage 2 dang cho danh gia tren RTX 4090. Can so sanh truc tiep Stage2Stop, LoRA/sample, Acc@1, Acc@5, Loss va Forgetting voi moc tai muc 57.1.
+### 57.3. Ket qua cascade residual thuan
+
+| Chi so | Residual thuan | Thay doi so voi muc 57.1 |
+|---|---:|---:|
+| Acc@task | 80.3693 | -0.1456 |
+| Acc@1 | 74.8818 | -0.1733 |
+| Acc@5 | 87.6868 | -0.2357 |
+| Loss | 1.3362 | -0.0613 |
+| Forgetting | 3.1344 | +0.1909 |
+| Backward | -3.0945 | -0.1909 |
+| Stage 2 dung | 9.5596% | +6.8087 diem phan tram |
+| LoRA/mau | 5.0392 | -0.3735 |
+
+Stage 2 da giam them chi phi nhung dung som qua manh, lam accuracy va kha nang giu task cu cung giam. Cau hinh nay khong duoc chon lam ket qua cuoi.
+
+Tai task 10, gate Stage 2 hoc tren `914` residual samples, bao report precision `100%` va coverage `54.31%`. Tren test, Stage 2 chi dung `9.5596 / (100 - 54.8408) = 21.17%` residual. Chenh lech coverage lon cho thay report nho chua dai dien tot cho test distribution.
+
+### 57.4. Stage 2 residual co boundary context
+
+Bien the tiep theo duoc thiet ke de giam overfit cua residual thuan:
+
+- Stage 1 giu nguyen.
+- Stage 2 hoc tren residual va them `25%` cac mau Stage-1 accept gan nguong nhat cua tung lop.
+- Stage 2 yeu cau empirical precision `100%`, trong khi Stage 1 van dung `99.5%`.
+- Safe label cua Stage 2 yeu cau partial loss khong cao hon exhaustive loss; tolerance giam tu `0.05` xuong `0.0`.
+- Excluded-logit margin van la `8` de tranh loss nhan tao tang qua manh.
+
+Muc tieu la dat Stage2Stop trung gian giua `2.7509%` va `9.5596%`, LoRA/mau thap hon `5.4127`, nhung khoi phuc Acc@1 va Forgetting gan moc 57.1.

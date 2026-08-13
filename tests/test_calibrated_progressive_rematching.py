@@ -48,7 +48,7 @@ def test_stage2_mask_uses_stage1_residual_and_keeps_each_class_trainable():
     class_targets = torch.tensor([0, 0, 0, 1, 1, 1])
 
     selected = _cascade_stage2_mask(
-        gate, features, class_targets, minimum_per_class=2)
+        gate, features, class_targets, minimum_per_class=2, context_ratio=0.0)
 
     assert selected.tolist() == [True, True, False, True, True, False]
 
@@ -69,3 +69,21 @@ def test_partial_logit_margin_preserves_predictions_and_caps_penalty():
         [-6.0, -6.0],
         [-7.0, -7.0],
     ]))
+
+
+def test_stage2_mask_adds_near_boundary_context():
+    gate = HaltingGate(feature_dim=1, hidden_dim=2, dropout=0.0)
+    gate.network = torch.nn.Linear(1, 1, bias=False)
+    with torch.no_grad():
+        gate.network.weight.fill_(1.0)
+    gate.register_buffer('feature_mean', torch.zeros(1, 1))
+    gate.register_buffer('feature_std', torch.ones(1, 1))
+    gate.threshold = 0.5
+    features = torch.tensor([[-2.0], [0.1], [0.5], [1.0], [2.0]])
+    class_targets = torch.zeros(5, dtype=torch.long)
+
+    selected = _cascade_stage2_mask(
+        gate, features, class_targets,
+        minimum_per_class=2, context_ratio=0.5)
+
+    assert selected.tolist() == [True, True, True, True, False]
