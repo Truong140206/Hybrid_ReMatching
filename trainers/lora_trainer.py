@@ -139,6 +139,15 @@ def train(args):
                         'cascade_samples/rate=',
                         stats.get('cascade_samples', stats['samples']),
                         stats.get('cascade_candidate_rate', 1.0) * 100.0)
+                output_stats = gates.get('_output_calibration')
+                if output_stats is not None:
+                    print(
+                        'Progressive output temperature:',
+                        output_stats['temperature'],
+                        'samples=', output_stats['samples'],
+                        'calibration_loss_before/after=',
+                        output_stats['loss_before'],
+                        output_stats['loss_after'])
             elif distilled_router_enabled:
                 print('Training exhaustive-teacher top-k router for task', task_id + 1)
                 distilled_router, router_stats = train_distilled_task_router(

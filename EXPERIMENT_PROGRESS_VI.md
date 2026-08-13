@@ -2279,4 +2279,34 @@ Bien the tiep theo duoc thiet ke de giam overfit cua residual thuan:
 - Safe label cua Stage 2 yeu cau partial loss khong cao hon exhaustive loss; tolerance giam tu `0.05` xuong `0.0`.
 - Excluded-logit margin van la `8` de tranh loss nhan tao tang qua manh.
 
-Muc tieu la dat Stage2Stop trung gian giua `2.7509%` va `9.5596%`, LoRA/mau thap hon `5.4127`, nhung khoi phuc Acc@1 va Forgetting gan moc 57.1.
+### 57.5. Ket qua residual co boundary context
+
+| Chi so | Ket qua |
+|---|---:|
+| Acc@task | 80.5329 |
+| Acc@1 | 75.0731 |
+| Acc@5 | 87.9394 |
+| Loss | 1.2587 |
+| Stage1Stop | 55.3059% |
+| Stage2Stop | 2.0407% |
+| FullFallback | 42.6534% |
+| LoRA/mau | 5.4531 |
+| Forgetting | 2.9413 |
+| Backward | -2.9014 |
+
+So voi gate truoc boundary-context, Acc@task, Acc@1, Acc@5, Forgetting va Backward deu tot hon rat nhe; loss giam manh tu `1.3975` xuong `1.2587`. Chi phi tang khong dang ke tu `5.4127` len `5.4531` LoRA/mau. Cau hinh nay la moc progressive can bang nhat hien tai.
+
+So voi baseline rerun co loss `1.2305`, loss hien tai van cao hon `0.0282`, tuong duong khoang `2.3%`.
+
+### 57.6. Output temperature scaling
+
+De giam loss ma khong thay doi accuracy va forgetting, them mot buoc temperature scaling sau progressive rematching:
+
+1. Mo phong dung quyet dinh Stage 1, Stage 2 va exhaustive fallback tren train calibration samples.
+2. Tach mot tap calibration theo lop; khong dung anh test.
+3. Tim mot temperature duong duy nhat toi thieu hoa cross-entropy cua logits dau ra.
+4. Chia toan bo logits cho temperature da hoc khi danh gia.
+
+Vi chia moi logit trong cung mot mau cho cung mot so duong, thu tu lop khong thay doi. Do do Acc@task, Acc@1, Acc@5, Forgetting, Backward, cac stop rate va LoRA/mau ve nguyen tac duoc giu nguyen; chi confidence va loss thay doi.
+
+Day la calibration xac suat hop le, khac voi viec tuy y ha excluded-logit margin de lam dep loss. Neu temperature khong lam calibration loss giam, code tu quay ve `1.0`.

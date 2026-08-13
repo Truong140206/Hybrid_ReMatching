@@ -1,4 +1,5 @@
 import copy
+import math
 
 import torch
 import torch.nn.functional as F
@@ -208,6 +209,9 @@ def _collect_gate_dataset(model, original_model, data_loader_per_cls,
     sample_limit = max(2, int(getattr(
         args, 'progressive_gate_samples_per_class', 12)))
     stage_features = {2: [], 4: []}
+    stage_logits = {2: [], 4: []}
+    exhaustive_logits = []
+    output_targets = []
     labels = {2: [], 4: []}
     class_targets = []
     model.eval()
@@ -281,6 +285,7 @@ def _collect_gate_dataset(model, original_model, data_loader_per_cls,
                     partial_logits = _finalize_partial_logits(
                         rank_logits[:, :effective].max(dim=1).values,
                         excluded_margin)
+                    stage_logits[boundary].append(partial_logits.cpu())
                     partial_top5_correct = torch.topk(
                         partial_logits, k=min(5, partial_logits.shape[1]), dim=1
                     ).indices.eq(targets.unsqueeze(1)).any(dim=1)
@@ -297,16 +302,25 @@ def _collect_gate_dataset(model, original_model, data_loader_per_cls,
                         & partial_loss.le(full_loss + loss_tolerance)
                     )
                     labels[boundary].append(safe.cpu())
+                exhaustive_logits.append(_finalize_partial_logits(
+                    full_logits, excluded_margin).cpu())
+                output_targets.append(targets.cpu())
                 class_targets.append(torch.full(
                     (inputs.shape[0],), int(class_id), dtype=torch.long))
                 collected += inputs.shape[0]
     class_targets = torch.cat(class_targets)
-    return {
+    datasets = {
         boundary: (
             torch.cat(stage_features[boundary]),
             torch.cat(labels[boundary]), class_targets)
         for boundary in (2, 4)
     }
+    datasets['stage_logits'] = {
+        boundary: torch.cat(stage_logits[boundary])
+        for boundary in (2, 4)}
+    datasets['exhaustive_logits'] = torch.cat(exhaustive_logits)
+    datasets['output_targets'] = torch.cat(output_targets)
+    return datasets
 
 
 def _cascade_stage2_mask(stage1_gate, stage1_features, class_targets,
@@ -353,6 +367,79 @@ def _cascade_stage2_mask(stage1_gate, stage1_features, class_targets,
     return selected.to(stage1_features.device)
 
 
+def _choose_output_temperature(logits, targets, minimum=0.5, maximum=4.0,
+                               steps=129):
+    minimum = max(1e-3, float(minimum))
+    maximum = max(minimum, float(maximum))
+    steps = max(3, int(steps))
+    before = float(F.cross_entropy(logits, targets).item())
+    candidates = torch.exp(torch.linspace(
+        math.log(minimum), math.log(maximum), steps,
+        device=logits.device, dtype=logits.dtype))
+    losses = torch.empty(steps, device=logits.device, dtype=logits.dtype)
+    for index, temperature in enumerate(candidates):
+        losses[index] = F.cross_entropy(logits / temperature, targets)
+    best_index = int(losses.argmin().item())
+    lower = candidates[max(0, best_index - 1)]
+    upper = candidates[min(steps - 1, best_index + 1)]
+    refined = torch.exp(torch.linspace(
+        lower.log(), upper.log(), 65,
+        device=logits.device, dtype=logits.dtype))
+    refined_losses = torch.empty_like(refined)
+    for index, temperature in enumerate(refined):
+        refined_losses[index] = F.cross_entropy(
+            logits / temperature, targets)
+    refined_index = int(refined_losses.argmin().item())
+    temperature = float(refined[refined_index].item())
+    after = float(refined_losses[refined_index].item())
+    if after > before:
+        return 1.0, before, before
+    return temperature, before, after
+
+
+def _fit_progressive_output_temperature(datasets, gates, args, device):
+    if not bool(getattr(
+            args, 'progressive_output_temperature_scaling', False)):
+        return 1.0, {'samples': 0, 'loss_before': 0.0, 'loss_after': 0.0}
+
+    stage1_features, _, class_targets = datasets[2]
+    stage2_features = datasets[4][0]
+    stage1_stop = _gate_decision(
+        gates.get(2), stage1_features.to(device)).cpu()
+    remaining = ~stage1_stop
+    stage2_stop = torch.zeros_like(stage1_stop)
+    if bool(remaining.any()):
+        remaining_index = torch.nonzero(
+            remaining, as_tuple=False).flatten()
+        stage2_decision = _gate_decision(
+            gates.get(4), stage2_features.index_select(
+                0, remaining_index).to(device)).cpu()
+        stage2_stop[remaining_index] = stage2_decision
+
+    emitted_logits = datasets['exhaustive_logits'].clone()
+    emitted_logits[stage1_stop] = datasets['stage_logits'][2][stage1_stop]
+    emitted_logits[stage2_stop] = datasets['stage_logits'][4][stage2_stop]
+    _, calibration_index = _class_stratified_split(
+        class_targets,
+        float(getattr(args, 'progressive_output_temperature_ratio', 0.25)),
+        int(getattr(args, 'seed', 42)) + 7919)
+    calibration_logits = emitted_logits.index_select(
+        0, calibration_index).to(device)
+    calibration_targets = datasets['output_targets'].index_select(
+        0, calibration_index).to(device)
+    temperature, before, after = _choose_output_temperature(
+        calibration_logits,
+        calibration_targets,
+        getattr(args, 'progressive_output_temperature_min', 0.5),
+        getattr(args, 'progressive_output_temperature_max', 4.0),
+        getattr(args, 'progressive_output_temperature_steps', 129))
+    return temperature, {
+        'samples': int(calibration_index.numel()),
+        'loss_before': before,
+        'loss_after': after,
+    }
+
+
 def train_progressive_halting_gates(model, original_model,
                                     data_loader_per_cls, class_mask,
                                     seen_task_count, args, device):
@@ -385,6 +472,11 @@ def train_progressive_halting_gates(model, original_model,
         stats[4]['cascade_samples'] = int(stage2_mask.sum().item())
         stats[4]['cascade_candidate_rate'] = float(
             stage2_mask.float().mean().item())
+    output_temperature, output_stats = _fit_progressive_output_temperature(
+        datasets, gates, args, device)
+    gates['_output_temperature'] = output_temperature
+    gates['_output_calibration'] = output_stats
+    output_stats['temperature'] = output_temperature
     return gates, stats
 
 
@@ -469,4 +561,7 @@ def calibrated_progressive_rematching(model, inputs, tii_logits, class_mask,
     row_min = merged_logits.masked_fill(~finite, float('inf')).min(
         dim=1, keepdim=True).values
     merged_logits = torch.where(finite, merged_logits, row_min - excluded_margin)
+    output_temperature = max(
+        1e-3, float(gates.get('_output_temperature', 1.0)))
+    merged_logits = merged_logits / output_temperature
     return merged_logits, routed_tasks, counts, stages

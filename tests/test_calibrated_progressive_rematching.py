@@ -3,6 +3,7 @@ import torch
 from engines.calibrated_progressive_rematching import (
     HaltingGate,
     _cascade_stage2_mask,
+    _choose_output_temperature,
     _choose_precision_threshold,
     _finalize_partial_logits,
     _stage_features,
@@ -87,3 +88,20 @@ def test_stage2_mask_adds_near_boundary_context():
         minimum_per_class=2, context_ratio=0.5)
 
     assert selected.tolist() == [True, True, True, True, False]
+
+
+def test_output_temperature_reduces_nll_without_changing_predictions():
+    logits = torch.tensor([
+        [8.0, 0.0],
+        [8.0, 0.0],
+        [8.0, 0.0],
+    ])
+    targets = torch.tensor([0, 0, 1])
+
+    temperature, before, after = _choose_output_temperature(
+        logits, targets, minimum=0.5, maximum=4.0, steps=65)
+
+    assert temperature > 1.0
+    assert after < before
+    assert torch.equal(
+        logits.argmax(1), (logits / temperature).argmax(1))
