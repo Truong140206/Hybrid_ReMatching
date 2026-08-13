@@ -2459,3 +2459,21 @@ Pilot khong dat strict multi-metric gate. CFS cai thien ro kha nang giu kien thu
 Alpha cap `0.5` lam Acc@task `-0.9436`, Acc@1 `-0.4997`, Acc@5 `-0.2826` va loss `+0.0412` so voi baseline; chi retention tot hon. Do do bo alpha cap va quay ve validation gate day du (`max alpha=1.0`).
 
 Ablation moi dua truc tiep tren quan sat cua hai pilot: CFS co loi cho lop cu nhung correction cua toan bo lop lam accuracy giam. CFS chi duoc dung de chon feature replay cho old classes; current-task classes dung Gaussian replay goc. CFS model cua task hien tai van duoc hoc khi du lieu task do dang san sang, nhung chi duoc dung tu task sau. Cach nay khong luu anh/feature that va van strict exemplar-free.
+### 59.3. Ket qua old-class-only va doi chieu lai code PMI-CFS
+
+Pilot old-class-only dat Acc@task `88.9128`, Acc@1 `80.9509`, Acc@5
+`93.6410`, Loss `0.8598`, Forgetting `2.2205`, Backward `-2.2205`.
+So voi baseline, retention tot hon nhung ba accuracy va loss van xau hon. So voi
+CFS tren tat ca lop, old-class-only cung khong tang retention va lam accuracy
+giam them. Vi vay gia thuyet tach CFS theo tuoi lop bi loai.
+
+Doi chieu code PMI-CFS goc phat hien mot buoc quan trong bi thieu trong ban port:
+sau contrastive selection, tap feature duoc hieu chinh lai mean va standard
+deviation theo thong ke lop goc. Thieu buoc nay lam CFS doi phan phoi dung de
+CRCT can bang classifier, phu hop voi hien tuong forgetting giam nhung loss va
+accuracy xau di.
+
+Pilot tiep theo chi sua sai khac nay: CFS paper-style, selection ratio `0.5`, 5
+selection steps, contrastive model 200 epochs/batch 64 va moment preservation.
+Boundary/core replay, distribution filter, semantic va old-class-only deu tat.
+Giao thuc van strict exemplar-free.

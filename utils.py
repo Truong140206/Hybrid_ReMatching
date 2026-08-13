@@ -994,6 +994,33 @@ def _sample_filtered_gaussian(distribution, mean, cov, keep_count, args, device)
 
 
 @torch.no_grad()
+def match_cfs_feature_moments(features, mean, cov):
+    """Restore class marginal moments after contrastive feature selection."""
+    if features.shape[0] <= 1:
+        return features
+
+    features = features.float()
+    target_mean = torch.as_tensor(mean, device=features.device).float()
+    covariance = torch.as_tensor(cov, device=features.device).float()
+    target_variance = (
+        torch.diag(covariance) if covariance.dim() == 2 else covariance)
+    target_std = target_variance.clamp_min(0.0).sqrt()
+
+    selected_mean = features.mean(dim=0)
+    selected_std = features.std(dim=0, unbiased=True)
+    stable_std = selected_std.clamp_min(1e-8)
+    matched = (
+        (features - selected_mean.unsqueeze(0))
+        * (target_std / stable_std).unsqueeze(0)
+        + target_mean.unsqueeze(0)
+    )
+    constant_dimensions = selected_std <= 1e-8
+    if bool(constant_dimensions.any()):
+        matched[:, constant_dimensions] = target_mean[constant_dimensions]
+    return matched
+
+
+@torch.no_grad()
 def _sample_cfs_features_paper_style(distribution, mean, cov, num_samples, args, device, cfs_model):
     if num_samples <= 1:
         return _sample_filtered_gaussian(distribution, mean, cov, num_samples, args, device)
@@ -1031,7 +1058,10 @@ def _sample_cfs_features_paper_style(distribution, mean, cov, num_samples, args,
     if features.shape[0] < num_samples:
         pad = _sample_filtered_gaussian(distribution, mean, cov, num_samples - features.shape[0], args, device)
         features = torch.cat([features, pad], dim=0)
-    return features[:num_samples]
+    features = features[:num_samples]
+    if bool(getattr(args, 'cfs_moment_match', False)):
+        features = match_cfs_feature_moments(features, mean, cov)
+    return features
 
 
 @torch.no_grad()

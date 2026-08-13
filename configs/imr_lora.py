@@ -167,6 +167,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--cfs_filter_multiplier', default=3, type=int)
     subparsers.add_argument('--cfs_filter_cosine_weight', default=0.0, type=float)
     subparsers.add_argument('--cfs_paper_style', action='store_true', help='use paper-style multi-step CFS selection')
+    subparsers.add_argument('--cfs_moment_match', action='store_true', help='restore class mean and marginal standard deviation after CFS selection')
     subparsers.add_argument('--cfs_selection_ratio', default=0.5, type=float)
     subparsers.add_argument('--cfs_selection_steps', default=5, type=int)
     subparsers.add_argument('--cfs_step_candidates', default=0, type=int)

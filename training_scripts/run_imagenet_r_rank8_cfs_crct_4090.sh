@@ -29,11 +29,11 @@ BASELINE_LOG="${BASELINE_LOG:-${OUTPUT_ROOT}/imr_lora_rank8_baseline_10tasks_see
 LORA_EPOCHS="${LORA_EPOCHS:-50}"
 CRCT_EPOCHS="${CRCT_EPOCHS:-30}"
 MAX_TRAIN_TASKS=10
-RUN_NAME="${RUN_NAME_OVERRIDE:-imr_rank8_cfs_oldonly_vgcrct_10tasks_seed${SEED}}"
+RUN_NAME="${RUN_NAME_OVERRIDE:-imr_rank8_cfs_moment_vgcrct_10tasks_seed${SEED}}"
 
 if [[ "${MODE}" == "pilot" ]]; then
   MAX_TRAIN_TASKS="${PILOT_TASKS:-3}"
-  RUN_NAME="${RUN_NAME_OVERRIDE:-imr_rank8_cfs_oldonly_vgcrct_pilot${MAX_TRAIN_TASKS}_seed${SEED}}"
+  RUN_NAME="${RUN_NAME_OVERRIDE:-imr_rank8_cfs_moment_vgcrct_pilot${MAX_TRAIN_TASKS}_seed${SEED}}"
 fi
 
 OUTPUT_DIR="${OUTPUT_ROOT}/${RUN_NAME}"
@@ -71,10 +71,10 @@ cd "${REPO_ROOT}"
 echo "Mode: ${MODE}"
 echo "Dataset: ${IMR_DATA_PATH}"
 echo "Output: ${OUTPUT_DIR}"
-echo "Method: strict exemplar-free rank-8 LoRA + CFS-only validation-gated CRCT"
+echo "Method: strict exemplar-free rank-8 LoRA + moment-preserving paper-style CFS CRCT"
 echo "Historical images/per-example real features: forbidden by runtime guard"
-echo "Replay source: Gaussian statistics + CFS synthetic features only"
-echo "CFS scope: old classes only; current-task classes use Gaussian replay"
+echo "Replay source: paper-style CFS features with class mean/std restored"
+
 echo "CRCT classifier interpolation cap: ${CRCT_VALIDATION_MAX_ALPHA:-1.0}"
 echo "Semantic/prototype/exhaustive: disabled"
 
@@ -107,24 +107,15 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --strict_exemplar_free \
   --ca_storage_efficient_method variance \
   --cfs_sampling \
-  --cfs_old_classes_only \
-  --cfs_epochs "${CFS_EPOCHS:-50}" \
+  --cfs_epochs "${CFS_EPOCHS:-200}" \
   --cfs_lr "${CFS_LR:-0.01}" \
+  --cfs_batch_size "${CFS_BATCH_SIZE:-64}" \
   --cfs_train_max_samples "${CFS_TRAIN_MAX_SAMPLES:-1024}" \
   --cfs_candidate_multiplier "${CFS_CANDIDATE_MULTIPLIER:-3}" \
-  --cfs_init_strategy mean \
   --cfs_paper_style \
+  --cfs_moment_match \
   --cfs_selection_ratio "${CFS_SELECTION_RATIO:-0.5}" \
   --cfs_selection_steps "${CFS_SELECTION_STEPS:-5}" \
-  --cfs_distribution_filter \
-  --cfs_filter_multiplier "${CFS_FILTER_MULTIPLIER:-3}" \
-  --cfs_boundary_replay \
-  --cfs_boundary_ratio "${CFS_BOUNDARY_RATIO:-0.10}" \
-  --cfs_boundary_multiplier "${CFS_BOUNDARY_MULTIPLIER:-3}" \
-  --cfs_boundary_density_quantile "${CFS_BOUNDARY_DENSITY_QUANTILE:-0.85}" \
-  --cfs_boundary_target_side \
-  --cfs_core_replay_ratio "${CFS_CORE_REPLAY_RATIO:-0.40}" \
-  --cfs_core_multiplier "${CFS_CORE_MULTIPLIER:-4}" \
   --crct_use_all_samples \
   --crct_balanced_batches \
   --crct_head_only \
