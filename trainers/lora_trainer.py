@@ -140,7 +140,7 @@ def train(args):
                         stats.get('cascade_samples', stats['samples']),
                         stats.get('cascade_candidate_rate', 1.0) * 100.0)
                 output_stats = gates.get('_output_calibration')
-                if output_stats is not None:
+                if output_stats is not None and output_stats['samples'] > 0:
                     print(
                         'Progressive output temperature:',
                         output_stats['temperature'],

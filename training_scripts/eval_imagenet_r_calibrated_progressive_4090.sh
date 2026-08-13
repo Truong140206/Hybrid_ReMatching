@@ -54,7 +54,7 @@ PRECISION_TAG="$(tag_value "${TARGET_PRECISION}")"
 MARGIN_TAG="$(tag_value "${EXCLUDED_LOGIT_MARGIN}")"
 CONTEXT_TAG="$(tag_value "${STAGE2_CONTEXT_RATIO}")"
 STAGE2_PRECISION_TAG="$(tag_value "${STAGE2_TARGET_PRECISION}")"
-LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_calibrated_progressive_tempcal_s${SAMPLES_PER_CLASS}_q${PRECISION_TAG}_q2${STAGE2_PRECISION_TAG}_c${CONTEXT_TAG}_m${MARGIN_TAG}.log"
+LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_calibrated_progressive_smooth05_s${SAMPLES_PER_CLASS}_q${PRECISION_TAG}_q2${STAGE2_PRECISION_TAG}_c${CONTEXT_TAG}_m${MARGIN_TAG}.log"
 if [[ -s "${LOG_PATH}" ]]; then
   echo "Refusing to overwrite existing evaluation log: ${LOG_PATH}" >&2
   exit 3
@@ -66,7 +66,7 @@ echo "Calibration uses only train images; test images never tune the gates."
 echo "Run=${RUN_DIR}; samples/class=${SAMPLES_PER_CLASS}; target precision=${TARGET_PRECISION}"
 echo "Stage-2 calibration is conditioned on Stage-1 rejects; excluded-logit margin=${EXCLUDED_LOGIT_MARGIN}"
 echo "Stage-2 boundary context=${STAGE2_CONTEXT_RATIO}; target precision=${STAGE2_TARGET_PRECISION}; loss tolerance=${STAGE2_LOSS_TOLERANCE}"
-echo "A shared output temperature is fitted on a class-stratified train calibration split; test images are untouched."
+echo "Rank-preserving uncertainty smoothing is applied only to early exits; exhaustive fallbacks are unchanged."
 
 START_TIME="$(date +%s)"
 PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
@@ -106,7 +106,9 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --progressive_tii_prior_weight 0.3 \
   --progressive_logit_temperature 1.0 \
   --progressive_excluded_logit_margin "${EXCLUDED_LOGIT_MARGIN}" \
-  --progressive_output_temperature_scaling \
+  --progressive_uncertainty_smoothing \
+  --progressive_smoothing_strength 0.5 \
+  --progressive_smoothing_max 0.05 \
   --eval \
   --output_dir "${RUN_DIR}" \
   2>&1 | tee "${LOG_PATH}"

@@ -2,6 +2,7 @@ import torch
 
 from engines.calibrated_progressive_rematching import (
     HaltingGate,
+    _apply_rank_preserving_smoothing,
     _cascade_stage2_mask,
     _choose_output_temperature,
     _choose_precision_threshold,
@@ -105,3 +106,24 @@ def test_output_temperature_reduces_nll_without_changing_predictions():
     assert after < before
     assert torch.equal(
         logits.argmax(1), (logits / temperature).argmax(1))
+
+
+def test_uncertainty_smoothing_preserves_ranks_and_reduces_overconfidence():
+    logits = torch.tensor([
+        [8.0, 0.0, -1.0],
+        [8.0, 0.0, -1.0],
+        [8.0, 0.0, -1.0],
+    ])
+    targets = torch.tensor([0, 0, 1])
+    smoothing = torch.full((3,), 0.05)
+
+    smoothed = _apply_rank_preserving_smoothing(logits, smoothing)
+
+    assert torch.equal(logits.argmax(1), smoothed.argmax(1))
+    assert torch.equal(
+        torch.topk(logits, k=3, dim=1).indices,
+        torch.topk(smoothed, k=3, dim=1).indices)
+    assert torch.allclose(
+        smoothed.exp().sum(1), torch.ones(3), atol=1e-6)
+    assert torch.nn.functional.cross_entropy(
+        smoothed, targets) < torch.nn.functional.cross_entropy(logits, targets)

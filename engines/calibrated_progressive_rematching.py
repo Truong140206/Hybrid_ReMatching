@@ -480,12 +480,30 @@ def train_progressive_halting_gates(model, original_model,
     return gates, stats
 
 
+def _gate_probability(gate, features):
+    if gate is None or gate.threshold is None:
+        return torch.zeros(
+            features.shape[0], dtype=features.dtype, device=features.device)
+    normalized = (features - gate.feature_mean) / gate.feature_std
+    return torch.sigmoid(gate(normalized))
+
+
 def _gate_decision(gate, features):
     if gate is None or gate.threshold is None:
         return torch.zeros(features.shape[0], dtype=torch.bool,
                            device=features.device)
-    normalized = (features - gate.feature_mean) / gate.feature_std
-    return torch.sigmoid(gate(normalized)) >= float(gate.threshold)
+    return _gate_probability(gate, features) >= float(gate.threshold)
+
+
+def _apply_rank_preserving_smoothing(logits, smoothing):
+    smoothing = smoothing.to(device=logits.device, dtype=logits.dtype)
+    smoothing = smoothing.clamp(0.0, 1.0 - 1e-6).unsqueeze(1)
+    log_probabilities = F.log_softmax(logits, dim=1)
+    uniform_log_probability = -math.log(logits.shape[1])
+    smoothed = torch.logaddexp(
+        log_probabilities + torch.log1p(-smoothing),
+        smoothing.clamp_min(1e-30).log() + uniform_log_probability)
+    return torch.where(smoothing > 0.0, smoothed, log_probabilities)
 
 
 @torch.no_grad()
@@ -510,6 +528,8 @@ def calibrated_progressive_rematching(model, inputs, tii_logits, class_mask,
     active = torch.ones(batch_size, dtype=torch.bool, device=device)
     counts = torch.zeros(batch_size, dtype=torch.float32, device=device)
     stages = torch.zeros(batch_size, dtype=torch.long, device=device)
+    halt_confidence = torch.ones(
+        batch_size, dtype=tii_logits.dtype, device=device)
 
     for rank in range(seen_task_count):
         active_index = torch.nonzero(active).flatten()
@@ -550,8 +570,15 @@ def calibrated_progressive_rematching(model, inputs, tii_logits, class_mask,
             sorted_tii_scores.index_select(0, active_index),
             task_evidence.index_select(0, active_index),
             class_margins.index_select(0, active_index), boundary)
-        stopped = active_index[_gate_decision(gates.get(boundary), features)]
+        gate = gates.get(boundary)
+        gate_probability = _gate_probability(gate, features)
+        if gate is not None and gate.threshold is not None:
+            stop_mask = gate_probability >= float(gate.threshold)
+        else:
+            stop_mask = torch.zeros_like(gate_probability, dtype=torch.bool)
+        stopped = active_index[stop_mask]
         stages[stopped] = 1 if boundary == 2 else 2
+        halt_confidence[stopped] = gate_probability[stop_mask]
         active[stopped] = False
 
     selected_rank = task_evidence.argmax(dim=1)
@@ -564,4 +591,14 @@ def calibrated_progressive_rematching(model, inputs, tii_logits, class_mask,
     output_temperature = max(
         1e-3, float(gates.get('_output_temperature', 1.0)))
     merged_logits = merged_logits / output_temperature
+    if bool(getattr(args, 'progressive_uncertainty_smoothing', False)):
+        strength = max(0.0, float(getattr(
+            args, 'progressive_smoothing_strength', 0.5)))
+        maximum = min(0.5, max(0.0, float(getattr(
+            args, 'progressive_smoothing_max', 0.05))))
+        smoothing = ((1.0 - halt_confidence) * strength).clamp_max(maximum)
+        smoothing = torch.where(
+            stages.lt(3), smoothing, torch.zeros_like(smoothing))
+        merged_logits = _apply_rank_preserving_smoothing(
+            merged_logits, smoothing)
     return merged_logits, routed_tasks, counts, stages

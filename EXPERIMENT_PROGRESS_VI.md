@@ -2310,3 +2310,31 @@ De giam loss ma khong thay doi accuracy va forgetting, them mot buoc temperature
 Vi chia moi logit trong cung mot mau cho cung mot so duong, thu tu lop khong thay doi. Do do Acc@task, Acc@1, Acc@5, Forgetting, Backward, cac stop rate va LoRA/mau ve nguyen tac duoc giu nguyen; chi confidence va loss thay doi.
 
 Day la calibration xac suat hop le, khac voi viec tuy y ha excluded-logit margin de lam dep loss. Neu temperature khong lam calibration loss giam, code tu quay ve `1.0`.
+
+### 57.7. Temperature scaling that bai va nguyen nhan
+
+Ket qua temperature scaling:
+
+| Chi so | Khong temperature | Temperature scaling |
+|---|---:|---:|
+| Acc@task | 80.5329 | 80.5329 |
+| Acc@1 | 75.0731 | 75.0731 |
+| Acc@5 | 87.9394 | 87.9394 |
+| Loss | **1.2587** | 1.5400 |
+| Forgetting | 2.9413 | 2.9413 |
+| LoRA/mau | 5.4531 | 5.4531 |
+
+Temperature cua task 3--10 deu nam trong khoang `0.5548--0.7195`. Train calibration loss rat thap (`0.177--0.362`) nen chon `T < 1` va lam logits sac hon. Test kho hon train; khi du doan sai, confidence qua cao lam loss tang `0.2813`. Accuracy khong doi, dung voi tinh chat rank-preserving cua temperature scaling.
+
+ImageNet-R trong repository da duoc chia truc tiep thanh `80% train / 20% test`; checkpoint hoc toan bo phan train. Khong con validation split doc lap. Do do khong tiep tuc fit calibration tren train, va cung khong tune tren test de tranh test leakage.
+
+### 57.8. Uncertainty-aware probability smoothing
+
+Phuong phap thay the khong hoc tham so tu test:
+
+- Chi ap dung cho mau dung som tai Stage 1 hoac Stage 2.
+- He so smoothing bang `min(0.05, 0.5 * (1 - gate confidence))`.
+- Tron phan phoi du doan voi toi da `5%` phan phoi deu.
+- Mau exhaustive fallback giu nguyen.
+- Phep tron `p'=(1-epsilon)p+epsilon/C` bao toan thu tu moi lop, nen Acc@task, Acc@1, Acc@5, Forgetting va Backward khong doi.
+- Muc tieu la giam phat cua cac early-exit error qua tu tin va dua loss xuong duoi baseline `1.2305`.
