@@ -118,3 +118,33 @@ Nếu chạy R rank trên mỗi batch:
 - chế độ mean dùng trọng số 1/R cho mỗi rank.
 
 Đây là ablation một biến: CFS và semantic vẫn tắt. Mục tiêu là giữ phần tăng Acc@1 do alignment mang lại nhưng loại bỏ hiện tượng regularization mạnh dần ở các task cuối. Cấu hình mới được chạy bằng tùy chọn ctird_online_reduction=mean.
+
+## 10. Pilot CTIRD mean và phép thử ghép CFS
+
+Kết quả sau 3 task:
+
+| Cấu hình | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|
+| Baseline rank 8 | 89.1321 | 80.9782 | 93.7122 | 0.8372 | 2.8462 | -2.5128 |
+| CTIRD aligned mean | 89.2370 | 81.6272 | 93.7971 | 0.8184 | 2.6923 | -2.6923 |
+| Chênh lệch | +0.1049 | +0.6490 | +0.0849 | -0.0188 | -0.1539 | -0.1795 |
+
+CTIRD mean cải thiện 5/6 chỉ số. Backward giảm 0.1795 điểm nên ảnh hưởng trung bình lên task cũ vẫn xấu hơn baseline, dù chỉ số Forgetting tính theo độ giảm từ đỉnh tốt nhất lại thấp hơn. Hai chỉ số dùng mốc tham chiếu khác nhau nên không bắt buộc biến thiên ngược dấu tuyệt đối.
+
+Phép thử tiếp theo ghép CFS ở đúng giai đoạn classifier correction:
+
+- giữ CTIRD aligned mean trong giai đoạn học LoRA;
+- bật CFS paper-style để chọn pseudo-feature đa dạng;
+- giữ nguyên số mẫu và số bước CRCT như cấu hình mean-only;
+- không bật boundary replay, full replay, semantic, prototype hay exhaustive routing;
+- so sánh trực tiếp với log CTIRD mean cùng 3 task, không so với một cấu hình khác ngân sách.
+
+Các cờ CFS được dùng:
+
+- cfs_sampling;
+- cfs_epochs=20;
+- cfs_train_max_samples=1024;
+- cfs_candidate_multiplier=3;
+- cfs_paper_style;
+- cfs_selection_ratio=0.5;
+- cfs_selection_steps=5.

@@ -15,6 +15,13 @@ DATASETS_ROOT="${DATASETS_ROOT:-${WORK_ROOT}/datasets}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-${WORK_ROOT}/hrm-pet-output}"
 SEED="${SEED:-42}"
 GPUS="${GPUS:-1}"
+ENABLE_CFS="${ENABLE_CFS:-0}"
+if [[ "${ENABLE_CFS}" != "0" && "${ENABLE_CFS}" != "1" ]]; then
+  echo "ENABLE_CFS must be 0 or 1." >&2
+  exit 64
+fi
+METHOD_TAG="aligned_ctird_mean"
+[[ "${ENABLE_CFS}" == "1" ]] && METHOD_TAG="aligned_ctird_mean_cfs"
 
 if [[ -n "${DATA_PATH:-}" ]]; then
   IMR_DATA_PATH="${DATA_PATH}"
@@ -26,16 +33,30 @@ fi
 
 TII_DIR="${TII_DIR:-${OUTPUT_ROOT}/imr_tii_original_10tasks_seed${SEED}}"
 BASELINE_LOG="${BASELINE_LOG:-${OUTPUT_ROOT}/imr_lora_rank8_baseline_10tasks_seed${SEED}.log}"
+REFERENCE_LOG="${REFERENCE_LOG:-${BASELINE_LOG}}"
 MAX_TRAIN_TASKS=10
-RUN_NAME="${RUN_NAME_OVERRIDE:-imr_rank8_aligned_ctird_mean_10tasks_seed${SEED}}"
+RUN_NAME="${RUN_NAME_OVERRIDE:-imr_rank8_${METHOD_TAG}_10tasks_seed${SEED}}"
 
 if [[ "${MODE}" == "pilot" ]]; then
   MAX_TRAIN_TASKS="${PILOT_TASKS:-3}"
-  RUN_NAME="${RUN_NAME_OVERRIDE:-imr_rank8_aligned_ctird_mean_pilot${MAX_TRAIN_TASKS}_seed${SEED}}"
+  RUN_NAME="${RUN_NAME_OVERRIDE:-imr_rank8_${METHOD_TAG}_pilot${MAX_TRAIN_TASKS}_seed${SEED}}"
 fi
 
 OUTPUT_DIR="${OUTPUT_ROOT}/${RUN_NAME}"
 LOG_PATH="${OUTPUT_ROOT}/${RUN_NAME}.log"
+
+CFS_ARGS=()
+if [[ "${ENABLE_CFS}" == "1" ]]; then
+  CFS_ARGS+=(
+    --cfs_sampling
+    --cfs_epochs "${CFS_EPOCHS:-20}"
+    --cfs_train_max_samples "${CFS_TRAIN_MAX_SAMPLES:-1024}"
+    --cfs_candidate_multiplier "${CFS_CANDIDATE_MULTIPLIER:-3}"
+    --cfs_paper_style
+    --cfs_selection_ratio "${CFS_SELECTION_RATIO:-0.5}"
+    --cfs_selection_steps "${CFS_SELECTION_STEPS:-5}"
+  )
+fi
 
 if [[ ! -x "${PYTHON_BIN}" ]]; then
   echo "Python environment not found: ${PYTHON_BIN}" >&2
@@ -63,12 +84,12 @@ if [[ -s "${LOG_PATH}" ]]; then
   exit 4
 fi
 if [[ "${MODE}" == "pilot" ]]; then
-  if [[ ! -s "${BASELINE_LOG}" ]]; then
-    echo "Baseline log was not found: ${BASELINE_LOG}" >&2
+  if [[ ! -s "${REFERENCE_LOG}" ]]; then
+    echo "Reference log was not found: ${REFERENCE_LOG}" >&2
     exit 6
   fi
-  if ! grep -q "Average accuracy till task${MAX_TRAIN_TASKS}" "${BASELINE_LOG}"; then
-    echo "Baseline log has no comparable task-${MAX_TRAIN_TASKS} row." >&2
+  if ! grep -q "Average accuracy till task${MAX_TRAIN_TASKS}" "${REFERENCE_LOG}"; then
+    echo "Reference log has no comparable task-${MAX_TRAIN_TASKS} row." >&2
     exit 6
   fi
 fi
@@ -80,9 +101,13 @@ echo "Mode: ${MODE}"
 echo "Dataset: ${IMR_DATA_PATH}"
 echo "Output: ${OUTPUT_DIR}"
 echo "Method: rank-8 HRM-PET with online batch-aligned CTIRD"
-echo "Only method change: aligned top-K CTIRD with mean rank reduction"
-echo "Online CTIRD reduction: ${CTIRD_ONLINE_REDUCTION:-mean}"
-echo "CFS/semantic/prototype/exhaustive: disabled"
+echo "CTIRD: aligned top-K teachers with ${CTIRD_ONLINE_REDUCTION:-mean} reduction"
+if [[ "${ENABLE_CFS}" == "1" ]]; then
+  echo "CFS: paper-style core selection; matched CRCT replay budget"
+else
+  echo "CFS: disabled"
+fi
+echo "Semantic/prototype/exhaustive: disabled"
 
 PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --nproc_per_node="${GPUS}" \
@@ -114,6 +139,7 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --ctird_online_temperature "${CTIRD_ONLINE_TEMPERATURE:-1.0}" \
   --ctird_online_ranks_per_batch "${CTIRD_RANKS_PER_BATCH:-1}" \
   --ctird_online_reduction "${CTIRD_ONLINE_REDUCTION:-mean}" \
+  "${CFS_ARGS[@]}" \
   --output_dir "${OUTPUT_DIR}" \
   2>&1 | tee "${LOG_PATH}"
 
@@ -130,11 +156,11 @@ echo "Final metrics:"
 echo "${FINAL_ROW}"
 
 if [[ "${MODE}" == "pilot" ]]; then
-  if [[ ! -s "${BASELINE_LOG}" ]]; then
-    echo "Pilot completed, but baseline log was not found: ${BASELINE_LOG}" >&2
+  if [[ ! -s "${REFERENCE_LOG}" ]]; then
+    echo "Pilot completed, but reference log was not found: ${REFERENCE_LOG}" >&2
     exit 6
   fi
-  BASELINE_ROW=$(grep "Average accuracy till task${MAX_TRAIN_TASKS}" "${BASELINE_LOG}" | tail -n 1 || true)
+  BASELINE_ROW=$(grep "Average accuracy till task${MAX_TRAIN_TASKS}" "${REFERENCE_LOG}" | tail -n 1 || true)
   if [[ -z "${BASELINE_ROW}" || -z "${FINAL_ROW}" ]]; then
     echo "Could not find comparable task-${MAX_TRAIN_TASKS} rows." >&2
     exit 6
@@ -161,9 +187,9 @@ deltas = {name: metric(candidate, name) - metric(baseline, name)
 checks = {**{name: deltas[name] >= 0.0 for name in higher},
           **{name: deltas[name] <= 0.0 for name in lower}}
 
-print('Pilot baseline :', baseline)
+print('Pilot reference:', baseline)
 print('Pilot candidate:', candidate)
-print('Diagnostic multi-metric comparison:')
+print('Diagnostic multi-metric comparison against reference:')
 for name in higher + lower:
     direction = 'higher' if name in higher else 'lower'
     status = 'PASS' if checks[name] else 'FAIL'
