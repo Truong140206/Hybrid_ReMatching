@@ -2491,3 +2491,23 @@ old-class-only no con lam Acc@1/Acc@5 giam `0.0889` va retention xau hon
 `0.1333`. Ket luan: khong chay full va dung quet tham so cho huong dua CFS
 feature truc tiep vao CRCT. CFS lam replay cu manh hon nhung gay sai lech ranh
 gioi classifier tren du lieu that.
+
+### 59.5. Chan doan validation gate sau pilot
+
+Gate chon `alpha=1.0` o ca task 2 va task 3. Tren 1920/2880 Gaussian anchors,
+teacher va classifier sau CRCT deu dat 100% Acc@1, Acc@5 va task accuracy;
+classifier CFS chi co CE thap hon (`0.01648 -> 0.01383` va
+`0.03355 -> 0.02435`). Vi vay gate luon chon toan bo classifier CFS, mac du
+accuracy tren anh ImageNet-R that giam.
+
+Day la circular validation: CRCT hoc tren feature tong hop tu thong ke Gaussian
+va gate cung danh gia tren feature sinh tu chinh thong ke do. Cac anchor qua de
+va khong dai dien cho distribution gap den anh that. `worst_old_class_drop=0`
+vi ca hai classifier deu dat 100%, nen khong phai bang chung retention ngoai
+phan phoi tong hop.
+
+Huong kiem soat tiep theo, neu trien khai, la hybrid validation gate: dung tam
+thoi feature cua anh train task hien tai de bao ve learning/plasticity, va dung
+Gaussian anchors chi cho cac lop cu de bao ve retention. Feature task hien tai
+chi ton tai trong luc chon alpha va khong duoc luu vao checkpoint; khong doc hay
+luu anh/feature task cu, nen van rehearsal-free va strict exemplar-free.
