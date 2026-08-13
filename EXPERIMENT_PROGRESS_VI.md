@@ -2477,3 +2477,17 @@ Pilot tiep theo chi sua sai khac nay: CFS paper-style, selection ratio `0.5`, 5
 selection steps, contrastive model 200 epochs/batch 64 va moment preservation.
 Boundary/core replay, distribution filter, semantic va old-class-only deu tat.
 Giao thuc van strict exemplar-free.
+
+### 59.4. Ket qua pilot moment-preserving CFS
+
+Pilot task 3 dat Acc@task `88.9572`, Acc@1 `80.8620`, Acc@5 `93.5521`,
+Loss `0.8603`, Forgetting `2.3538`, Backward `-2.3538`. So voi baseline:
+Acc@task `-0.1749`, Acc@1 `-0.1162`, Acc@5 `-0.1601`, Loss `+0.0231`,
+Forgetting `-0.4924` va Backward `+0.1590`. Strict gate that bai.
+
+Ket qua nay bac bo gia thuyet rang thieu buoc phuc hoi mean/std la nguyen nhan
+chinh cua trade-off. Moment matching khong khoi phuc accuracy va loss; so voi
+old-class-only no con lam Acc@1/Acc@5 giam `0.0889` va retention xau hon
+`0.1333`. Ket luan: khong chay full va dung quet tham so cho huong dua CFS
+feature truc tiep vao CRCT. CFS lam replay cu manh hon nhung gay sai lech ranh
+gioi classifier tren du lieu that.
