@@ -2223,3 +2223,33 @@ De tach dong gop cua training-time Hybrid Real+CFS va inference-time Exhaustive,
 - Baseline + Exhaustive co Acc@5 cao hon, nhung kha nang duy tri task cu kem hon ro ret.
 - Ket hop Hybrid Real+CFS + Exhaustive la cau hinh can bang tot nhat cho continual learning: top-1 accuracy cao nhat, loss thap nhat, forgetting thap nhat va backward gan 0 nhat trong bang phan ra dong gop.
 - Trade-off chinh la inference tang tu mot adapter pass len toi da muoi adapter pass tai task cuoi.
+
+
+## 57. Calibrated progressive rematching va cascade-aware Stage 2
+
+### 57.1. Moc doi chung truoc khi sua Stage 2
+
+| Chi so | Ket qua |
+|---|---:|
+| Acc@task | 80.5149 |
+| Acc@1 | 75.0551 |
+| Acc@5 | 87.9225 |
+| Loss | 1.3975 |
+| Forgetting | 2.9435 |
+| Backward | -2.9036 |
+| Stage 1 dung sau 2 LoRA | 55.2782% |
+| Stage 2 dung sau 4 LoRA | 2.7509% |
+| Chay du tat ca LoRA | 41.9709% |
+| LoRA trung binh moi mau | 5.4127 |
+
+Ban nay giam `45.87%` so luot chay LoRA so voi exhaustive 10 LoRA, trong khi Acc@1 chi thap hon exhaustive `0.1247` diem. Tuy nhien Stage 2 dung qua it va loss tang tu `1.0809` len `1.3975`.
+
+### 57.2. Nguyen nhan va thay doi moi
+
+- Gate Stage 2 cu duoc hoc tren tat ca mau calibration, nhung khi inference no chi nhan nhom mau kho ma Stage 1 da tu choi. Day la lech phan phoi train-inference.
+- Sua theo cascade: hoc Stage 1 truoc, dung quyet dinh Stage 1 de lay residual set, sau do moi hoc Stage 2 tren residual set nay.
+- Dam bao moi lop con toi thieu 4 hard samples de phep chia train/calibration/report van hop le.
+- Giu target precision doc lap `99.5%`; khong ha hang rao an toan de doi lay coverage.
+- Giam excluded-logit margin tu `20` xuong `8`. Top-1 va top-5 trong cac lop da cham khong doi, nhung mot loi halt hiem hoi khong con tao cross-entropy qua lon.
+
+Ket qua cua bien the cascade-aware Stage 2 dang cho danh gia tren RTX 4090. Can so sanh truc tiep Stage2Stop, LoRA/sample, Acc@1, Acc@5, Loss va Forgetting voi moc tai muc 57.1.

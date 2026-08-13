@@ -260,6 +260,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--progressive_gate_target_precision', default=0.995, type=float)
     subparsers.add_argument('--progressive_gate_min_coverage', default=0.02, type=float)
     subparsers.add_argument('--progressive_gate_loss_tolerance', default=0.05, type=float)
+    subparsers.add_argument('--progressive_gate_stage2_min_samples_per_class', default=4, type=int)
     subparsers.add_argument('--progressive_rematching', action='store_true', help='evaluate LoRAs in TII-ranked stages and expand uncertain samples to exhaustive')
     subparsers.add_argument('--progressive_initial_candidates', default=2, type=int)
     subparsers.add_argument('--progressive_intermediate_candidates', default=4, type=int)

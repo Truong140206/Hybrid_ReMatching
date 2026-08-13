@@ -135,7 +135,10 @@ def train(args):
                         'report_precision/coverage=',
                         stats['report_precision'] * 100.0,
                         stats['report_coverage'] * 100.0,
-                        'threshold=', stats['threshold'])
+                        'threshold=', stats['threshold'],
+                        'cascade_samples/rate=',
+                        stats.get('cascade_samples', stats['samples']),
+                        stats.get('cascade_candidate_rate', 1.0) * 100.0)
             elif distilled_router_enabled:
                 print('Training exhaustive-teacher top-k router for task', task_id + 1)
                 distilled_router, router_stats = train_distilled_task_router(

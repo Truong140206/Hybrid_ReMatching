@@ -268,13 +268,16 @@ def _collect_gate_dataset(model, original_model, data_loader_per_cls,
                     full_logits, targets, reduction='none')
                 loss_tolerance = max(0.0, float(getattr(
                     args, 'progressive_gate_loss_tolerance', 0.05)))
+                excluded_margin = max(1.0, float(getattr(
+                    args, 'progressive_excluded_logit_margin', 20.0)))
                 for boundary in (2, 4):
                     effective = min(boundary, seen_task_count)
                     stage_features[boundary].append(_stage_features(
                         tii_prior, sorted_tii_scores, task_evidence,
                         class_margins, effective).cpu())
                     partial_logits = _finalize_partial_logits(
-                        rank_logits[:, :effective].max(dim=1).values)
+                        rank_logits[:, :effective].max(dim=1).values,
+                        excluded_margin)
                     partial_top5_correct = torch.topk(
                         partial_logits, k=min(5, partial_logits.shape[1]), dim=1
                     ).indices.eq(targets.unsqueeze(1)).any(dim=1)
@@ -299,6 +302,38 @@ def _collect_gate_dataset(model, original_model, data_loader_per_cls,
     }
 
 
+def _cascade_stage2_mask(stage1_gate, stage1_features, class_targets,
+                         minimum_per_class=4):
+    if stage1_gate is None or stage1_gate.threshold is None:
+        return torch.ones(
+            stage1_features.shape[0], dtype=torch.bool,
+            device=stage1_features.device)
+
+    gate_device = stage1_gate.feature_mean.device
+    with torch.no_grad():
+        features = stage1_features.to(gate_device)
+        normalized = (
+            features - stage1_gate.feature_mean) / stage1_gate.feature_std
+        halt_probability = torch.sigmoid(
+            stage1_gate(normalized)).detach().cpu()
+    class_targets_cpu = class_targets.detach().cpu()
+    selected = halt_probability.lt(float(stage1_gate.threshold))
+    minimum_per_class = max(2, int(minimum_per_class))
+
+    # Stage 2 sees the hard residual from Stage 1. Keep a small hard subset
+    # from every class so the class-stratified train/report split stays valid.
+    for class_id in torch.unique(class_targets_cpu).tolist():
+        class_index = torch.nonzero(
+            class_targets_cpu == int(class_id), as_tuple=False).flatten()
+        required = min(minimum_per_class, class_index.numel())
+        if int(selected.index_select(0, class_index).sum().item()) >= required:
+            continue
+        hard_order = torch.argsort(
+            halt_probability.index_select(0, class_index))
+        selected[class_index.index_select(0, hard_order[:required])] = True
+    return selected.to(stage1_features.device)
+
+
 def train_progressive_halting_gates(model, original_model,
                                     data_loader_per_cls, class_mask,
                                     seen_task_count, args, device):
@@ -309,13 +344,25 @@ def train_progressive_halting_gates(model, original_model,
         seen_task_count, args, device)
     gates = {}
     stats = {}
-    for boundary in (2, 4):
-        if boundary >= seen_task_count:
-            continue
-        features, labels, class_targets = datasets[boundary]
-        gates[boundary], stats[boundary] = _fit_gate(
-            features, labels, class_targets, args, device,
-            seen_task_count * 10 + boundary)
+    stage1_features, stage1_labels, class_targets = datasets[2]
+    gates[2], stats[2] = _fit_gate(
+        stage1_features, stage1_labels, class_targets, args, device,
+        seen_task_count * 10 + 2)
+
+    if seen_task_count > 4:
+        stage2_features, stage2_labels, stage2_targets = datasets[4]
+        stage2_mask = _cascade_stage2_mask(
+            gates[2], stage1_features, class_targets,
+            getattr(args, 'progressive_gate_stage2_min_samples_per_class', 4))
+        stage2_features = stage2_features[stage2_mask]
+        stage2_labels = stage2_labels[stage2_mask]
+        stage2_targets = stage2_targets[stage2_mask]
+        gates[4], stats[4] = _fit_gate(
+            stage2_features, stage2_labels, stage2_targets, args, device,
+            seen_task_count * 10 + 4)
+        stats[4]['cascade_samples'] = int(stage2_mask.sum().item())
+        stats[4]['cascade_candidate_rate'] = float(
+            stage2_mask.float().mean().item())
     return gates, stats
 
 

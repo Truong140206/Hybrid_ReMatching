@@ -10,6 +10,8 @@ OUTPUT_ROOT="${OUTPUT_ROOT:-${WORK_ROOT}/hrm-pet-output}"
 RUN_DIR="${1:-}"
 SAMPLES_PER_CLASS="${2:-12}"
 TARGET_PRECISION="${3:-0.995}"
+EXCLUDED_LOGIT_MARGIN="${EXCLUDED_LOGIT_MARGIN:-8.0}"
+STAGE2_MIN_SAMPLES_PER_CLASS="${STAGE2_MIN_SAMPLES_PER_CLASS:-4}"
 TII_DIR="${TII_DIR:-${OUTPUT_ROOT}/imr_tii_original_10tasks_seed42}"
 
 if [[ -z "${RUN_DIR}" ]]; then
@@ -46,7 +48,8 @@ tag_value() {
 
 RUN_BASENAME="$(basename "${RUN_DIR}")"
 PRECISION_TAG="$(tag_value "${TARGET_PRECISION}")"
-LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_calibrated_progressive_s${SAMPLES_PER_CLASS}_q${PRECISION_TAG}.log"
+MARGIN_TAG="$(tag_value "${EXCLUDED_LOGIT_MARGIN}")"
+LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_calibrated_progressive_cascade_s${SAMPLES_PER_CLASS}_q${PRECISION_TAG}_m${MARGIN_TAG}.log"
 if [[ -s "${LOG_PATH}" ]]; then
   echo "Refusing to overwrite existing evaluation log: ${LOG_PATH}" >&2
   exit 3
@@ -56,6 +59,7 @@ cd "${REPO_ROOT}"
 echo "Train-calibrated progressive rematching: 2 -> 4 -> all seen LoRAs"
 echo "Calibration uses only train images; test images never tune the gates."
 echo "Run=${RUN_DIR}; samples/class=${SAMPLES_PER_CLASS}; target precision=${TARGET_PRECISION}"
+echo "Stage-2 calibration is conditioned on Stage-1 rejects; excluded-logit margin=${EXCLUDED_LOGIT_MARGIN}"
 
 START_TIME="$(date +%s)"
 PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
@@ -84,12 +88,14 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --calibrated_progressive_rematching \
   --progressive_gate_samples_per_class "${SAMPLES_PER_CLASS}" \
   --progressive_gate_target_precision "${TARGET_PRECISION}" \
+  --progressive_gate_stage2_min_samples_per_class "${STAGE2_MIN_SAMPLES_PER_CLASS}" \
   --progressive_gate_min_coverage 0.02 \
   --progressive_gate_validation_ratio 0.25 \
   --progressive_gate_epochs 60 \
   --progressive_gate_patience 10 \
   --progressive_tii_prior_weight 0.3 \
   --progressive_logit_temperature 1.0 \
+  --progressive_excluded_logit_margin "${EXCLUDED_LOGIT_MARGIN}" \
   --eval \
   --output_dir "${RUN_DIR}" \
   2>&1 | tee "${LOG_PATH}"
