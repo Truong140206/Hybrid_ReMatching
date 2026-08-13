@@ -56,15 +56,112 @@ def compute_relation_matrix(features):
     return F.softmax(similarities, dim=1)
 
 
+def compute_ctird_semantic_task_scores(targets, class_mask, num_old_tasks,
+                                       args, device):
+    """Score old tasks by text similarity to each current class label."""
+    if targets is None:
+        return None
+    class_names = getattr(args, 'class_names', None)
+    if not class_names:
+        return None
+
+    class_names = utils.resolve_semantic_class_names(class_names, args)
+    semantic_dim = max(1, int(getattr(args, 'semantic_dim', 512)))
+    embeddings = utils.build_semantic_class_embeddings(
+        class_names, device, dim=semantic_dim, args=args)
+    if embeddings is None:
+        return None
+
+    targets = targets.long().to(device)
+    if targets.numel() == 0 or targets.min().item() < 0:
+        return None
+    if targets.max().item() >= embeddings.shape[0]:
+        return None
+
+    target_embeddings = embeddings.index_select(0, targets)
+    task_scores = []
+    for task_idx in range(num_old_tasks):
+        class_ids = torch.as_tensor(
+            class_mask[task_idx], dtype=torch.long, device=device)
+        class_embeddings = embeddings.index_select(0, class_ids)
+        similarities = torch.mm(target_embeddings, class_embeddings.t())
+        keep = min(3, similarities.shape[1])
+        task_scores.append(
+            torch.topk(similarities, k=keep, dim=1).values.mean(dim=1))
+    return torch.stack(task_scores, dim=1)
+
+
+def fuse_ctird_task_scores(task_scores, semantic_scores,
+                           max_semantic_weight=0.1,
+                           confidence_margin=0.15,
+                           semantic_temperature=0.1,
+                           return_weight=False):
+    """Use semantics only when the TII old-task decision is ambiguous."""
+    task_probabilities = F.softmax(task_scores.float(), dim=1)
+    if task_probabilities.shape[1] < 2:
+        semantic_weight = task_probabilities.new_zeros(
+            task_probabilities.shape[0])
+        if return_weight:
+            return task_probabilities, semantic_weight
+        return task_probabilities
+
+    semantic_temperature = max(float(semantic_temperature), 1e-6)
+    semantic_probabilities = F.softmax(
+        semantic_scores.float() / semantic_temperature, dim=1)
+    top_two = torch.topk(
+        task_probabilities, k=2, dim=1, largest=True).values
+    observed_margin = top_two[:, 0] - top_two[:, 1]
+    confidence_margin = max(float(confidence_margin), 1e-6)
+    uncertainty = (
+        (confidence_margin - observed_margin) / confidence_margin
+    ).clamp(0.0, 1.0)
+    max_semantic_weight = min(
+        1.0, max(0.0, float(max_semantic_weight)))
+    semantic_weight = max_semantic_weight * uncertainty
+    fused = (
+        (1.0 - semantic_weight.unsqueeze(1)) * task_probabilities
+        + semantic_weight.unsqueeze(1) * semantic_probabilities
+    )
+    if return_weight:
+        return fused, semantic_weight
+    return fused
+
+
 def select_ctird_source_tasks(logits, class_mask, num_old_tasks, top_k,
-                              temperature=1.0):
-    """Select unique old tasks by aggregate TII class probability mass."""
+                              temperature=1.0, targets=None, args=None,
+                              return_diagnostics=False):
+    """Select unique old tasks using TII and gated semantic evidence."""
     count = min(int(num_old_tasks), int(top_k))
     if count <= 0:
         return None
     task_scores = compute_task_energy_scores(
         logits, class_mask, num_old_tasks, temperature=temperature)
-    return torch.topk(task_scores, k=count, dim=1, largest=True).indices
+    base_selection = torch.topk(
+        task_scores, k=count, dim=1, largest=True).indices
+    semantic_weight = task_scores.new_zeros(task_scores.shape[0])
+    if bool(getattr(args, 'ctird_semantic_selection', False)):
+        semantic_scores = compute_ctird_semantic_task_scores(
+            targets, class_mask, num_old_tasks, args, logits.device)
+        if semantic_scores is not None:
+            task_scores, semantic_weight = fuse_ctird_task_scores(
+                task_scores,
+                semantic_scores,
+                max_semantic_weight=getattr(args, 'ctird_semantic_weight', 0.1),
+                confidence_margin=getattr(args, 'ctird_semantic_margin', 0.15),
+                semantic_temperature=getattr(
+                    args, 'ctird_semantic_temperature', 0.1),
+                return_weight=True,
+            )
+    selection = torch.topk(
+        task_scores, k=count, dim=1, largest=True).indices
+    if return_diagnostics:
+        changed = (selection != base_selection).any(dim=1).float()
+        diagnostics = {
+            'semantic_weight': float(semantic_weight.mean().item()),
+            'changed_rate': float(changed.mean().item()),
+        }
+        return selection, diagnostics
+    return selection
 
 
 def online_ctird_rank_weight(num_selected_tasks, evaluated_ranks,
@@ -225,9 +322,20 @@ def train_one_epoch(model: torch.nn.Module, original_model: torch.nn.Module,
         if task_id>0:
             m = min(task_id, args.K)
             if online_aligned_ctird:
-                top5_id = select_ctird_source_tasks(
+                semantic_diagnostics = bool(
+                    getattr(args, 'ctird_semantic_selection', False))
+                selection_result = select_ctird_source_tasks(
                     temp, class_mask, task_id, m,
-                    temperature=getattr(args, 'ctird_online_temperature', 1.0))
+                    temperature=getattr(args, 'ctird_online_temperature', 1.0),
+                    targets=target, args=args,
+                    return_diagnostics=semantic_diagnostics)
+                if semantic_diagnostics:
+                    top5_id, semantic_stats = selection_result
+                    metric_logger.update(
+                        SemWeight=semantic_stats['semantic_weight'],
+                        SemChange=semantic_stats['changed_rate'])
+                else:
+                    top5_id = selection_result
             else:
                 probabilities = temp[:,:task_id*len(class_mask[0])]
                 ctird_selection = str(getattr(args, 'ctird_task_selection', 'legacy')).lower()

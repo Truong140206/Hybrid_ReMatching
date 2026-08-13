@@ -2,6 +2,7 @@ import torch
 
 from engines.hrm_lora_wtp_and_tap_engine import (
     compute_relation_matrix,
+    fuse_ctird_task_scores,
     online_ctird_rank_weight,
     select_ctird_source_tasks,
 )
@@ -52,3 +53,30 @@ def test_online_ctird_rank_weight_supports_sum_and_mean_reductions():
     assert online_ctird_rank_weight(5, 2, reduction='sum') == 2.5
     assert online_ctird_rank_weight(5, 1, reduction='mean') == 1.0
     assert online_ctird_rank_weight(5, 2, reduction='mean') == 0.5
+
+
+def test_semantic_fusion_is_disabled_for_confident_tii_scores():
+    task_scores = torch.tensor([[5.0, 0.0]])
+    semantic_scores = torch.tensor([[0.0, 5.0]])
+
+    fused = fuse_ctird_task_scores(
+        task_scores, semantic_scores,
+        max_semantic_weight=0.2,
+        confidence_margin=0.15,
+        semantic_temperature=1.0)
+
+    assert torch.allclose(fused, torch.softmax(task_scores, dim=1))
+
+
+def test_semantic_fusion_only_breaks_ambiguous_tii_ties():
+    task_scores = torch.tensor([[0.0, 0.0]])
+    semantic_scores = torch.tensor([[0.0, 2.0]])
+
+    fused = fuse_ctird_task_scores(
+        task_scores, semantic_scores,
+        max_semantic_weight=0.2,
+        confidence_margin=0.15,
+        semantic_temperature=1.0)
+
+    assert torch.allclose(fused.sum(dim=1), torch.ones(1))
+    assert fused[0, 1] > fused[0, 0]

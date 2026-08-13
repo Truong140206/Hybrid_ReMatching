@@ -179,3 +179,39 @@ Quyết định thực nghiệm:
 - giữ CTIRD aligned mean là ứng viên hiện tại;
 - coi CFS paper-style là ablation âm trên ImageNet-R;
 - chỉ thử lại CFS nếu có thay đổi về nguyên lý chọn mẫu, ví dụ ràng buộc class-consistency bằng classifier hoặc dùng feature thật để xác thực, thay vì chỉ đổi hệ số CFS.
+
+## 12. Kết quả CTIRD mean task 5 và sparse semantic CTIRD
+
+Kết quả CTIRD aligned mean sau 5 task:
+
+| Cấu hình | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|
+| Baseline rank 8 | 83.9900 | 78.3623 | 91.4095 | 0.9677 | 2.4002 | -2.2335 |
+| CTIRD aligned mean K=5 | 83.9156 | 78.7027 | 90.5810 | 0.9708 | 2.4026 | -2.4026 |
+| Mean K=5 trừ baseline | -0.0744 | +0.3404 | -0.8285 | +0.0031 | +0.0024 | -0.1691 |
+
+So với CTIRD aligned sum K=5 ở task 5, mean reduction cải thiện rõ khả năng giữ kiến thức:
+
+- Forgetting: 3.0679 xuống 2.4026;
+- Backward: -3.0346 lên -2.4026;
+- Acc@1: 78.3450 lên 78.7027;
+- Loss: 0.9765 xuống 0.9708.
+
+Như vậy mean reduction đã sửa hiện tượng tổng lực CTIRD tăng theo K. Tuy nhiên, Acc@5 vẫn thấp hơn baseline 0.8285 điểm. Vấn đề còn lại là chất lượng teacher/relation chứ không chỉ cường độ loss.
+
+Một phát hiện quan trọng: ở task 5 có 4 task cũ, trong khi K=5, nên CTIRD chọn toàn bộ 4 teacher. Xếp hạng semantic với K=5 không thể loại teacher nhiễu. Ablation tiếp theo vì vậy dùng sparse semantic CTIRD:
+
+1. Giảm K từ 5 xuống 2.
+2. TII vẫn là tín hiệu chọn teacher chính.
+3. Dùng CLIP text embedding với ánh xạ synset ImageNet-R sang tên lớp thật.
+4. Semantic chỉ tham gia khi chênh lệch xác suất giữa hai task TII đứng đầu nhỏ hơn margin 0.15.
+5. Trọng số semantic tối đa là 0.10.
+6. Chỉ semantic teacher selection được bật; semantic relation loss, semantic projection, CFS và các router đều tắt.
+7. Giữ mean reduction để tổng cường độ CTIRD không tăng theo số task.
+
+Log bổ sung hai chỉ số:
+
+- SemWeight: trọng số semantic trung bình thực tế sau confidence gate;
+- SemChange: tỷ lệ sample/batch mà semantic làm thay đổi top-K teacher so với TII thuần.
+
+Mục tiêu là giữ mức tăng Acc@1 của CTIRD, loại các teacher ít liên quan để phục hồi Acc@5 và Backward. Đây là áp dụng ý tưởng semantic-aware vào đúng nơi phát sinh nhiễu, không dịch chuyển feature và không tăng chi phí suy luận.

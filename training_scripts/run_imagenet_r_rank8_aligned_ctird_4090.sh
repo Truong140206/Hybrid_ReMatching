@@ -16,12 +16,22 @@ OUTPUT_ROOT="${OUTPUT_ROOT:-${WORK_ROOT}/hrm-pet-output}"
 SEED="${SEED:-42}"
 GPUS="${GPUS:-1}"
 ENABLE_CFS="${ENABLE_CFS:-0}"
+ENABLE_SEMANTIC_SELECTION="${ENABLE_SEMANTIC_SELECTION:-0}"
 if [[ "${ENABLE_CFS}" != "0" && "${ENABLE_CFS}" != "1" ]]; then
   echo "ENABLE_CFS must be 0 or 1." >&2
   exit 64
 fi
+if [[ "${ENABLE_SEMANTIC_SELECTION}" != "0" && "${ENABLE_SEMANTIC_SELECTION}" != "1" ]]; then
+  echo "ENABLE_SEMANTIC_SELECTION must be 0 or 1." >&2
+  exit 64
+fi
+if [[ "${ENABLE_CFS}" == "1" && "${ENABLE_SEMANTIC_SELECTION}" == "1" ]]; then
+  echo "Evaluate CFS and semantic teacher selection separately." >&2
+  exit 64
+fi
 METHOD_TAG="aligned_ctird_mean"
 [[ "${ENABLE_CFS}" == "1" ]] && METHOD_TAG="aligned_ctird_mean_cfs"
+[[ "${ENABLE_SEMANTIC_SELECTION}" == "1" ]] && METHOD_TAG="sparse_semantic_ctird_mean"
 
 if [[ -n "${DATA_PATH:-}" ]]; then
   IMR_DATA_PATH="${DATA_PATH}"
@@ -58,9 +68,36 @@ if [[ "${ENABLE_CFS}" == "1" ]]; then
   )
 fi
 
+CTIRD_TOP_K_VALUE="${CTIRD_TOP_K:-5}"
+SEMANTIC_ARGS=()
+if [[ "${ENABLE_SEMANTIC_SELECTION}" == "1" ]]; then
+  CTIRD_TOP_K_VALUE="${CTIRD_TOP_K:-2}"
+  SEMANTIC_ARGS+=(
+    --ctird_semantic_selection
+    --ctird_semantic_weight "${CTIRD_SEMANTIC_WEIGHT:-0.10}"
+    --ctird_semantic_temperature "${CTIRD_SEMANTIC_TEMPERATURE:-0.10}"
+    --ctird_semantic_margin "${CTIRD_SEMANTIC_MARGIN:-0.15}"
+    --semantic_backend clip
+    --semantic_clip_model "${SEMANTIC_CLIP_MODEL:-ViT-B-16}"
+    --semantic_clip_pretrained "${SEMANTIC_CLIP_PRETRAINED:-openai}"
+    --semantic_class_name_file "${REPO_ROOT}/configs/imagenet_class_names.json"
+  )
+fi
+
 if [[ ! -x "${PYTHON_BIN}" ]]; then
   echo "Python environment not found: ${PYTHON_BIN}" >&2
   exit 2
+fi
+if [[ "${ENABLE_SEMANTIC_SELECTION}" == "1" ]]; then
+  if [[ ! -s "${REPO_ROOT}/configs/imagenet_class_names.json" ]]; then
+    echo "ImageNet class-name mapping is missing." >&2
+    exit 2
+  fi
+  if ! "${PYTHON_BIN}" -c "import open_clip" >/dev/null 2>&1; then
+    echo "open_clip_torch is required for semantic teacher selection." >&2
+    echo "Install it with: .venv/bin/python -m pip install open_clip_torch" >&2
+    exit 2
+  fi
 fi
 if [[ ! -d "${IMR_DATA_PATH}/imagenet-r" && ! -f "${IMR_DATA_PATH}/imagenet-r.tar" ]]; then
   echo "ImageNet-R was not found under: ${IMR_DATA_PATH}" >&2
@@ -101,13 +138,18 @@ echo "Mode: ${MODE}"
 echo "Dataset: ${IMR_DATA_PATH}"
 echo "Output: ${OUTPUT_DIR}"
 echo "Method: rank-8 HRM-PET with online batch-aligned CTIRD"
-echo "CTIRD: aligned top-K teachers with ${CTIRD_ONLINE_REDUCTION:-mean} reduction"
+echo "CTIRD: aligned top-${CTIRD_TOP_K_VALUE} teachers with ${CTIRD_ONLINE_REDUCTION:-mean} reduction"
 if [[ "${ENABLE_CFS}" == "1" ]]; then
   echo "CFS: paper-style core selection; matched CRCT replay budget"
 else
   echo "CFS: disabled"
 fi
-echo "Semantic/prototype/exhaustive: disabled"
+if [[ "${ENABLE_SEMANTIC_SELECTION}" == "1" ]]; then
+  echo "Semantic: confidence-gated CLIP teacher selection only"
+else
+  echo "Semantic teacher selection: disabled"
+fi
+echo "Semantic relation/projection and prototype/exhaustive: disabled"
 
 PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --nproc_per_node="${GPUS}" \
@@ -127,7 +169,7 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --lora_rank 8 \
   --En gen \
   --tau -10 \
-  --K "${CTIRD_TOP_K:-5}" \
+  --K "${CTIRD_TOP_K_VALUE}" \
   --sched cosine \
   --dataset Split-Imagenet-R \
   --lora_momentum 0.4 \
@@ -140,6 +182,7 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --ctird_online_ranks_per_batch "${CTIRD_RANKS_PER_BATCH:-1}" \
   --ctird_online_reduction "${CTIRD_ONLINE_REDUCTION:-mean}" \
   "${CFS_ARGS[@]}" \
+  "${SEMANTIC_ARGS[@]}" \
   --output_dir "${OUTPUT_DIR}" \
   2>&1 | tee "${LOG_PATH}"
 
