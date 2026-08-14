@@ -57,3 +57,27 @@ def soft_mixture_adapter_rematching(
             batch_size, dtype=torch.float32, device=device),
     }
     return merged_logits, routed_tasks, diagnostics
+
+
+@torch.no_grad()
+def soft_mixture_hard_adapter_rematching(
+        model, inputs, tii_logits, class_mask, seen_task_count, args):
+    """Route with a soft LoRA mixture, then classify with one hard LoRA."""
+    _, routed_tasks, diagnostics = soft_mixture_adapter_rematching(
+        model, inputs, tii_logits, class_mask, seen_task_count, args)
+
+    hard_output = model(inputs, task_id=routed_tasks)
+    hard_logits = hard_output['logits'] / max(
+        1e-6, float(getattr(args, 'soft_mixture_logit_temperature', 1.0)))
+    merged_logits = torch.full_like(tii_logits, float('-inf'))
+    seen_classes = []
+    for task_index in range(seen_task_count):
+        seen_classes.extend(class_mask[task_index])
+    seen_index = torch.as_tensor(
+        seen_classes, dtype=torch.long, device=inputs.device)
+    merged_logits[:, seen_index] = hard_logits.index_select(1, seen_index)
+
+    diagnostics = dict(diagnostics)
+    diagnostics['lora_counts'] = diagnostics['lora_counts'] + 1.0
+    diagnostics['forward_calls'] = diagnostics['forward_calls'] + 1.0
+    return merged_logits, routed_tasks, diagnostics

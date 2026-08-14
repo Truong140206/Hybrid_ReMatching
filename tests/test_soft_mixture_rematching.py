@@ -3,7 +3,10 @@ from types import SimpleNamespace
 import torch
 from torch import nn
 
-from engines.soft_mixture_rematching import soft_mixture_adapter_rematching
+from engines.soft_mixture_rematching import (
+    soft_mixture_adapter_rematching,
+    soft_mixture_hard_adapter_rematching,
+)
 from vits.hrm_lora_vision_transformer import Attention
 
 
@@ -13,9 +16,16 @@ class RecordingModel(nn.Module):
         self.call_count = 0
         self.last_tasks = None
         self.last_weights = None
+        self.hard_tasks = None
 
-    def forward(self, inputs, task_id, ensemble_id, ensemble_weights):
+    def forward(
+            self, inputs, task_id, ensemble_id=None, ensemble_weights=None):
         self.call_count += 1
+        if ensemble_id is None:
+            self.hard_tasks = task_id.detach().clone()
+            task_signal = task_id.to(inputs.dtype).unsqueeze(1)
+            logits = torch.cat([inputs + task_signal] * 4, dim=1)
+            return {'logits': logits}
         self.last_tasks = ensemble_id.detach().clone()
         self.last_weights = ensemble_weights.detach().clone()
         task_signal = (ensemble_id.to(inputs.dtype) * ensemble_weights).sum(
@@ -89,3 +99,27 @@ def test_attention_applies_per_sample_convex_lora_weights():
     )
 
     assert torch.allclose(output, torch.full_like(output, 1.75), atol=1e-6)
+
+
+def test_soft_mixture_hard_classification_uses_selected_lora_second():
+    model = RecordingModel().eval()
+    inputs = torch.tensor([[0.2], [-0.4]])
+    tii_logits = torch.tensor([
+        [0.2, 0.1, 1.0, 0.8, 100.0],
+        [1.1, 0.7, 0.0, -0.2, 100.0],
+    ])
+    class_mask = [[0, 1], [2, 3]]
+
+    logits, routed_tasks, diagnostics = (
+        soft_mixture_hard_adapter_rematching(
+            model, inputs, tii_logits, class_mask, 2, _args()))
+
+    assert model.call_count == 2
+    assert torch.equal(model.hard_tasks, routed_tasks)
+    assert diagnostics['lora_counts'].tolist() == [3.0, 3.0]
+    assert diagnostics['forward_calls'].tolist() == [2.0, 2.0]
+    assert torch.isfinite(logits[:, :4]).all()
+    assert torch.isneginf(logits[:, 4]).all()
+    expected = inputs + routed_tasks.to(inputs.dtype).unsqueeze(1)
+    expected = expected.expand(-1, 4)
+    assert torch.allclose(logits[:, :4], expected)

@@ -250,6 +250,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--vectorized_exhaustive_rematching', action='store_true', help='preserve exhaustive scoring while batching multiple task LoRAs in each model call')
     subparsers.add_argument('--vectorized_exhaustive_task_chunk_size', default=4, type=int)
     subparsers.add_argument('--soft_mixture_rematching', action='store_true', help='mix TII top-k LoRA residuals by normalized task posterior in one forward pass')
+    subparsers.add_argument('--soft_mixture_hard_rematching', action='store_true', help='route with a soft LoRA mixture, then classify with the selected hard LoRA')
     subparsers.add_argument('--soft_mixture_top_k', default=4, type=int)
     subparsers.add_argument('--soft_mixture_task_temperature', default=1.0, type=float)
     subparsers.add_argument('--soft_mixture_logit_temperature', default=1.0, type=float)

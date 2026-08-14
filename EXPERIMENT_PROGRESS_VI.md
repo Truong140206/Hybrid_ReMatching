@@ -29,6 +29,18 @@
   mixture giu task evidence nhung lam mo class evidence cua tung LoRA.
 - Ket luan: efficiency gate PASS, quality gate FAIL; khong quet temperature.
 
+### Thi nghiem soft-route/hard-classify
+
+- Chan doan tu soft-mixture: task evidence va retention tot hon, nhung convex
+  LoRA mixture lam mo class evidence nen Acc@1 giam.
+- Thay doi duy nhat: luot 1 van dung top-4 mixture de chon task; luot 2 chay
+  rieng LoRA cua task da chon va dung logits cua LoRA cung de phan loai tren
+  toan bo lop da hoc.
+- Khong ep logits vao 20 lop cua routed task, vi nhu vay Acc@5 se bi gioi han
+  boi routing accuracy. Khong hoc router, khong du lieu cu, khong tuning.
+- Chi phi dat truoc: `LoRA/sample=5`, `ForwardCalls/sample=2`, van thap hon
+  vectorized exhaustive (`10` va `3`). Chua co ket qua ImageNet-R.
+
 # Ti?n d? th� nghi?m HRM-PET + CFS + Semantic
 
 ## 1. M?c ti�u

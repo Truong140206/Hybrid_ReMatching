@@ -18,7 +18,10 @@ from torch import optim
 import utils
 from engines.exhaustive_rematching import exhaustive_adapter_rematching
 from engines.vectorized_exhaustive_rematching import vectorized_exhaustive_adapter_rematching
-from engines.soft_mixture_rematching import soft_mixture_adapter_rematching
+from engines.soft_mixture_rematching import (
+    soft_mixture_adapter_rematching,
+    soft_mixture_hard_adapter_rematching,
+)
 from engines.hierarchical_rematching import hierarchical_adapter_rematching
 from engines.budgeted_rematching import budgeted_exhaustive_fallback
 from engines.progressive_rematching import progressive_adapter_rematching
@@ -725,9 +728,13 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     n=input.shape[0])
                 continue
 
-            if bool(getattr(args, 'soft_mixture_rematching', False)):
+            if (bool(getattr(args, 'soft_mixture_rematching', False))
+                    or bool(getattr(args, 'soft_mixture_hard_rematching', False))):
+                mixture_function = soft_mixture_adapter_rematching
+                if bool(getattr(args, 'soft_mixture_hard_rematching', False)):
+                    mixture_function = soft_mixture_hard_adapter_rematching
                 logits, prompt_id, mixture_diagnostics = (
-                    soft_mixture_adapter_rematching(
+                    mixture_function(
                         model=model,
                         inputs=input,
                         tii_logits=old_logits,
@@ -1123,11 +1130,14 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
             'ForwardCalls/sample {calls.global_avg:.3f}'
             .format(cost=metric_logger.meters['LoRA/sample'],
                     calls=metric_logger.meters['ForwardCalls/sample']))
-    if bool(getattr(args, 'soft_mixture_rematching', False)):
+    if (bool(getattr(args, 'soft_mixture_rematching', False))
+            or bool(getattr(args, 'soft_mixture_hard_rematching', False))):
+        mixture_name = 'SoftHard' if bool(getattr(
+            args, 'soft_mixture_hard_rematching', False)) else 'SoftMixture'
         print(
-            '* SoftMixture LoRA/sample {cost.global_avg:.3f} '
+            '* {name} LoRA/sample {cost.global_avg:.3f} '
             'ForwardCalls/sample {calls.global_avg:.3f}'
-            .format(cost=metric_logger.meters['LoRA/sample'],
+            .format(name=mixture_name, cost=metric_logger.meters['LoRA/sample'],
                     calls=metric_logger.meters['ForwardCalls/sample']))
     if bool(getattr(args, 'calibrated_progressive_rematching', False)):
         print(
@@ -1196,7 +1206,8 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         if bool(getattr(args, 'vectorized_exhaustive_rematching', False)):
             stat_matrix[28, i] = test_stats.get('LoRA/sample', 0.0)
             stat_matrix[29, i] = test_stats.get('ForwardCalls/sample', 0.0)
-        if bool(getattr(args, 'soft_mixture_rematching', False)):
+        if (bool(getattr(args, 'soft_mixture_rematching', False))
+                or bool(getattr(args, 'soft_mixture_hard_rematching', False))):
             stat_matrix[30, i] = test_stats.get('LoRA/sample', 0.0)
             stat_matrix[31, i] = test_stats.get('ForwardCalls/sample', 0.0)
         if bool(getattr(args, 'calibrated_progressive_rematching', False)):
@@ -1258,7 +1269,8 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         result_str += (
             "\tLoRA/sample: {:.4f}\tForwardCalls/sample: {:.4f}"
         ).format(avg_stat[28], avg_stat[29])
-    if bool(getattr(args, 'soft_mixture_rematching', False)):
+    if (bool(getattr(args, 'soft_mixture_rematching', False))
+            or bool(getattr(args, 'soft_mixture_hard_rematching', False))):
         result_str += (
             "\tLoRA/sample: {:.4f}\tForwardCalls/sample: {:.4f}"
         ).format(avg_stat[30], avg_stat[31])
