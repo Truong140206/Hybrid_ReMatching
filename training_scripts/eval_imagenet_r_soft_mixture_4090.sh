@@ -12,7 +12,7 @@ TOP_K="${2:-4}"
 TASK_TEMPERATURE="${3:-1.0}"
 TII_PRIOR_WEIGHT="${4:-0.3}"
 LOGIT_TEMPERATURE="${5:-1.0}"
-LORA_RANK="${LORA_RANK:-8}"
+LORA_RANK="${LORA_RANK:-}"
 TII_DIR="${TII_DIR:-${OUTPUT_ROOT}/imr_tii_original_10tasks_seed42}"
 
 if [[ -z "${RUN_DIR}" ]]; then
@@ -47,6 +47,30 @@ for task_id in $(seq 1 10); do
   }
 done
 
+CHECKPOINT_RANK="$("${PYTHON_BIN}" -c '
+import sys
+import torch
+
+checkpoint = torch.load(sys.argv[1], map_location="cpu", weights_only=False)
+state = checkpoint.get("model", checkpoint)
+matches = [
+    value for key, value in state.items()
+    if key.endswith("lora_layer.k_lora_A")
+]
+if len(matches) != 1:
+    raise SystemExit(
+        f"Expected one lora_layer.k_lora_A tensor, found {len(matches)}")
+print(int(matches[0].shape[-1]))
+' "${RUN_DIR}/checkpoint/task1_checkpoint.pth")"
+
+if [[ -z "${LORA_RANK}" ]]; then
+  LORA_RANK="${CHECKPOINT_RANK}"
+elif [[ "${LORA_RANK}" != "${CHECKPOINT_RANK}" ]]; then
+  echo "Requested LoRA rank ${LORA_RANK}, but checkpoint rank is ${CHECKPOINT_RANK}" >&2
+  exit 2
+fi
+echo "Detected LoRA rank from checkpoint: ${LORA_RANK}"
+
 tag_value() {
   printf '%s' "$1" | tr '.' 'p'
 }
@@ -60,8 +84,13 @@ BASELINE_LOG="${BASELINE_LOG:-${OUTPUT_ROOT}/imr_lora_rank8_baseline_10tasks_see
 EXHAUSTIVE_LOG="${EXHAUSTIVE_LOG:-${OUTPUT_ROOT}/${RUN_BASENAME}_eval_arrow_oracle_audit_p${PRIOR_TAG}_t${LOGIT_TEMP_TAG}.log}"
 
 if [[ -s "${LOG_PATH}" ]]; then
-  echo "Refusing to overwrite existing evaluation log: ${LOG_PATH}" >&2
-  exit 3
+  if grep -q "Soft-mixture wall time seconds:" "${LOG_PATH}"; then
+    echo "Refusing to overwrite completed evaluation log: ${LOG_PATH}" >&2
+    exit 3
+  fi
+  FAILED_LOG="${LOG_PATH%.log}_failed_$(date +%Y%m%d_%H%M%S).log"
+  mv "${LOG_PATH}" "${FAILED_LOG}"
+  echo "Archived incomplete evaluation log: ${FAILED_LOG}"
 fi
 
 cd "${REPO_ROOT}"
