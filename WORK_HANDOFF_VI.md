@@ -430,3 +430,50 @@ thêm bất kỳ scale/threshold/selector nào cho nhánh soft-hard.
 
 Hướng tiếp theo phải xử lý trực tiếp bài toán tìm LoRA thắng của exhaustive với
 ít lần đánh giá hơn; không tiếp tục trộn hoặc chọn giữa các output yếu hơn.
+
+## 18. Mốc mới thay thế trạng thái bàn giao cũ
+
+Mục 14--17 phía trên mô tả trạng thái trước prediction-induced proposal và đã
+lỗi thời. Hiện đã có phương pháp exemplar-free giảm chi phí inference nhưng
+vẫn vượt baseline trên toàn bộ sáu metric.
+
+### Phương pháp được chọn
+
+- TII top-2 tạo hai candidate đầu.
+- Dự đoán top-5 lớp từ hai LoRA đầu đề xuất thêm ba task.
+- Năm LoRA được chạy trong hai model call vectorized.
+- TII probability completion bổ sung xác suất cho lớp ngoài candidate, với
+  giới hạn bảo toàn top-1.
+- Không có exhaustive fallback, ảnh cũ, per-example feature memory, nhãn test
+  trong routing hoặc learned router trên dữ liệu lịch sử.
+
+### Kết quả ImageNet-R, 10 task, seed 42
+
+| Cấu hình | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|
+| Baseline | 77.5854 | 74.0477 | 86.4646 | 1.2230 | 3.3264 | -2.9319 |
+| Exhaustive | 80.6549 | 75.1798 | 88.5327 | 1.0809 | 2.8848 | -2.8449 |
+| Proposal 5 LoRA | 80.6062 | 75.0935 | 87.5040 | 1.1801 | 2.9703 | -2.8927 |
+
+Delta proposal so với baseline: Acc@task +3.0208, Acc@1 +1.0458, Acc@5
++1.0394, Loss -0.0429, Forgetting -0.3561 và Backward +0.0392. Cả
+`BASELINE_ALL_METRIC_GATE` và `OPERATIONAL_PROPOSAL_EFFICIENCY_GATE` đều PASS.
+Chi phí là 5 LoRA/mẫu và 2 forward call/mẫu, so với 10 LoRA của exhaustive.
+
+### Lệnh tái lập
+
+```bash
+cd ~/Documents/truongnguyen/Hybrid_ReMatching
+git pull --ff-only
+
+bash training_scripts/eval_imagenet_r_prediction_proposal5_completion_4090.sh \
+  ~/Documents/truongnguyen/hrm-pet-output/imr_lora_hybrid_real_ageaware_crct30_old035_new010_seed42
+```
+
+### Việc tiếp theo
+
+1. Không tune thêm trên test seed 42.
+2. Chạy cùng cấu hình trên tối thiểu ba seed và báo cáo mean/std.
+3. Đo wall time baseline, exhaustive và proposal trên cùng máy, batch size và
+   trạng thái GPU.
+4. Giữ các ablation âm trong báo cáo để chứng minh quá trình chọn thiết kế.

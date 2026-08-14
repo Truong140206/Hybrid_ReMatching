@@ -215,3 +215,35 @@ Log bổ sung hai chỉ số:
 - SemChange: tỷ lệ sample/batch mà semantic làm thay đổi top-K teacher so với TII thuần.
 
 Mục tiêu là giữ mức tăng Acc@1 của CTIRD, loại các teacher ít liên quan để phục hồi Acc@5 và Backward. Đây là áp dụng ý tưởng semantic-aware vào đúng nơi phát sinh nhiễu, không dịch chuyển feature và không tăng chi phí suy luận.
+
+## 13. Kết quả chốt: prediction-induced proposal rematching
+
+Sau các nhánh CFS, semantic, prototype, soft-mixture và learned routing không
+đạt gate, nút thắt được xác định là TII top-k bỏ sót LoRA thắng của exhaustive.
+Phương pháp chốt xử lý trực tiếp nút thắt này:
+
+1. TII chọn hai LoRA đầu tiên.
+2. Hai LoRA được chạy trong một model call.
+3. Top-5 lớp dự đoán của chúng được ánh xạ về task để đề xuất ba LoRA khác.
+4. Ba LoRA đề xuất được chạy chung trong model call thứ hai.
+5. Chỉ logits cục bộ của năm task được ghép để phân loại.
+6. TII probability completion cấp xác suất cho lớp ngoài candidate và giới hạn
+   khối lượng theo từng mẫu để không đảo top-1 của nhánh LoRA.
+
+Phương pháp không lưu ảnh cũ, không dùng nhãn test để routing, không học router
+trên dữ liệu lịch sử và đã chạy với `strict_exemplar_free`.
+
+| Cấu hình | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward | LoRA/mẫu | Calls/mẫu |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Baseline | 77.5854 | 74.0477 | 86.4646 | 1.2230 | 3.3264 | -2.9319 | -- | -- |
+| Exhaustive | 80.6549 | 75.1798 | 88.5327 | 1.0809 | 2.8848 | -2.8449 | 10 | 3* |
+| Proposal + completion | 80.6062 | 75.0935 | 87.5040 | 1.1801 | 2.9703 | -2.8927 | 5 | 2 |
+
+`*` Ba model call là cấu hình vectorized exhaustive với task chunk size 4.
+
+So với baseline, cả sáu chỉ số chất lượng đều tốt hơn; số LoRA được đánh giá
+chỉ bằng 50% exhaustive. So với exhaustive, Acc@task giữ lại trong 0.0487 điểm
+và Acc@1 trong 0.0863 điểm. Đây là kết quả ImageNet-R chính hiện tại.
+
+Quyết định: khóa cấu hình seed 42. Không tiếp tục tối ưu theo test set; chuyển
+sang xác nhận nhiều seed, mean/std và wall time thực đo.

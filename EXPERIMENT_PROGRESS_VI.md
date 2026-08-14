@@ -2748,3 +2748,28 @@ candidate khong bi thay doi.
 Cau hinh tiep theo duoc khoa o TII top-2 + 3 proposal, TII probability
 completion, toi da 5 LoRA/mau va van chi 2 forward call. Muc tieu cua proposal
 thu ba la dua BWT gan exhaustive; completion nham sua Loss ma khong doi top-1.
+
+## 2026-08-15: Ket qua chot prediction proposal 5 LoRA
+
+Cau hinh TII top-2 + 3 task proposal + TII probability completion dat:
+
+- Acc@task 80.6062.
+- Acc@1 75.0935.
+- Acc@5 87.5040.
+- Loss 1.1801.
+- Forgetting 2.9703.
+- Backward -2.8927.
+- LoRA/sample 5.0000.
+- ForwardCalls/sample 2.0000.
+
+So voi baseline, Acc@task tang 3.0208, Acc@1 tang 1.0458, Acc@5 tang
+1.0394, Loss giam 0.0429, Forgetting giam 0.3561 va Backward tang 0.0392.
+BASELINE_ALL_METRIC_GATE PASS va OPERATIONAL_PROPOSAL_EFFICIENCY_GATE PASS.
+
+So voi exhaustive, Acc@task chi thap hon 0.0487 va Acc@1 thap hon 0.0863,
+trong khi so LoRA duoc danh gia giam tu 10 xuong 5. Acc@5 thap hon 1.0287,
+Loss cao hon 0.0992, Forgetting cao hon 0.0855 va Backward thap hon 0.0478.
+
+Day la cau hinh duoc chon hien tai. Khong tiep tuc tune top-k, prior, completion
+hay temperature tren seed 42. Buoc tiep theo la lap lai tren nhieu seed va bao
+cao mean/std, dong thoi do wall time cung mot moi truong phan cung.
