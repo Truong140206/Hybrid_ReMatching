@@ -105,6 +105,19 @@ LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_${METHOD_TAG}_k${TOP_K}_tt${TASK_T
 BASELINE_LOG="${BASELINE_LOG:-${OUTPUT_ROOT}/${RUN_BASENAME}.log}"
 EXHAUSTIVE_LOG="${EXHAUSTIVE_LOG:-${OUTPUT_ROOT}/${RUN_BASENAME}_eval_vectorized_exhaustive_c4_p${PRIOR_TAG}_t${LOGIT_TEMP_TAG}.log}"
 
+if [[ ! -s "${EXHAUSTIVE_LOG}" ]]; then
+  for candidate in \
+      "${OUTPUT_ROOT}/${RUN_BASENAME}"_eval_vectorized_exhaustive*.log \
+      "${OUTPUT_ROOT}/${RUN_BASENAME}"_eval_arrow_oracle_audit*.log \
+      "${OUTPUT_ROOT}/${RUN_BASENAME}"_eval_lora_response_oracle_audit*.log; do
+    if [[ -s "${candidate}" ]]; then
+      EXHAUSTIVE_LOG="${candidate}"
+      echo "Using exhaustive fallback reference: ${EXHAUSTIVE_LOG}"
+      break
+    fi
+  done
+fi
+
 if [[ -s "${LOG_PATH}" ]]; then
   if grep -q "${METHOD_LABEL} wall time seconds:" "${LOG_PATH}"; then
     echo "Refusing to overwrite completed evaluation log: ${LOG_PATH}" >&2

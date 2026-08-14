@@ -39,7 +39,19 @@
 - Khong ep logits vao 20 lop cua routed task, vi nhu vay Acc@5 se bi gioi han
   boi routing accuracy. Khong hoc router, khong du lieu cu, khong tuning.
 - Chi phi dat truoc: `LoRA/sample=5`, `ForwardCalls/sample=2`, van thap hon
-  vectorized exhaustive (`10` va `3`). Chua co ket qua ImageNet-R.
+  vectorized exhaustive (`10` va `3`).
+
+### Ket qua soft-route/hard-classify
+
+- Acc@task `79.2034`, Acc@1 `73.7386`, Acc@5 `86.5075`, Loss `1.2210`,
+  Forgetting `3.0484`, Backward `-2.6125`.
+- So voi conventional cung checkpoint: Acc@task `+1.6180`, Acc@1 `-0.3091`,
+  Acc@5 `+0.0429`, Loss `-0.0020`, Forgetting `-0.2780`, Backward `+0.3194`.
+- So voi soft-mixture: Acc@1 `+0.3213`, nhung Acc@5 `-0.5327`, Loss
+  `+0.0435`, Forgetting `+0.0723`; chi phi tang them 1 LoRA va 1 forward.
+- Efficiency gate PASS (`5` LoRA, `2` forward), quality gate FAIL. Luot hard
+  co tac dung voi top-1 nhung khong du bu phan chat luong va chi phi bi mat.
+  Khong quet tham so tiep cho nhanh nay.
 
 # Ti?n d? th� nghi?m HRM-PET + CFS + Semantic
 
