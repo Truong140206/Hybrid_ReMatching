@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+WORK_ROOT="${WORK_ROOT:-$(dirname "${REPO_ROOT}")}"
+PYTHON_BIN="${PYTHON_BIN:-${REPO_ROOT}/.venv/bin/python}"
+DATASETS_ROOT="${DATASETS_ROOT:-${WORK_ROOT}/datasets}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-${WORK_ROOT}/hrm-pet-output}"
+RUN_DIR="${1:-}"
+TOP_K="${2:-4}"
+TASK_TEMPERATURE="${3:-1.0}"
+TII_PRIOR_WEIGHT="${4:-0.3}"
+LOGIT_TEMPERATURE="${5:-1.0}"
+LORA_RANK="${LORA_RANK:-8}"
+TII_DIR="${TII_DIR:-${OUTPUT_ROOT}/imr_tii_original_10tasks_seed42}"
+
+if [[ -z "${RUN_DIR}" ]]; then
+  echo "Usage: $0 RUN_DIR [top_k] [task_temperature] [tii_prior_weight] [logit_temperature]" >&2
+  exit 64
+fi
+if [[ ! -x "${PYTHON_BIN}" ]]; then
+  echo "Python environment not found: ${PYTHON_BIN}" >&2
+  exit 1
+fi
+if (( TOP_K < 1 || TOP_K > 10 )); then
+  echo "top_k must be between 1 and 10" >&2
+  exit 64
+fi
+
+if [[ -n "${DATA_PATH:-}" ]]; then
+  IMR_DATA_PATH="${DATA_PATH}"
+elif [[ -d "${DATASETS_ROOT}/imagenet-r/imagenet-r" || -f "${DATASETS_ROOT}/imagenet-r/imagenet-r.tar" ]]; then
+  IMR_DATA_PATH="${DATASETS_ROOT}/imagenet-r"
+else
+  IMR_DATA_PATH="${DATASETS_ROOT}"
+fi
+
+for task_id in $(seq 1 10); do
+  [[ -s "${RUN_DIR}/checkpoint/task${task_id}_checkpoint.pth" ]] || {
+    echo "Missing LoRA checkpoint: ${RUN_DIR}/checkpoint/task${task_id}_checkpoint.pth" >&2
+    exit 2
+  }
+  [[ -s "${TII_DIR}/checkpoint/task${task_id}_checkpoint.pth" ]] || {
+    echo "Missing TII checkpoint: ${TII_DIR}/checkpoint/task${task_id}_checkpoint.pth" >&2
+    exit 2
+  }
+done
+
+tag_value() {
+  printf '%s' "$1" | tr '.' 'p'
+}
+
+RUN_BASENAME="$(basename "${RUN_DIR}")"
+TASK_TEMP_TAG="$(tag_value "${TASK_TEMPERATURE}")"
+PRIOR_TAG="$(tag_value "${TII_PRIOR_WEIGHT}")"
+LOGIT_TEMP_TAG="$(tag_value "${LOGIT_TEMPERATURE}")"
+LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_soft_mixture_k${TOP_K}_tt${TASK_TEMP_TAG}_p${PRIOR_TAG}_lt${LOGIT_TEMP_TAG}.log"
+BASELINE_LOG="${BASELINE_LOG:-${OUTPUT_ROOT}/imr_lora_rank8_baseline_10tasks_seed42.log}"
+EXHAUSTIVE_LOG="${EXHAUSTIVE_LOG:-${OUTPUT_ROOT}/${RUN_BASENAME}_eval_arrow_oracle_audit_p${PRIOR_TAG}_t${LOGIT_TEMP_TAG}.log}"
+
+if [[ -s "${LOG_PATH}" ]]; then
+  echo "Refusing to overwrite existing evaluation log: ${LOG_PATH}" >&2
+  exit 3
+fi
+
+cd "${REPO_ROOT}"
+echo "Soft-mixture rematching: TII top-${TOP_K}, posterior-weighted LoRA residuals, one model forward"
+echo "Run=${RUN_DIR}; rank=${LORA_RANK}; task_temperature=${TASK_TEMPERATURE}; prior=${TII_PRIOR_WEIGHT}; logit_temperature=${LOGIT_TEMPERATURE}"
+
+START_TIME="$(date +%s)"
+PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
+  --nproc_per_node=1 \
+  --master_port="${MASTER_PORT:-29587}" \
+  main.py \
+  imr_lora \
+  --model vit_base_patch16_224 \
+  --original_model vit_base_patch16_224 \
+  --batch-size "${EVAL_BATCH_SIZE:-24}" \
+  --epochs 1 \
+  --data-path "${IMR_DATA_PATH}" \
+  --seed 42 \
+  --lr 0.03 \
+  --con 0.2 \
+  --lora_rank "${LORA_RANK}" \
+  --En gen \
+  --tau -10 \
+  --K 5 \
+  --sched cosine \
+  --dataset Split-Imagenet-R \
+  --lora_momentum 0.4 \
+  --lora_type hide \
+  --trained_original_model "${TII_DIR}" \
+  --num_tasks 10 \
+  --soft_mixture_rematching \
+  --soft_mixture_top_k "${TOP_K}" \
+  --soft_mixture_task_temperature "${TASK_TEMPERATURE}" \
+  --soft_mixture_tii_prior_weight "${TII_PRIOR_WEIGHT}" \
+  --soft_mixture_logit_temperature "${LOGIT_TEMPERATURE}" \
+  --eval \
+  --output_dir "${RUN_DIR}" \
+  2>&1 | tee "${LOG_PATH}"
+
+END_TIME="$(date +%s)"
+ELAPSED="$((END_TIME - START_TIME))"
+printf 'Soft-mixture wall time seconds: %s\n' "${ELAPSED}" | tee -a "${LOG_PATH}"
+FINAL_LINE="$(grep "Average accuracy till task10" "${LOG_PATH}" | tail -n 1 || true)"
+echo "Final soft-mixture metrics:"
+echo "${FINAL_LINE}"
+
+compare_reference() {
+  local label="$1"
+  local reference_log="$2"
+  if [[ ! -s "${reference_log}" ]]; then
+    echo "${label} reference not found; comparison skipped: ${reference_log}"
+    return
+  fi
+  local reference_line
+  reference_line="$(grep "Average accuracy till task10" "${reference_log}" | tail -n 1 || true)"
+  "${PYTHON_BIN}" -c '
+import re
+import sys
+
+label, candidate, reference = sys.argv[1:]
+higher = ("Acc@task", "Acc@1", "Acc@5", "Backward")
+lower = ("Loss", "Forgetting")
+def metric(line, name):
+    match = re.search(re.escape(name) + r":\s*([-+0-9.]+)", line)
+    if match is None:
+        raise SystemExit("Missing metric: " + name)
+    return float(match.group(1))
+
+passed = True
+print(label + " comparison:")
+for name in higher:
+    delta = metric(candidate, name) - metric(reference, name)
+    ok = delta >= 0.0
+    passed = passed and ok
+    print(f"  {name} delta={delta:+.4f}: " + ("PASS" if ok else "FAIL"))
+for name in lower:
+    delta = metric(candidate, name) - metric(reference, name)
+    ok = delta <= 0.0
+    passed = passed and ok
+    print(f"  {name} delta={delta:+.4f}: " + ("PASS" if ok else "FAIL"))
+print(label.upper().replace(" ", "_") + "_GATE=" + ("PASS" if passed else "FAIL"))
+' "${label}" "${FINAL_LINE}" "${reference_line}"
+}
+
+compare_reference "baseline" "${BASELINE_LOG}"
+compare_reference "exhaustive" "${EXHAUSTIVE_LOG}"
+
+"${PYTHON_BIN}" -c '
+import re
+import sys
+
+line = sys.argv[1]
+def metric(name):
+    match = re.search(re.escape(name) + r":\s*([-+0-9.]+)", line)
+    if match is None:
+        raise SystemExit("Missing metric: " + name)
+    return float(match.group(1))
+
+cost = metric("LoRA/sample")
+calls = metric("ForwardCalls/sample")
+passed = cost <= 4.0001 and calls <= 1.0001
+print(f"Efficiency: LoRA/sample={cost:.4f}; ForwardCalls/sample={calls:.4f}")
+print("SOFT_MIXTURE_EFFICIENCY_GATE=" + ("PASS" if passed else "FAIL"))
+' "${FINAL_LINE}"

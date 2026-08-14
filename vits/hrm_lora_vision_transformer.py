@@ -218,12 +218,18 @@ class Attention(nn.Module):
     def forward(self, x,ensemble_id=None,prog=False,id=0, **kwargs):
         B, N, C = x.shape
         #print(ensemble_id)
-        if  ensemble_id!=None:
+        if ensemble_id is not None:
             qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+            ensemble_weights = kwargs.get('ensemble_weights')
             for i in range(ensemble_id.shape[1]):
                 task_id = ensemble_id[:,i]
                 lora = kwargs['lora'](x, depth_id=kwargs['depth_id'], task_id=task_id, train=kwargs['train'], old=kwargs['old'])['lora_value']
-                qkv = qkv + 0.4*lora.reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+                lora = lora.reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+                if ensemble_weights is None:
+                    qkv = qkv + 0.4 * lora
+                else:
+                    weight = ensemble_weights[:, i].view(1, B, 1, 1, 1)
+                    qkv = qkv + weight * lora
         elif prog:
             x_ori=x
             qkv = self.qkv(x)
@@ -688,7 +694,7 @@ class VisionTransformer(nn.Module):
     def reset_classifier(self):
         self.head = nn.Linear(self.embed_dim, self.num_classes) if self.num_classes > 0 else nn.Identity()
 
-    def forward_features(self, x, task_id=-1, train=False, cls_features=None, lora_id=None, old=False, ensemble_id=None,prog=False):
+    def forward_features(self, x, task_id=-1, train=False, cls_features=None, lora_id=None, old=False, ensemble_id=None, ensemble_weights=None, prog=False):
         res = dict()
         x = self.patch_embed(x)
 
@@ -725,7 +731,7 @@ class VisionTransformer(nn.Module):
                         # if i in [0,1]:
                         #     x = self.blocks[i](x, lora=self.lora_layer, task_id=torch.tensor([0]).expand(x.shape[0]), depth_id=i, train=train, old=old)
                         # else:
-                            x = self.blocks[i](x,ensemble_id=ensemble_id,prog=prog,id=id, lora=self.lora_layer, task_id=task_mask, depth_id=i, train=train, old=old)
+                            x = self.blocks[i](x,ensemble_id=ensemble_id,ensemble_weights=ensemble_weights,prog=prog,id=id, lora=self.lora_layer, task_id=task_mask, depth_id=i, train=train, old=old)
 
             else:
                 if self.grad_checkpointing and not torch.jit.is_scripting():
@@ -764,7 +770,7 @@ class VisionTransformer(nn.Module):
 
         return res
 
-    def forward(self, x, task_id=-1, train=False, fc_only=False, cls_features=None, old=False, use_mlp_head=False, mlp_head_only=False,ensemble_id=None,prog=False,dis=False):
+    def forward(self, x, task_id=-1, train=False, fc_only=False, cls_features=None, old=False, use_mlp_head=False, mlp_head_only=False,ensemble_id=None,ensemble_weights=None,prog=False,dis=False):
         if fc_only:
             if not use_mlp_head:
                 res = dict()
@@ -783,7 +789,7 @@ class VisionTransformer(nn.Module):
             res = self.head1(x)
             return res
             
-        res = self.forward_features(x, task_id=task_id, train=train, cls_features=cls_features, old=old, ensemble_id=ensemble_id,prog=prog)
+        res = self.forward_features(x, task_id=task_id, train=train, cls_features=cls_features, old=old, ensemble_id=ensemble_id, ensemble_weights=ensemble_weights, prog=prog)
         res = self.forward_head(res, use_mlp_head=use_mlp_head)
         return res
     

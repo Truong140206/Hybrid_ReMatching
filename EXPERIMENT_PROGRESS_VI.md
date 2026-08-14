@@ -1,3 +1,21 @@
+## Soft-mixture LoRA mot luot forward (14/08/2026)
+
+- Vectorized exhaustive giu nguyen tuyet doi ket qua exhaustive nhung chi tang
+  toc `1.032x`, vi van tinh du 10 LoRA cho moi anh.
+- Thi nghiem ke tiep khong hoc router va khong dung du lieu cu: TII xep hang
+  task, lay co dinh top-4 roi chuan hoa diem bang softmax.
+- Tai tung attention block, residual QKV cua bon LoRA duoc tron theo
+  `sum_t p_t * LoRA_t`; tong trong so bang 1. Mo hinh chi chay mot forward hon
+  hop, thay vi chay rieng tung LoRA.
+- Cau hinh duoc chot truoc khi xem test: top-k `4`, task temperature `1.0`, TII
+  prior `0.3`, logit temperature `1.0`. Khong quet tham so tren test.
+- Cong ket qua so sanh rieng voi baseline va exhaustive tren Acc@task, Acc@1,
+  Acc@5, Loss, Forgetting, Backward; dong thoi kiem tra `LoRA/sample <= 4` va
+  `ForwardCalls/sample = 1`.
+- Day la ablation giam chi phi inference, khong phai bien the CFS. Chua ghi
+  nhan ket qua cho toi khi unit test va danh gia ImageNet-R tren RTX 4090 hoan
+  tat.
+
 # Ti?n d? th� nghi?m HRM-PET + CFS + Semantic
 
 ## 1. M?c ti�u
