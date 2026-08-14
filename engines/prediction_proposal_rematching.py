@@ -60,6 +60,31 @@ def cross_adapter_global_consensus(candidate_logits):
     }
 
 
+def cross_adapter_borda_consensus(candidate_logits, top_k=5):
+    """Calibration-free Borda aggregation over full class rankings."""
+    _, candidate_count, class_count = candidate_logits.shape
+    ordering = torch.argsort(candidate_logits, dim=2, descending=True)
+    ranks = torch.argsort(ordering, dim=2)
+    rank_sum = ranks.sum(dim=1)
+    best_rank_sum = rank_sum.min(dim=1).values
+    tied_classes = rank_sum.eq(best_rank_sum.unsqueeze(1))
+    probability_support = torch.softmax(candidate_logits, dim=2).sum(dim=1)
+    prediction = probability_support.masked_fill(
+        ~tied_classes, float('-inf')).argmax(dim=1)
+    selected_ranks = ranks.gather(
+        2,
+        prediction.view(-1, 1, 1).expand(-1, candidate_count, 1),
+    ).squeeze(2)
+    top_k = min(max(1, int(top_k)), class_count)
+    support_count = selected_ranks.lt(top_k).sum(dim=1)
+    strict_support = support_count.mul(2).gt(candidate_count)
+    return {
+        'prediction': prediction,
+        'topk_support': support_count.float().div(float(candidate_count)),
+        'strict_support': strict_support,
+    }
+
+
 def _complete_with_tii_probability_mass(
         candidate_logits, tii_logits, class_mask, candidate_tasks,
         seen_task_count):

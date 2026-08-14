@@ -119,7 +119,7 @@ if [[ "${AUDIT_INITIAL_BRANCH}" == "1" ]]; then
   AUDIT_ARGS+=(--prediction_proposal_initial_branch_audit)
 fi
 if [[ "${AUDIT_CROSS_ADAPTER}" == "1" ]]; then
-  AUDIT_SUFFIX="${AUDIT_SUFFIX}_cross_adapter_audit"
+  AUDIT_SUFFIX="${AUDIT_SUFFIX}_cross_adapter_borda_audit"
   AUDIT_ARGS+=(--prediction_proposal_cross_adapter_audit)
 fi
 LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_prediction_proposal_i2_p3_c5_tiicomplete_strict${AUDIT_SUFFIX}.log"
@@ -190,6 +190,8 @@ fi
 if [[ "${AUDIT_CROSS_ADAPTER}" == "1" ]]; then
   echo "Per-task cross-adapter consensus audit (tasks 1-10):"
   grep "CrossAdapterAudit" "${LOG_PATH}" | tail -n 10 | nl -w1 -s': '
+  echo "Per-task Borda rank-consensus audit (tasks 1-10):"
+  grep "CrossBordaAudit" "${LOG_PATH}" | tail -n 10 | nl -w1 -s': '
 fi
 
 "${PYTHON_BIN}" - "${LOG_PATH}" "${BASELINE_LOG}" "${EXHAUSTIVE_LOG}" <<'PY'
@@ -277,6 +279,14 @@ if 'CrossAdapterOracleAcc@1:' in candidate:
     proposal_vote_oracle = metric(candidate, 'CrossProposalOracleAcc@1')
     rescue = metric(candidate, 'CrossRescueAcc@1')
     rescue_rate = metric(candidate, 'CrossRescueRate')
+    borda = metric(candidate, 'CrossBordaAcc@1')
+    borda_only = metric(candidate, 'CrossBordaOnlyCorrect')
+    proposal_only_borda = metric(candidate, 'ProposalOnlyVsCrossBorda')
+    proposal_borda_oracle = metric(
+        candidate, 'CrossBordaProposalOracleAcc@1')
+    borda_rescue = metric(candidate, 'CrossBordaRescueAcc@1')
+    borda_rescue_rate = metric(candidate, 'CrossBordaRescueRate')
+    borda_support = metric(candidate, 'CrossBordaTop5Support')
     print('Cross-adapter full-logit audit:')
     print(f'  Proposal Acc@1={proposal:.4f}')
     print(f'  Global plurality vote Acc@1={vote:.4f}')
@@ -291,4 +301,17 @@ if 'CrossAdapterOracleAcc@1:' in candidate:
         'PASS' if adapter_oracle - proposal >= 0.25 else 'FAIL'))
     print('CROSS_ADAPTER_RESCUE_GATE=' + (
         'PASS' if rescue >= proposal else 'FAIL'))
+    print('Calibration-free Borda rank audit:')
+    print(f'  Borda Acc@1={borda:.4f}')
+    print(f'  Borda-only correct={borda_only:.4f}; '
+          f'proposal-only correct={proposal_only_borda:.4f}')
+    print(f'  Proposal/Borda oracle Acc@1={proposal_borda_oracle:.4f}')
+    print(f'  Majority-top5 Borda rescue Acc@1={borda_rescue:.4f}; '
+          f'gain={borda_rescue - proposal:+.4f}; '
+          f'rescue rate={borda_rescue_rate:.4f}; '
+          f'average top5 support={borda_support:.4f}')
+    print('CROSS_BORDA_HEADROOM_GATE=' + (
+        'PASS' if proposal_borda_oracle - proposal >= 0.25 else 'FAIL'))
+    print('CROSS_BORDA_RESCUE_GATE=' + (
+        'PASS' if borda_rescue >= proposal else 'FAIL'))
 PY

@@ -6,6 +6,7 @@ from torch import nn
 from protocols import validate_exemplar_free_protocol
 from engines.prediction_proposal_rematching import (
     _complete_with_tii_probability_mass,
+    cross_adapter_borda_consensus,
     cross_adapter_global_consensus,
     initial_branch_confidence_dominance,
     prediction_proposal_adapter_rematching,
@@ -202,3 +203,19 @@ def test_cross_adapter_consensus_uses_plurality_and_probability_tie_break():
     assert audit['strict_majority'].tolist() == [True, False]
     assert torch.allclose(
         audit['vote_strength'], torch.tensor([0.6, 0.4]))
+
+
+def test_cross_adapter_borda_rewards_consistent_high_rank_support():
+    candidate_logits = torch.tensor([[
+        [5.0, 4.0, 0.0],
+        [5.0, 4.0, 0.0],
+        [0.0, 4.0, 5.0],
+        [0.0, 4.0, 5.0],
+        [0.0, 5.0, 4.0],
+    ]])
+
+    audit = cross_adapter_borda_consensus(candidate_logits, top_k=2)
+
+    assert audit['prediction'].tolist() == [1]
+    assert audit['strict_support'].tolist() == [True]
+    assert torch.allclose(audit['topk_support'], torch.ones(1))

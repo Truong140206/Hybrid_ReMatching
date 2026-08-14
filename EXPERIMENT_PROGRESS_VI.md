@@ -2833,3 +2833,7 @@ Audit seed 42 xác nhận nhánh TII-top1 và proposal bổ sung cho nhau: `Init
 ### Cross-adapter full-logit consensus audit
 
 Pareto-confidence selector giảm Acc@1 từ `75.0850` xuống `74.9055`, vì vậy hướng so sánh confidence giữa initial branch và proposal đã được đóng mà không tune threshold trên test. Audit kế tiếp kiểm tra tín hiệu đã có sẵn trong full logits của cả 5 LoRA proposal: plurality vote, any-adapter label oracle, proposal/vote oracle và strict-majority rescue. Tie của plurality vote được phá bằng tổng xác suất; rescue chỉ bật khi có đa số tuyệt đối. Quy tắc không có tham số học, nhãn chỉ chấm oracle/accuracy, không tham gia vote. Không thêm LoRA, forward call, ảnh cũ hay feature memory.
+
+### Calibration-free Borda rank aggregation
+
+Cross-adapter plurality vote có oracle rất cao (`82.4275`) nhưng rescue giảm Acc@1 xuống `73.7517`; top-1 vote bị chi phối bởi thiên lệch chung giữa các adapter. Phép thử cuối của hướng fusion không học dùng Borda aggregation: chuyển logits của từng adapter thành thứ hạng lớp, cộng thứ hạng qua 5 adapter, phá hòa bằng tổng xác suất và chỉ rescue proposal khi lớp Borda thắng nằm trong top-5 của đa số adapter. Không có threshold fit từ test; nếu Borda rescue không vượt `75.0850`, đóng hướng no-learning fusion.

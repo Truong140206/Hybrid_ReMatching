@@ -29,6 +29,7 @@ from engines.budgeted_rematching import budgeted_exhaustive_fallback
 from engines.progressive_rematching import progressive_adapter_rematching
 from engines.progressive_oracle_audit import progressive_oracle_audit
 from engines.prediction_proposal_rematching import (
+    cross_adapter_borda_consensus,
     cross_adapter_global_consensus,
     initial_branch_confidence_dominance,
     prediction_proposal_adapter_rematching,
@@ -977,6 +978,8 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                                 2, unseen_classes, float('-inf'))
                         consensus = cross_adapter_global_consensus(
                             candidate_logits)
+                        borda = cross_adapter_borda_consensus(
+                            candidate_logits, top_k=5)
                         adapter_predictions = consensus[
                             'adapter_predictions']
                         vote_prediction = consensus['consensus_prediction']
@@ -992,6 +995,16 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                         rescue_prediction = torch.where(
                             select_vote, vote_prediction, proposal_prediction)
                         rescue_correct = rescue_prediction.eq(target)
+                        borda_prediction = borda['prediction']
+                        borda_correct = borda_prediction.eq(target)
+                        select_borda = (
+                            borda['strict_support']
+                            & borda_prediction.ne(proposal_prediction)
+                        )
+                        borda_rescue_prediction = torch.where(
+                            select_borda, borda_prediction,
+                            proposal_prediction)
+                        borda_rescue_correct = borda_rescue_prediction.eq(target)
                         cross_metrics = {
                             'CrossVoteAcc@1': vote_correct.float().mean() * 100.0,
                             'CrossAdapterOracleAcc@1': adapter_any_correct.float(
@@ -1010,6 +1023,23 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                             'CrossRescueAcc@1': rescue_correct.float(
                                 ).mean() * 100.0,
                             'CrossRescueRate': select_vote.float().mean() * 100.0,
+                            'CrossBordaAcc@1': borda_correct.float(
+                                ).mean() * 100.0,
+                            'CrossBordaOnlyCorrect': (
+                                borda_correct & ~proposal_correct
+                                ).float().mean() * 100.0,
+                            'ProposalOnlyVsCrossBorda': (
+                                proposal_correct & ~borda_correct
+                                ).float().mean() * 100.0,
+                            'CrossBordaProposalOracleAcc@1': (
+                                borda_correct | proposal_correct
+                                ).float().mean() * 100.0,
+                            'CrossBordaRescueAcc@1': borda_rescue_correct.float(
+                                ).mean() * 100.0,
+                            'CrossBordaRescueRate': select_borda.float(
+                                ).mean() * 100.0,
+                            'CrossBordaTop5Support': borda['topk_support'].mean(
+                                ) * 100.0,
                         }
                         for metric_name, metric_value in cross_metrics.items():
                             metric_logger.meters[metric_name].update(
@@ -1376,6 +1406,25 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     'CrossProposalOracleAcc@1'],
                 rescue=metric_logger.meters['CrossRescueAcc@1'],
                 rescue_rate=metric_logger.meters['CrossRescueRate']))
+        print(
+            '* CrossBordaAudit BordaAcc@1 {borda.global_avg:.3f} '
+            'BordaOnly {borda_only.global_avg:.3f} '
+            'ProposalOnly {proposal_only.global_avg:.3f} '
+            'ProposalBordaOracleAcc@1 {oracle.global_avg:.3f} '
+            'BordaRescueAcc@1 {rescue.global_avg:.3f} '
+            'BordaRescueRate {rate.global_avg:.3f} '
+            'BordaTop5Support {support.global_avg:.3f}'
+            .format(
+                borda=metric_logger.meters['CrossBordaAcc@1'],
+                borda_only=metric_logger.meters[
+                    'CrossBordaOnlyCorrect'],
+                proposal_only=metric_logger.meters[
+                    'ProposalOnlyVsCrossBorda'],
+                oracle=metric_logger.meters[
+                    'CrossBordaProposalOracleAcc@1'],
+                rescue=metric_logger.meters['CrossBordaRescueAcc@1'],
+                rate=metric_logger.meters['CrossBordaRescueRate'],
+                support=metric_logger.meters['CrossBordaTop5Support']))
     if bool(getattr(args, 'vectorized_exhaustive_rematching', False)):
         print(
             '* VectorizedExhaustive LoRA/sample {cost.global_avg:.3f} '
@@ -1451,7 +1500,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((65, args.num_tasks))
+    stat_matrix = np.zeros((72, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -1531,6 +1580,19 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                 'CrossProposalOracleAcc@1', 0.0)
             stat_matrix[63, i] = test_stats.get('CrossRescueAcc@1', 0.0)
             stat_matrix[64, i] = test_stats.get('CrossRescueRate', 0.0)
+            stat_matrix[65, i] = test_stats.get('CrossBordaAcc@1', 0.0)
+            stat_matrix[66, i] = test_stats.get(
+                'CrossBordaOnlyCorrect', 0.0)
+            stat_matrix[67, i] = test_stats.get(
+                'ProposalOnlyVsCrossBorda', 0.0)
+            stat_matrix[68, i] = test_stats.get(
+                'CrossBordaProposalOracleAcc@1', 0.0)
+            stat_matrix[69, i] = test_stats.get(
+                'CrossBordaRescueAcc@1', 0.0)
+            stat_matrix[70, i] = test_stats.get(
+                'CrossBordaRescueRate', 0.0)
+            stat_matrix[71, i] = test_stats.get(
+                'CrossBordaTop5Support', 0.0)
         if (bool(getattr(args, 'soft_mixture_rematching', False))
                 or bool(getattr(args, 'soft_mixture_hard_rematching', False))
                 or bool(getattr(args, 'soft_hard_selector_rematching', False))
@@ -1641,9 +1703,18 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
             "\tCrossProposalOracleAcc@1: {:.4f}"
             "\tCrossRescueAcc@1: {:.4f}"
             "\tCrossRescueRate: {:.4f}"
+            "\tCrossBordaAcc@1: {:.4f}"
+            "\tCrossBordaOnlyCorrect: {:.4f}"
+            "\tProposalOnlyVsCrossBorda: {:.4f}"
+            "\tCrossBordaProposalOracleAcc@1: {:.4f}"
+            "\tCrossBordaRescueAcc@1: {:.4f}"
+            "\tCrossBordaRescueRate: {:.4f}"
+            "\tCrossBordaTop5Support: {:.4f}"
         ).format(
             avg_stat[57], avg_stat[58], avg_stat[59], avg_stat[60],
-            avg_stat[61], avg_stat[62], avg_stat[63], avg_stat[64])
+            avg_stat[61], avg_stat[62], avg_stat[63], avg_stat[64],
+            avg_stat[65], avg_stat[66], avg_stat[67], avg_stat[68],
+            avg_stat[69], avg_stat[70], avg_stat[71])
     if (bool(getattr(args, 'soft_mixture_rematching', False))
             or bool(getattr(args, 'soft_mixture_hard_rematching', False))
             or bool(getattr(args, 'soft_hard_selector_rematching', False))
