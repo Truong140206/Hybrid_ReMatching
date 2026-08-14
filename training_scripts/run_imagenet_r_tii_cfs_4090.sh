@@ -10,6 +10,7 @@ OUTPUT_ROOT="${OUTPUT_ROOT:-${WORK_ROOT}/hrm-pet-output}"
 SEED="${SEED:-42}"
 GPUS="${GPUS:-1}"
 MODE="${1:-pilot}"
+CFS_SELECTION_RATIO="${CFS_SELECTION_RATIO:-0.5}"
 
 if [[ -n "${DATA_PATH:-}" ]]; then
   IMR_DATA_PATH="${DATA_PATH}"
@@ -68,6 +69,7 @@ cd "${REPO_ROOT}"
 
 echo "Running CFS in TII task inference, not in LoRA CRCT."
 echo "Mode: ${MODE}; tasks: ${TASK_COUNT}; output: ${OUTPUT_DIR}"
+echo "CFS selection ratio: ${CFS_SELECTION_RATIO}"
 
 PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --nproc_per_node="${GPUS}" \
@@ -93,7 +95,7 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --cfs_train_max_samples 1024 \
   --cfs_candidate_multiplier 3 \
   --cfs_paper_style \
-  --cfs_selection_ratio 0.5 \
+  --cfs_selection_ratio "${CFS_SELECTION_RATIO}" \
   --cfs_selection_steps 5 \
   --output_dir "${OUTPUT_DIR}" \
   2>&1 | tee "${LOG_PATH}"

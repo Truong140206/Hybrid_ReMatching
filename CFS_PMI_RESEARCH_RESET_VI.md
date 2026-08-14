@@ -166,3 +166,18 @@ Pilot mới chèn CFS vào classifier correction của TII:
 5. chỉ cho phép chạy full khi Acc@1, Acc@5, Loss, Forgetting và Backward đều không xấu hơn baseline task 3.
 
 Đây là ablation của thành phần CFS, không phải triển khai toàn bộ PMI-CFS. Nếu gate thất bại, phải kết luận CFS chưa cải thiện TII trên ImageNet-R và dừng nhánh này.
+## 14. Pilot TII-CFS paper-style tỷ lệ 0.5
+
+Kết quả sau 3 task:
+
+| Chỉ số | TII gốc | TII + CFS | Thay đổi | Đánh giá |
+|---|---:|---:|---:|---|
+| Acc@1 | 61.8101 | 62.3907 | +0.5806 | tốt hơn |
+| Acc@5 | 84.2751 | 83.5555 | -0.7196 | xấu hơn |
+| Loss | 1.5935 | 1.5723 | -0.0212 | tốt hơn |
+| Forgetting | 7.4051 | 6.6974 | -0.7077 | tốt hơn |
+| Backward | -7.4051 | -6.6974 | +0.7077 | tốt hơn |
+
+Strict gate thất bại vì Acc@5 giảm. Không chạy full 10 task với tỷ lệ 0.5.
+
+CFS đã cải thiện top-1, độ chắc chắn trung bình và khả năng giữ task cũ, nên cơ chế có tín hiệu tích cực tại TII. Tuy nhiên việc chọn 50% replay theo diversity làm giảm độ phủ các lớp cạnh tranh trong top 5. Ablation kế tiếp chỉ giảm `cfs_selection_ratio` từ 0.5 xuống 0.25, nghĩa là giữ 75% mẫu Gaussian và dùng 25% mẫu CFS. Mọi tham số khác giữ nguyên. Mục tiêu là giữ lợi ích Acc@1/forgetting nhưng phục hồi Acc@5; đây là kiểm tra nội suy có cơ sở, không phải thêm cơ chế mới.

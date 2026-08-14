@@ -26,6 +26,8 @@ def test_tii_cfs_pilot_is_a_single_variable_ablation():
     assert "--cfs_sampling" in script
     assert "--cfs_paper_style" in script
     assert "--cfs_epochs 200" in script
+    assert 'CFS_SELECTION_RATIO="${CFS_SELECTION_RATIO:-0.5}"' in script
+    assert '--cfs_selection_ratio "${CFS_SELECTION_RATIO}"' in script
     assert "--semantic_" not in script
     assert "--cfs_boundary_replay" not in script
     assert "--crct_use_all_samples" not in script

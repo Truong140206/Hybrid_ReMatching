@@ -2543,3 +2543,8 @@ kiem tra truc tiep trade-off plasticity/retention ma hybrid gate can bao ve.
 - Không đưa PMI inversion vào head-only LoRA CRCT vì nó gần như tái tạo lại final feature đã được CRCT dùng trực tiếp.
 - Thêm pilot ImageNet-R 3 task để đánh giá CFS paper-style tại TII, nơi quyết định task ban đầu.
 - Pilot giữ nguyên cấu hình TII baseline, strict exemplar-free và dùng gate 5 chỉ số.
+## Kết quả TII-CFS pilot 3 task, ratio 0.5
+
+- Acc@1 +0.5806, Loss -0.0212, Forgetting -0.7077, Backward +0.7077.
+- Acc@5 giảm 0.7196 nên strict gate FAIL; chưa được chạy full.
+- Script nhận biến `CFS_SELECTION_RATIO`; lần kế tiếp thử 0.25 với toàn bộ thiết lập khác giữ nguyên.
