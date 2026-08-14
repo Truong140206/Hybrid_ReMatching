@@ -2665,3 +2665,20 @@ van co chi phi 5 LoRA/mau, 2 forward call/mau.
 
 Tieu chi khoa truoc: refined Acc@1 phai hon soft it nhat 0.3 diem va strict
 baseline gate van phai PASS; neu khong thi dong nhanh local refinement.
+
+## 62. Ket qua local hard refinement: dong nhanh
+
+Task 10 dat Acc@task 79.2034, Acc@1 73.4515, Acc@5 87.0896, Loss
+1.1740, Forgetting 3.1679 va Backward -2.7657 voi chi phi 5 LoRA/mau, 2
+forward call/mau. So voi baseline, nam chi so Acc@task/Acc@5/Loss/Forgetting/
+Backward deu tot hon, nhung Acc@1 giam 0.5962; BASELINE_GATE FAIL.
+
+Refinement chi tang 0.0342 diem Acc@1 so voi soft, thap hon nguong khoa 0.3;
+LOCAL_REFINEMENT_GAIN_GATE FAIL. Oracle cua cap soft/refine chi dat 74.2342,
+tuc cao hon baseline 74.0477 dung 0.1865 diem va thap hon exhaustive 75.4277
+toi 1.1935 diem. Ke ca selector hoan hao cung khong the tao cai thien dang ke.
+
+Quyet dinh: dong hoan toan nhanh soft/local-hard refinement; khong tune scale,
+std, threshold hoac selector. Cung dong viec ket hop lai hai output soft/hard
+tren checkpoint nay. Huong tiep theo phai danh truc tiep vao chi phi tim LoRA
+thang cua exhaustive, vi day moi la nguon khoang cach accuracy con lai.
