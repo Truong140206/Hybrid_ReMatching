@@ -504,7 +504,7 @@ Lệnh chẩn đoán tiếp theo:
 cd ~/Documents/truongnguyen/Hybrid_ReMatching
 git pull --ff-only
 
-python training_scripts/compare_imagenet_r_taskwise.py \
+.venv/bin/python training_scripts/compare_imagenet_r_taskwise.py \
   --baseline ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed42_eval_conventional.log \
   --proposal ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed42_eval_prediction_proposal_i2_p3_c5_tiicomplete_strict.log \
   --exhaustive ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed42_eval_vectorized_exhaustive_c4_p0p3_t1p0.log \
