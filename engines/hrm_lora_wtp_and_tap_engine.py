@@ -657,6 +657,20 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     audit['oracle_lora_counts'].mean().item(), n=input.shape[0])
                 metric_logger.meters['ActualLoRA/sample'].update(
                     audit['actual_lora_counts'].mean().item(), n=input.shape[0])
+                if bool(getattr(args, 'progressive_arrow_audit', False)):
+                    arrow_percent_metrics = {
+                        'ArrowRecall@2': 'arrow_winner_recall_2',
+                        'ArrowRecall@4': 'arrow_winner_recall_4',
+                        'UnionRecall@2x2': 'arrow_union_recall_2x2',
+                        'TIIArrowTop1Agree': 'tii_arrow_top1_agreement',
+                    }
+                    for metric_name, audit_name in arrow_percent_metrics.items():
+                        metric_logger.meters[metric_name].update(
+                            audit[audit_name].float().mean().mul(100.0).item(),
+                            n=input.shape[0])
+                    metric_logger.meters['UnionLoRA/sample'].update(
+                        audit['arrow_union_lora_counts'].mean().item(),
+                        n=input.shape[0])
                 continue
 
             if bool(getattr(args, 'progressive_rematching', False)):
@@ -1006,6 +1020,19 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 agree4=metric_logger.meters['ExactAgreement@4'],
                 oracle_cost=metric_logger.meters['OracleLoRA/sample'],
                 actual_cost=metric_logger.meters['ActualLoRA/sample']))
+    if bool(getattr(args, 'progressive_arrow_audit', False)):
+        print(
+            '* ArrowAudit ArrowRecall@2 {arrow2.global_avg:.3f} '
+            'ArrowRecall@4 {arrow4.global_avg:.3f} '
+            'UnionRecall@2x2 {union.global_avg:.3f} '
+            'UnionLoRA/sample {cost.global_avg:.3f} '
+            'TIIArrowTop1Agree {agreement.global_avg:.3f}'
+            .format(
+                arrow2=metric_logger.meters['ArrowRecall@2'],
+                arrow4=metric_logger.meters['ArrowRecall@4'],
+                union=metric_logger.meters['UnionRecall@2x2'],
+                cost=metric_logger.meters['UnionLoRA/sample'],
+                agreement=metric_logger.meters['TIIArrowTop1Agree']))
     if bool(getattr(args, 'calibrated_progressive_rematching', False)):
         print(
             '* CalibratedProgressive Stage1Stop {stage1.global_avg:.3f} '
@@ -1026,7 +1053,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((18, args.num_tasks))
+    stat_matrix = np.zeros((23, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -1058,6 +1085,12 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
             stat_matrix[14, i] = test_stats.get('ExactAgreement@4', 0.0)
             stat_matrix[15, i] = test_stats.get('OracleLoRA/sample', 0.0)
             stat_matrix[16, i] = test_stats.get('ActualLoRA/sample', 0.0)
+        if bool(getattr(args, 'progressive_arrow_audit', False)):
+            stat_matrix[18, i] = test_stats.get('ArrowRecall@2', 0.0)
+            stat_matrix[19, i] = test_stats.get('ArrowRecall@4', 0.0)
+            stat_matrix[20, i] = test_stats.get('UnionRecall@2x2', 0.0)
+            stat_matrix[21, i] = test_stats.get('UnionLoRA/sample', 0.0)
+            stat_matrix[22, i] = test_stats.get('TIIArrowTop1Agree', 0.0)
         if bool(getattr(args, 'calibrated_progressive_rematching', False)):
             stat_matrix[7, i] = test_stats.get('Stage1StopRate', 0.0)
             stat_matrix[8, i] = test_stats.get('Stage2StopRate', 0.0)
@@ -1096,6 +1129,14 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         ).format(
             avg_stat[11], avg_stat[12], avg_stat[13], avg_stat[14],
             avg_stat[15], avg_stat[16])
+    if bool(getattr(args, 'progressive_arrow_audit', False)):
+        result_str += (
+            "\tArrowRecall@2: {:.4f}\tArrowRecall@4: {:.4f}"
+            "\tUnionRecall@2x2: {:.4f}\tUnionLoRA/sample: {:.4f}"
+            "\tTIIArrowTop1Agree: {:.4f}"
+        ).format(
+            avg_stat[18], avg_stat[19], avg_stat[20], avg_stat[21],
+            avg_stat[22])
     if bool(getattr(args, 'calibrated_progressive_rematching', False)):
         result_str += (
             "\tStage1Stop: {:.4f}\tStage2Stop: {:.4f}"

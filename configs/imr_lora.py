@@ -268,6 +268,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--budgeted_disagreement_weight', default=2.0, type=float)
     subparsers.add_argument('--budgeted_classifier_weight', default=0.5, type=float)
     subparsers.add_argument('--progressive_oracle_audit', action='store_true', help='run exhaustive once and audit the theoretical 2-to-4-to-all cascade')
+    subparsers.add_argument('--progressive_arrow_audit', action='store_true', help='audit layerwise Arrow-style LoRA parameter routing and its fixed union with TII candidates')
     subparsers.add_argument('--calibrated_progressive_rematching', action='store_true', help='train conservative 2-to-4-to-all halting gates on train images before evaluation')
     subparsers.add_argument('--progressive_gate_samples_per_class', default=12, type=int)
     subparsers.add_argument('--progressive_gate_validation_ratio', default=0.25, type=float)

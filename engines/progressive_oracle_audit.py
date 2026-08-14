@@ -1,5 +1,9 @@
 import torch
 
+from engines.arrow_lora_audit import (
+    arrow_candidate_diagnostics,
+    arrow_task_scores,
+)
 from engines.progressive_rematching import _tii_task_prior
 
 
@@ -102,4 +106,9 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
         'actual_lora_counts': torch.full_like(
             oracle_counts, float(seen_task_count)),
     }
+    if bool(getattr(args, 'progressive_arrow_audit', False)):
+        arrow_scores = arrow_task_scores(model, inputs, seen_task_count)
+        arrow_ranking = torch.argsort(arrow_scores, dim=1, descending=True)
+        diagnostics.update(arrow_candidate_diagnostics(
+            candidate_tasks, arrow_ranking, routed_tasks))
     return full_logits, routed_tasks, diagnostics
