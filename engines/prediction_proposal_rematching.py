@@ -18,6 +18,51 @@ def _evaluate_candidate_tasks(model, inputs, candidate_tasks):
     )['logits'].reshape(batch_size, candidate_count, -1)
 
 
+def _complete_with_tii_probability_mass(
+        candidate_logits, tii_logits, class_mask, candidate_tasks,
+        seen_task_count):
+    """Give excluded seen classes TII mass without changing candidate top-1."""
+    batch_size, class_count = candidate_logits.shape
+    device = candidate_logits.device
+    included_mask = torch.zeros(
+        (batch_size, class_count), dtype=torch.bool, device=device)
+    for candidate_slot in range(candidate_tasks.shape[1]):
+        active_tasks = candidate_tasks[:, candidate_slot]
+        for task_index in active_tasks.unique().tolist():
+            rows = torch.nonzero(active_tasks == task_index).flatten()
+            class_index = torch.as_tensor(
+                class_mask[task_index], dtype=torch.long, device=device)
+            included_mask[
+                rows.unsqueeze(1), class_index.unsqueeze(0)
+            ] = True
+
+    seen_class_mask = torch.zeros(
+        class_count, dtype=torch.bool, device=device)
+    for task_classes in class_mask[:seen_task_count]:
+        seen_class_mask[torch.as_tensor(
+            task_classes, dtype=torch.long, device=device)] = True
+    outside_mask = seen_class_mask.unsqueeze(0) & ~included_mask
+
+    candidate_probabilities = torch.softmax(candidate_logits, dim=1)
+    masked_tii_logits = tii_logits.masked_fill(
+        ~seen_class_mask.unsqueeze(0), float('-inf'))
+    tii_probabilities = torch.softmax(masked_tii_logits, dim=1)
+    outside_probabilities = tii_probabilities.masked_fill(~outside_mask, 0.0)
+    outside_mass = outside_probabilities.sum(dim=1, keepdim=True)
+    outside_conditional = outside_probabilities / outside_mass.clamp_min(1e-12)
+
+    candidate_peak = candidate_probabilities.max(dim=1, keepdim=True).values
+    outside_peak = outside_conditional.max(dim=1, keepdim=True).values
+    top1_safe_mass = 0.99 * candidate_peak / (
+        candidate_peak + outside_peak).clamp_min(1e-12)
+    completion_mass = torch.minimum(outside_mass, top1_safe_mass)
+    completed_probabilities = (
+        (1.0 - completion_mass) * candidate_probabilities
+        + completion_mass * outside_conditional
+    )
+    return completed_probabilities.clamp_min(1e-12).log()
+
+
 @torch.no_grad()
 def prediction_proposal_adapter_rematching(
         model, inputs, tii_logits, class_mask, seen_task_count, args):
@@ -88,8 +133,13 @@ def prediction_proposal_adapter_rematching(
     selected_slot = task_evidence.argmax(dim=1)
     routed_tasks = candidate_tasks.gather(
         1, selected_slot.unsqueeze(1)).squeeze(1)
-    merged_logits = _finalize_partial_logits(
-        merged_logits, excluded_margin)
+    if bool(getattr(args, 'prediction_proposal_tii_completion', False)):
+        merged_logits = _complete_with_tii_probability_mass(
+            merged_logits, tii_logits, class_mask, candidate_tasks,
+            seen_task_count)
+    else:
+        merged_logits = _finalize_partial_logits(
+            merged_logits, excluded_margin)
     diagnostics = {
         'lora_counts': torch.full(
             (batch_size,), float(candidate_count),

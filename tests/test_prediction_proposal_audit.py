@@ -5,6 +5,7 @@ from torch import nn
 
 from protocols import validate_exemplar_free_protocol
 from engines.prediction_proposal_rematching import (
+    _complete_with_tii_probability_mass,
     prediction_proposal_adapter_rematching,
 )
 from engines.progressive_oracle_audit import prediction_proposal_diagnostics
@@ -69,6 +70,7 @@ def test_prediction_proposal_is_allowed_by_strict_exemplar_free_protocol():
         progressive_oracle_audit=True,
         progressive_prediction_proposal_audit=True,
         prediction_proposal_rematching=True,
+        prediction_proposal_tii_completion=True,
     ))
 
 
@@ -127,3 +129,25 @@ def test_operational_prediction_proposal_runs_only_four_loras_in_two_calls():
     assert diagnostics['lora_counts'].tolist() == [4.0]
     assert diagnostics['forward_calls'].tolist() == [2.0]
     assert model.batch_sizes == [2, 2]
+
+
+def test_tii_completion_preserves_top1_and_assigns_finite_outside_mass():
+    candidate_logits = torch.tensor([[
+        5.0, 4.0, 3.0, 2.0, float('-inf'), float('-inf'),
+    ]])
+    tii_logits = torch.tensor([[1.0, 0.0, 0.5, 0.0, 4.0, 3.0]])
+    candidate_tasks = torch.tensor([[0, 1]])
+
+    completed = _complete_with_tii_probability_mass(
+        candidate_logits=candidate_logits,
+        tii_logits=tii_logits,
+        class_mask=[[0, 1], [2, 3], [4, 5]],
+        candidate_tasks=candidate_tasks,
+        seen_task_count=3,
+    )
+
+    assert completed.argmax(dim=1).tolist() == [0]
+    assert torch.isfinite(completed).all()
+    assert completed[0, 4] > -20.0
+    assert torch.allclose(
+        completed.exp().sum(dim=1), torch.ones(1), atol=1e-6)

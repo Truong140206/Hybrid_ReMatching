@@ -2727,3 +2727,24 @@ Buoc tiep theo da duoc trien khai la prediction_proposal_rematching that: hai
 LoRA TII dau duoc chay trong mot model call, hai LoRA de xuat duoc chay trong
 model call thu hai, sau do chi gop logit cua bon task nay. Cau hinh khong co
 exhaustive fallback, khong hoc router va chay voi strict_exemplar_free.
+
+## 2026-08-15: Ket qua operational prediction proposal 4 LoRA
+
+Inference that voi TII top-2 + 2 task proposal dat Acc@task 80.2823, Acc@1
+74.7520, Acc@5 87.5311, Loss 2.7701, Forgetting 3.1791 va Backward
+-3.1392. Chi phi dung 4 LoRA/mau va 2 forward call/mau.
+
+So voi baseline, ba accuracy deu tang (Acc@task +2.6969, Acc@1 +0.7043,
+Acc@5 +1.0665) va Forgetting giam 0.1473. Day la bang chung proposal routing
+hoat dong that o chi phi 40% exhaustive. Tuy nhien strict all-metric gate FAIL
+vi Backward giam 0.2073 va Loss tang 1.5471.
+
+Loss cao khong dong nghia accuracy thap: cac lop thuoc task khong duoc chon bi
+gan logit rat nho de tao tensor huu han. Khi nhan that nam ngoai candidate,
+cross-entropy bi phat rat lon. Huong sua khong dung nhan la danh mot phan khoi
+luong xac suat TII cho cac lop bi loai, voi gioi han theo tung mau de top-1 cua
+candidate khong bi thay doi.
+
+Cau hinh tiep theo duoc khoa o TII top-2 + 3 proposal, TII probability
+completion, toi da 5 LoRA/mau va van chi 2 forward call. Muc tieu cua proposal
+thu ba la dua BWT gan exhaustive; completion nham sua Loss ma khong doi top-1.
