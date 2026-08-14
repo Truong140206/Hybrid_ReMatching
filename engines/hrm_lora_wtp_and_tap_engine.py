@@ -17,6 +17,7 @@ from timm.scheduler import create_scheduler
 from torch import optim
 import utils
 from engines.exhaustive_rematching import exhaustive_adapter_rematching
+from engines.vectorized_exhaustive_rematching import vectorized_exhaustive_adapter_rematching
 from engines.hierarchical_rematching import hierarchical_adapter_rematching
 from engines.budgeted_rematching import budgeted_exhaustive_fallback
 from engines.progressive_rematching import progressive_adapter_rematching
@@ -724,7 +725,9 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 continue
 
             if (bool(getattr(args, 'hierarchical_rematching', False))
-                    or bool(getattr(args, 'exhaustive_rematching', False))):
+                    or bool(getattr(args, 'exhaustive_rematching', False))
+                    or bool(getattr(args, 'vectorized_exhaustive_rematching', False))):
+                vectorized_diagnostics = None
                 if bool(getattr(args, 'hierarchical_rematching', False)):
                     logits, prompt_id = hierarchical_adapter_rematching(
                         model=model,
@@ -733,6 +736,18 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                         class_mask=class_mask,
                         seen_task_count=task_id + 1,
                         args=args,
+                    )
+                elif bool(getattr(args, 'vectorized_exhaustive_rematching', False)):
+                    logits, prompt_id, vectorized_diagnostics = (
+                        vectorized_exhaustive_adapter_rematching(
+                            model=model,
+                            inputs=input,
+                            tii_logits=old_logits,
+                            class_mask=class_mask,
+                            seen_task_count=task_id + 1,
+                            args=args,
+                            prototype_bank=prototype_bank,
+                        )
                     )
                 else:
                     logits, prompt_id = exhaustive_adapter_rematching(
@@ -759,6 +774,13 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     acc5.item(), n=input.shape[0])
                 metric_logger.meters['Acc@task'].update(
                     task_inference_acc.item(), n=input.shape[0])
+                if vectorized_diagnostics is not None:
+                    metric_logger.meters['LoRA/sample'].update(
+                        vectorized_diagnostics['lora_counts'].mean().item(),
+                        n=input.shape[0])
+                    metric_logger.meters['ForwardCalls/sample'].update(
+                        vectorized_diagnostics['forward_calls'].mean().item(),
+                        n=input.shape[0])
                 continue
 
             if bool(getattr(args, 'selective_rematching', False)):
@@ -1060,6 +1082,12 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 union=metric_logger.meters['ResponseUnionRecall@2x2'],
                 cost=metric_logger.meters['ResponseUnionLoRA/sample'],
                 agreement=metric_logger.meters['TIIResponseTop1Agree']))
+    if bool(getattr(args, 'vectorized_exhaustive_rematching', False)):
+        print(
+            '* VectorizedExhaustive LoRA/sample {cost.global_avg:.3f} '
+            'ForwardCalls/sample {calls.global_avg:.3f}'
+            .format(cost=metric_logger.meters['LoRA/sample'],
+                    calls=metric_logger.meters['ForwardCalls/sample']))
     if bool(getattr(args, 'calibrated_progressive_rematching', False)):
         print(
             '* CalibratedProgressive Stage1Stop {stage1.global_avg:.3f} '
@@ -1080,7 +1108,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((28, args.num_tasks))
+    stat_matrix = np.zeros((30, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -1124,6 +1152,9 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
             stat_matrix[25, i] = test_stats.get('ResponseUnionRecall@2x2', 0.0)
             stat_matrix[26, i] = test_stats.get('ResponseUnionLoRA/sample', 0.0)
             stat_matrix[27, i] = test_stats.get('TIIResponseTop1Agree', 0.0)
+        if bool(getattr(args, 'vectorized_exhaustive_rematching', False)):
+            stat_matrix[28, i] = test_stats.get('LoRA/sample', 0.0)
+            stat_matrix[29, i] = test_stats.get('ForwardCalls/sample', 0.0)
         if bool(getattr(args, 'calibrated_progressive_rematching', False)):
             stat_matrix[7, i] = test_stats.get('Stage1StopRate', 0.0)
             stat_matrix[8, i] = test_stats.get('Stage2StopRate', 0.0)
@@ -1179,6 +1210,10 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         ).format(
             avg_stat[23], avg_stat[24], avg_stat[25], avg_stat[26],
             avg_stat[27])
+    if bool(getattr(args, 'vectorized_exhaustive_rematching', False)):
+        result_str += (
+            "\tLoRA/sample: {:.4f}\tForwardCalls/sample: {:.4f}"
+        ).format(avg_stat[28], avg_stat[29])
     if bool(getattr(args, 'calibrated_progressive_rematching', False)):
         result_str += (
             "\tStage1Stop: {:.4f}\tStage2Stop: {:.4f}"

@@ -247,6 +247,8 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--replay_router_samples_per_class', default=48, type=int)
     subparsers.add_argument('--replay_router_batch_size', default=256, type=int)
     subparsers.add_argument('--exhaustive_rematching', action='store_true', help='score every seen task with its own LoRA and merge task-local class logits')
+    subparsers.add_argument('--vectorized_exhaustive_rematching', action='store_true', help='preserve exhaustive scoring while batching multiple task LoRAs in each model call')
+    subparsers.add_argument('--vectorized_exhaustive_task_chunk_size', default=4, type=int)
     subparsers.add_argument('--exhaustive_tii_prior_weight', default=0.1, type=float)
     subparsers.add_argument('--exhaustive_logit_temperature', default=1.0, type=float)
     subparsers.add_argument('--exhaustive_max_calibration_weight', default=0.0, type=float, help='blend raw cross-task maxima toward unit-standardized maxima while preserving within-task class logit gaps')
