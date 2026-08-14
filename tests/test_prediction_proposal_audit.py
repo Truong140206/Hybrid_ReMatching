@@ -10,6 +10,7 @@ from engines.prediction_proposal_rematching import (
     cross_adapter_global_consensus,
     initial_branch_confidence_dominance,
     prediction_proposal_adapter_rematching,
+    task_mass_preserving_candidate_fusion,
 )
 from engines.progressive_oracle_audit import prediction_proposal_diagnostics
 
@@ -75,6 +76,7 @@ def test_prediction_proposal_is_allowed_by_strict_exemplar_free_protocol():
         prediction_proposal_rematching=True,
         prediction_proposal_cross_adapter_audit=True,
         prediction_proposal_tii_completion=True,
+        prediction_proposal_task_mass_fusion=True,
     ))
 
 
@@ -159,6 +161,26 @@ def test_tii_completion_preserves_top1_and_assigns_finite_outside_mass():
     assert completed[0, 4] > -20.0
     assert torch.allclose(
         completed.exp().sum(dim=1), torch.ones(1), atol=1e-6)
+
+
+def test_task_mass_fusion_is_normalized_and_adapter_shift_invariant():
+    candidate_logits = torch.tensor([[[4.0, 2.0, 9.0, 8.0],
+                                      [7.0, 6.0, 3.0, 1.0]]])
+    tii_logits = torch.tensor([[3.0, 2.0, 1.0, 0.0]])
+    candidate_tasks = torch.tensor([[0, 1]])
+    class_mask = [[0, 1], [2, 3]]
+
+    fused, evidence = task_mass_preserving_candidate_fusion(
+        candidate_logits, tii_logits, class_mask, candidate_tasks,
+        seen_task_count=2)
+    shifted = candidate_logits + torch.tensor([[[100.0], [-50.0]]])
+    shifted_fused, shifted_evidence = task_mass_preserving_candidate_fusion(
+        shifted, tii_logits, class_mask, candidate_tasks,
+        seen_task_count=2)
+
+    assert torch.allclose(fused.exp().sum(dim=1), torch.ones(1), atol=1e-6)
+    assert torch.allclose(fused, shifted_fused, atol=1e-6)
+    assert torch.allclose(evidence, shifted_evidence, atol=1e-6)
 
 
 def test_initial_branch_selector_requires_confidence_and_margin_dominance():

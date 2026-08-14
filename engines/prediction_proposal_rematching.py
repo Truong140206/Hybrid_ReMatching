@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 
 from engines.progressive_oracle_audit import (
     _finalize_partial_logits,
@@ -130,6 +131,60 @@ def _complete_with_tii_probability_mass(
     return completed_probabilities.clamp_min(1e-12).log()
 
 
+def task_mass_preserving_candidate_fusion(
+        candidate_logits, tii_logits, class_mask, candidate_tasks,
+        seen_task_count, temperature=1.0):
+    """Fuse adapters as P(task|x) P(class|task,x), preserving TII task mass."""
+    batch_size, candidate_count, class_count = candidate_logits.shape
+    device = candidate_logits.device
+    temperature = max(float(temperature), 1e-6)
+
+    seen_class_mask = torch.zeros(
+        class_count, dtype=torch.bool, device=device)
+    for task_classes in class_mask[:seen_task_count]:
+        seen_class_mask[torch.as_tensor(
+            task_classes, dtype=torch.long, device=device)] = True
+    tii_probabilities = torch.softmax(
+        tii_logits.masked_fill(~seen_class_mask.unsqueeze(0), float('-inf')),
+        dim=1)
+
+    task_mass = torch.stack([
+        tii_probabilities.index_select(
+            1, torch.as_tensor(task_classes, dtype=torch.long, device=device)
+        ).sum(dim=1)
+        for task_classes in class_mask[:seen_task_count]
+    ], dim=1)
+    candidate_mass = task_mass.gather(1, candidate_tasks)
+    candidate_mass = candidate_mass / candidate_mass.sum(
+        dim=1, keepdim=True).clamp_min(1e-12)
+
+    merged_logits = torch.full_like(tii_logits, float('-inf'))
+    task_evidence = torch.full(
+        (batch_size, candidate_count), float('-inf'),
+        dtype=tii_logits.dtype, device=device)
+    for candidate_slot in range(candidate_count):
+        active_tasks = candidate_tasks[:, candidate_slot]
+        adapter_logits = candidate_logits[:, candidate_slot]
+        for task_index in active_tasks.unique().tolist():
+            rows = torch.nonzero(active_tasks == task_index).flatten()
+            class_index = torch.as_tensor(
+                class_mask[task_index], dtype=torch.long, device=device)
+            conditional_log_probability = F.log_softmax(
+                adapter_logits.index_select(0, rows).index_select(
+                    1, class_index) / temperature,
+                dim=1)
+            joint_log_probability = (
+                conditional_log_probability
+                + candidate_mass[rows, candidate_slot].clamp_min(
+                    1e-12).log().unsqueeze(1))
+            merged_logits[
+                rows.unsqueeze(1), class_index.unsqueeze(0)
+            ] = joint_log_probability
+            task_evidence[rows, candidate_slot] = (
+                joint_log_probability.max(dim=1).values)
+    return merged_logits, task_evidence
+
+
 @torch.no_grad()
 def prediction_proposal_adapter_rematching(
         model, inputs, tii_logits, class_mask, seen_task_count, args):
@@ -176,26 +231,36 @@ def prediction_proposal_adapter_rematching(
         forward_calls += 1
 
     candidate_count = candidate_tasks.shape[1]
-    merged_logits = torch.full_like(tii_logits, float('-inf'))
-    task_evidence = torch.full(
-        (batch_size, candidate_count), float('-inf'),
-        dtype=tii_logits.dtype, device=device)
-    for candidate_slot in range(candidate_count):
-        active_tasks = candidate_tasks[:, candidate_slot]
-        adapter_logits = candidate_logits[:, candidate_slot]
-        for task_index in active_tasks.unique().tolist():
-            rows = torch.nonzero(active_tasks == task_index).flatten()
-            class_index = torch.as_tensor(
-                class_mask[task_index], dtype=torch.long, device=device)
-            local_logits = adapter_logits.index_select(
-                0, rows).index_select(1, class_index) / temperature
-            calibrated_logits = local_logits + prior_weight * tii_prior[
-                rows, task_index].unsqueeze(1)
-            merged_logits[
-                rows.unsqueeze(1), class_index.unsqueeze(0)
-            ] = calibrated_logits
-            task_evidence[rows, candidate_slot] = calibrated_logits.max(
-                dim=1).values
+    if bool(getattr(args, 'prediction_proposal_task_mass_fusion', False)):
+        merged_logits, task_evidence = task_mass_preserving_candidate_fusion(
+            candidate_logits=candidate_logits,
+            tii_logits=tii_logits,
+            class_mask=class_mask,
+            candidate_tasks=candidate_tasks,
+            seen_task_count=seen_task_count,
+            temperature=temperature,
+        )
+    else:
+        merged_logits = torch.full_like(tii_logits, float('-inf'))
+        task_evidence = torch.full(
+            (batch_size, candidate_count), float('-inf'),
+            dtype=tii_logits.dtype, device=device)
+        for candidate_slot in range(candidate_count):
+            active_tasks = candidate_tasks[:, candidate_slot]
+            adapter_logits = candidate_logits[:, candidate_slot]
+            for task_index in active_tasks.unique().tolist():
+                rows = torch.nonzero(active_tasks == task_index).flatten()
+                class_index = torch.as_tensor(
+                    class_mask[task_index], dtype=torch.long, device=device)
+                local_logits = adapter_logits.index_select(
+                    0, rows).index_select(1, class_index) / temperature
+                calibrated_logits = local_logits + prior_weight * tii_prior[
+                    rows, task_index].unsqueeze(1)
+                merged_logits[
+                    rows.unsqueeze(1), class_index.unsqueeze(0)
+                ] = calibrated_logits
+                task_evidence[rows, candidate_slot] = calibrated_logits.max(
+                    dim=1).values
 
     selected_slot = task_evidence.argmax(dim=1)
     routed_tasks = candidate_tasks.gather(

@@ -2841,3 +2841,11 @@ Cross-adapter plurality vote có oracle rất cao (`82.4275`) nhưng rescue gi�
 Kết quả Borda seed 42: `BordaAcc@1=71.2973`, `BordaRescueAcc@1=71.3306`, thấp hơn proposal `3.7544` điểm. Rescue kích hoạt trên `17.2585%` mẫu, trong khi top-5 support trung bình là `98.3229%`; điều kiện support vì vậy gần như không có khả năng loại các quyết định sai. `Proposal/Borda oracle=77.9539` chỉ xác nhận hai nhánh có tính bổ sung, nhưng không cung cấp quy tắc chọn nhánh khả dụng khi không có nhãn. `CROSS_BORDA_HEADROOM_GATE=PASS` và `CROSS_BORDA_RESCUE_GATE=FAIL`.
 
 Quyết định: đóng toàn bộ hướng fusion không học gồm confidence dominance, plurality vote, strict-majority rescue và Borda. Không tiếp tục tune ngưỡng trên test. Nếu khai thác headroom cross-adapter, bước sau phải là selector được học trên calibration data hợp lệ và rehearsal-free, được khóa trước khi đánh giá test; nếu không đáp ứng giao thức này thì giữ proposal hiện tại.
+
+## 2026-08-15: Preregistered strict task-mass fusion
+
+Sau khi confidence dominance, plurality vote và Borda đều thất bại, không tiếp tục thêm quy tắc chọn nhánh dựa trên test. Bottleneck mới được xác định trong chính proposal: các LoRA đang được so bằng raw maximum logit, trong khi logit của các adapter độc lập không có cùng offset/thang đo.
+
+Phép thử kế tiếp được khóa trước khi chạy: giữ nguyên candidate TII top-2 + ba task được đề xuất, 5 LoRA/mẫu, 2 vectorized calls và TII completion; chỉ thay phép hợp nhất bằng `P(class, task|x) = P_TII(task|x) * P_LoRA(class|task,x)`. TII cấp tổng probability mass cho task, còn LoRA phân phối mass đó giữa các lớp trong task bằng conditional softmax. Không có hệ số mới, dữ liệu calibration, ảnh cũ, feature từng mẫu, semantic hay CFS; checkpoint vẫn phải qua strict training-log và `real_feature_memory` audit.
+
+Giả thuyết được chấp nhận chỉ khi `BASELINE_ALL_METRIC_GATE=PASS` trên strict rank-8 checkpoint và efficiency vẫn là 5 LoRA/mẫu, 2 calls/mẫu. Nếu fail, đóng task-mass fusion; không quét temperature hoặc pha trộn với raw-logit fusion trên test.
