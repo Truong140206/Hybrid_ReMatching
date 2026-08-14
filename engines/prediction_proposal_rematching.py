@@ -34,6 +34,32 @@ def initial_branch_confidence_dominance(initial_logits, proposal_logits):
     )
 
 
+def cross_adapter_global_consensus(candidate_logits):
+    """Plurality vote over full adapter predictions with probability tie-break."""
+    batch_size, candidate_count, class_count = candidate_logits.shape
+    probabilities = torch.softmax(candidate_logits, dim=2)
+    predictions = candidate_logits.argmax(dim=2)
+    vote_counts = torch.zeros(
+        (batch_size, class_count), dtype=torch.long,
+        device=candidate_logits.device)
+    vote_counts.scatter_add_(
+        1, predictions,
+        torch.ones_like(predictions, dtype=torch.long))
+    max_votes = vote_counts.max(dim=1).values
+    tied_classes = vote_counts.eq(max_votes.unsqueeze(1))
+    probability_support = probabilities.sum(dim=1)
+    consensus_prediction = probability_support.masked_fill(
+        ~tied_classes, float('-inf')).argmax(dim=1)
+    strict_majority = max_votes.mul(2).gt(candidate_count)
+    vote_strength = max_votes.float().div(float(candidate_count))
+    return {
+        'adapter_predictions': predictions,
+        'consensus_prediction': consensus_prediction,
+        'strict_majority': strict_majority,
+        'vote_strength': vote_strength,
+    }
+
+
 def _complete_with_tii_probability_mass(
         candidate_logits, tii_logits, class_mask, candidate_tasks,
         seen_task_count):
@@ -167,5 +193,9 @@ def prediction_proposal_adapter_rematching(
         # route, so exposing it for audit adds neither a LoRA nor a forward.
         'initial_branch_logits': initial_logits[:, 0],
         'initial_branch_tasks': initial_tasks[:, 0],
+        # Full logits already exist for every evaluated adapter. Keeping them
+        # transiently for audit adds no model execution or persistent memory.
+        'candidate_logits': candidate_logits,
+        'candidate_tasks': candidate_tasks,
     }
     return merged_logits, routed_tasks, diagnostics

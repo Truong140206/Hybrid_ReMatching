@@ -283,6 +283,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--progressive_prediction_proposal_audit', action='store_true', help='audit tasks proposed by top class predictions from the initial hard LoRAs')
     subparsers.add_argument('--prediction_proposal_rematching', action='store_true', help='run only TII initial LoRAs plus fixed-budget tasks proposed by their class predictions')
     subparsers.add_argument('--prediction_proposal_initial_branch_audit', action='store_true', help='audit free per-sample complementarity between proposal output and the already-computed initial TII-top1 adapter output')
+    subparsers.add_argument('--prediction_proposal_cross_adapter_audit', action='store_true', help='audit full-class consensus and oracle headroom across the already-evaluated proposal adapters')
     subparsers.add_argument('--prediction_proposal_tii_completion', action='store_true', help='reserve TII probability mass for classes whose task LoRA was not evaluated while preserving routed top-1')
     subparsers.add_argument('--prediction_proposal_initial_count', default=2, type=int)
     subparsers.add_argument('--prediction_proposal_count', default=2, type=int)

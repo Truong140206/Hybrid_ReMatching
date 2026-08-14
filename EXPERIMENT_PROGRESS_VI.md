@@ -2829,3 +2829,7 @@ Nhãn chỉ dùng để báo cáo audit, không đi vào routing. Audit không g
 ### Kết quả complementarity và giả thuyết khóa trước
 
 Audit seed 42 xác nhận nhánh TII-top1 và proposal bổ sung cho nhau: `InitialOnlyCorrect=2.0376`, `ProposalOnlyCorrect=5.4334`, oracle hai nhánh đạt `77.1226` Acc@1 so với proposal `75.0850`. Bước kế tiếp dùng một quy tắc không tham số, không fit trên test: chỉ chọn nhánh đầu khi dự đoán khác nhau và nhánh đầu đồng thời có top-1 probability cùng top1-top2 margin cao hơn proposal. Đây là Pareto-confidence dominance; nếu không tăng Acc@1 trong một lần đánh giá thì đóng hướng selector này, không tune threshold trên test.
+
+### Cross-adapter full-logit consensus audit
+
+Pareto-confidence selector giảm Acc@1 từ `75.0850` xuống `74.9055`, vì vậy hướng so sánh confidence giữa initial branch và proposal đã được đóng mà không tune threshold trên test. Audit kế tiếp kiểm tra tín hiệu đã có sẵn trong full logits của cả 5 LoRA proposal: plurality vote, any-adapter label oracle, proposal/vote oracle và strict-majority rescue. Tie của plurality vote được phá bằng tổng xác suất; rescue chỉ bật khi có đa số tuyệt đối. Quy tắc không có tham số học, nhãn chỉ chấm oracle/accuracy, không tham gia vote. Không thêm LoRA, forward call, ảnh cũ hay feature memory.

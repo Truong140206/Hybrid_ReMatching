@@ -10,6 +10,7 @@ OUTPUT_ROOT="${OUTPUT_ROOT:-${WORK_ROOT}/hrm-pet-output}"
 RUN_DIR="${1:-}"
 LORA_RANK="${LORA_RANK:-}"
 AUDIT_INITIAL_BRANCH="${AUDIT_INITIAL_BRANCH:-0}"
+AUDIT_CROSS_ADAPTER="${AUDIT_CROSS_ADAPTER:-0}"
 
 if [[ -z "${RUN_DIR}" ]]; then
   echo "Usage: $0 RUN_DIR" >&2
@@ -117,6 +118,10 @@ if [[ "${AUDIT_INITIAL_BRANCH}" == "1" ]]; then
   AUDIT_SUFFIX="_initial_branch_dominance_audit"
   AUDIT_ARGS+=(--prediction_proposal_initial_branch_audit)
 fi
+if [[ "${AUDIT_CROSS_ADAPTER}" == "1" ]]; then
+  AUDIT_SUFFIX="${AUDIT_SUFFIX}_cross_adapter_audit"
+  AUDIT_ARGS+=(--prediction_proposal_cross_adapter_audit)
+fi
 LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_prediction_proposal_i2_p3_c5_tiicomplete_strict${AUDIT_SUFFIX}.log"
 if [[ -s "${LOG_PATH}" ]]; then
   echo "Refusing to overwrite existing evaluation log: ${LOG_PATH}" >&2
@@ -181,6 +186,10 @@ echo "${FINAL_LINE}"
 if [[ "${AUDIT_INITIAL_BRANCH}" == "1" ]]; then
   echo "Per-task initial-branch/proposal complementarity (tasks 1-10):"
   grep "InitialProposalAudit" "${LOG_PATH}" | tail -n 10 | nl -w1 -s': '
+fi
+if [[ "${AUDIT_CROSS_ADAPTER}" == "1" ]]; then
+  echo "Per-task cross-adapter consensus audit (tasks 1-10):"
+  grep "CrossAdapterAudit" "${LOG_PATH}" | tail -n 10 | nl -w1 -s': '
 fi
 
 "${PYTHON_BIN}" - "${LOG_PATH}" "${BASELINE_LOG}" "${EXHAUSTIVE_LOG}" <<'PY'
@@ -259,4 +268,27 @@ if 'InitialProposalOracleAcc@1:' in candidate:
         'PASS' if viable else 'FAIL'))
     print('PARAMETER_FREE_DOMINANCE_GATE=' + (
         'PASS' if dominance >= proposal else 'FAIL'))
+if 'CrossAdapterOracleAcc@1:' in candidate:
+    proposal = metric(candidate, 'Acc@1')
+    vote = metric(candidate, 'CrossVoteAcc@1')
+    adapter_oracle = metric(candidate, 'CrossAdapterOracleAcc@1')
+    vote_only = metric(candidate, 'CrossVoteOnlyCorrect')
+    proposal_only = metric(candidate, 'ProposalOnlyVsCrossVote')
+    proposal_vote_oracle = metric(candidate, 'CrossProposalOracleAcc@1')
+    rescue = metric(candidate, 'CrossRescueAcc@1')
+    rescue_rate = metric(candidate, 'CrossRescueRate')
+    print('Cross-adapter full-logit audit:')
+    print(f'  Proposal Acc@1={proposal:.4f}')
+    print(f'  Global plurality vote Acc@1={vote:.4f}')
+    print(f'  Any-adapter label oracle Acc@1={adapter_oracle:.4f}; '
+          f'headroom={adapter_oracle - proposal:+.4f}')
+    print(f'  Vote-only correct={vote_only:.4f}; '
+          f'proposal-only correct={proposal_only:.4f}')
+    print(f'  Proposal/vote oracle Acc@1={proposal_vote_oracle:.4f}')
+    print(f'  Strict-majority rescue Acc@1={rescue:.4f}; '
+          f'gain={rescue - proposal:+.4f}; rescue rate={rescue_rate:.4f}')
+    print('CROSS_ADAPTER_HEADROOM_GATE=' + (
+        'PASS' if adapter_oracle - proposal >= 0.25 else 'FAIL'))
+    print('CROSS_ADAPTER_RESCUE_GATE=' + (
+        'PASS' if rescue >= proposal else 'FAIL'))
 PY

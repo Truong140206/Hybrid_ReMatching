@@ -6,6 +6,7 @@ from torch import nn
 from protocols import validate_exemplar_free_protocol
 from engines.prediction_proposal_rematching import (
     _complete_with_tii_probability_mass,
+    cross_adapter_global_consensus,
     initial_branch_confidence_dominance,
     prediction_proposal_adapter_rematching,
 )
@@ -71,6 +72,7 @@ def test_prediction_proposal_is_allowed_by_strict_exemplar_free_protocol():
         progressive_oracle_audit=True,
         progressive_prediction_proposal_audit=True,
         prediction_proposal_rematching=True,
+        prediction_proposal_cross_adapter_audit=True,
         prediction_proposal_tii_completion=True,
     ))
 
@@ -131,6 +133,8 @@ def test_operational_prediction_proposal_runs_only_four_loras_in_two_calls():
     assert diagnostics['forward_calls'].tolist() == [2.0]
     assert diagnostics['initial_branch_tasks'].tolist() == [0]
     assert diagnostics['initial_branch_logits'].argmax(dim=1).tolist() == [8]
+    assert diagnostics['candidate_logits'].shape == (1, 4, 10)
+    assert diagnostics['candidate_tasks'].shape == (1, 4)
     assert model.batch_sizes == [2, 2]
 
 
@@ -172,3 +176,29 @@ def test_initial_branch_selector_requires_confidence_and_margin_dominance():
         initial_logits, proposal_logits)
 
     assert selected.tolist() == [True, False, False]
+
+
+def test_cross_adapter_consensus_uses_plurality_and_probability_tie_break():
+    candidate_logits = torch.tensor([
+        [
+            [5.0, 0.0, 0.0],
+            [4.0, 0.0, 0.0],
+            [0.0, 3.0, 0.0],
+            [0.0, 2.0, 0.0],
+            [3.0, 0.0, 0.0],
+        ],
+        [
+            [3.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [0.0, 4.0, 0.0],
+            [0.0, 5.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+    ])
+
+    audit = cross_adapter_global_consensus(candidate_logits)
+
+    assert audit['consensus_prediction'].tolist() == [0, 1]
+    assert audit['strict_majority'].tolist() == [True, False]
+    assert torch.allclose(
+        audit['vote_strength'], torch.tensor([0.6, 0.4]))

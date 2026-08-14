@@ -29,6 +29,7 @@ from engines.budgeted_rematching import budgeted_exhaustive_fallback
 from engines.progressive_rematching import progressive_adapter_rematching
 from engines.progressive_oracle_audit import progressive_oracle_audit
 from engines.prediction_proposal_rematching import (
+    cross_adapter_global_consensus,
     initial_branch_confidence_dominance,
     prediction_proposal_adapter_rematching,
 )
@@ -959,6 +960,60 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                         for metric_name, metric_value in comparison_metrics.items():
                             metric_logger.meters[metric_name].update(
                                 metric_value.item(), n=input.shape[0])
+                    if bool(getattr(
+                            args, 'prediction_proposal_cross_adapter_audit', False)):
+                        candidate_logits = cost_diagnostics['candidate_logits']
+                        if args.train_mask and class_mask is not None:
+                            seen_classes = [
+                                class_id
+                                for seen_task in range(task_id + 1)
+                                for class_id in class_mask[seen_task]
+                            ]
+                            unseen_classes = np.setdiff1d(
+                                np.arange(args.nb_classes), seen_classes)
+                            unseen_classes = torch.as_tensor(
+                                unseen_classes, dtype=torch.long, device=device)
+                            candidate_logits = candidate_logits.index_fill(
+                                2, unseen_classes, float('-inf'))
+                        consensus = cross_adapter_global_consensus(
+                            candidate_logits)
+                        adapter_predictions = consensus[
+                            'adapter_predictions']
+                        vote_prediction = consensus['consensus_prediction']
+                        proposal_prediction = logits.argmax(dim=1)
+                        vote_correct = vote_prediction.eq(target)
+                        proposal_correct = proposal_prediction.eq(target)
+                        adapter_any_correct = adapter_predictions.eq(
+                            target.unsqueeze(1)).any(dim=1)
+                        select_vote = (
+                            consensus['strict_majority']
+                            & vote_prediction.ne(proposal_prediction)
+                        )
+                        rescue_prediction = torch.where(
+                            select_vote, vote_prediction, proposal_prediction)
+                        rescue_correct = rescue_prediction.eq(target)
+                        cross_metrics = {
+                            'CrossVoteAcc@1': vote_correct.float().mean() * 100.0,
+                            'CrossAdapterOracleAcc@1': adapter_any_correct.float(
+                                ).mean() * 100.0,
+                            'CrossVoteStrength': consensus['vote_strength'].mean(
+                                ) * 100.0,
+                            'CrossVoteOnlyCorrect': (
+                                vote_correct & ~proposal_correct
+                                ).float().mean() * 100.0,
+                            'ProposalOnlyVsCrossVote': (
+                                proposal_correct & ~vote_correct
+                                ).float().mean() * 100.0,
+                            'CrossProposalOracleAcc@1': (
+                                vote_correct | proposal_correct
+                                ).float().mean() * 100.0,
+                            'CrossRescueAcc@1': rescue_correct.float(
+                                ).mean() * 100.0,
+                            'CrossRescueRate': select_vote.float().mean() * 100.0,
+                        }
+                        for metric_name, metric_value in cross_metrics.items():
+                            metric_logger.meters[metric_name].update(
+                                metric_value.item(), n=input.shape[0])
                 continue
 
             if bool(getattr(args, 'selective_rematching', False)):
@@ -1299,6 +1354,28 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                         'InitialProposalOracleAcc@1'],
                     dominance=metric_logger.meters['DominanceAcc@1'],
                     select_rate=metric_logger.meters['InitialSelectRate']))
+    if bool(getattr(args, 'prediction_proposal_cross_adapter_audit', False)):
+        print(
+            '* CrossAdapterAudit VoteAcc@1 {vote.global_avg:.3f} '
+            'AdapterOracleAcc@1 {adapter_oracle.global_avg:.3f} '
+            'VoteStrength {strength.global_avg:.3f} '
+            'VoteOnly {vote_only.global_avg:.3f} '
+            'ProposalOnly {proposal_only.global_avg:.3f} '
+            'ProposalVoteOracleAcc@1 {proposal_oracle.global_avg:.3f} '
+            'RescueAcc@1 {rescue.global_avg:.3f} '
+            'RescueRate {rescue_rate.global_avg:.3f}'
+            .format(
+                vote=metric_logger.meters['CrossVoteAcc@1'],
+                adapter_oracle=metric_logger.meters[
+                    'CrossAdapterOracleAcc@1'],
+                strength=metric_logger.meters['CrossVoteStrength'],
+                vote_only=metric_logger.meters['CrossVoteOnlyCorrect'],
+                proposal_only=metric_logger.meters[
+                    'ProposalOnlyVsCrossVote'],
+                proposal_oracle=metric_logger.meters[
+                    'CrossProposalOracleAcc@1'],
+                rescue=metric_logger.meters['CrossRescueAcc@1'],
+                rescue_rate=metric_logger.meters['CrossRescueRate']))
     if bool(getattr(args, 'vectorized_exhaustive_rematching', False)):
         print(
             '* VectorizedExhaustive LoRA/sample {cost.global_avg:.3f} '
@@ -1374,7 +1451,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((57, args.num_tasks))
+    stat_matrix = np.zeros((65, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -1440,6 +1517,20 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                 'InitialProposalOracleAcc@1', 0.0)
             stat_matrix[55, i] = test_stats.get('DominanceAcc@1', 0.0)
             stat_matrix[56, i] = test_stats.get('InitialSelectRate', 0.0)
+        if bool(getattr(
+                args, 'prediction_proposal_cross_adapter_audit', False)):
+            stat_matrix[57, i] = test_stats.get('CrossVoteAcc@1', 0.0)
+            stat_matrix[58, i] = test_stats.get(
+                'CrossAdapterOracleAcc@1', 0.0)
+            stat_matrix[59, i] = test_stats.get('CrossVoteStrength', 0.0)
+            stat_matrix[60, i] = test_stats.get(
+                'CrossVoteOnlyCorrect', 0.0)
+            stat_matrix[61, i] = test_stats.get(
+                'ProposalOnlyVsCrossVote', 0.0)
+            stat_matrix[62, i] = test_stats.get(
+                'CrossProposalOracleAcc@1', 0.0)
+            stat_matrix[63, i] = test_stats.get('CrossRescueAcc@1', 0.0)
+            stat_matrix[64, i] = test_stats.get('CrossRescueRate', 0.0)
         if (bool(getattr(args, 'soft_mixture_rematching', False))
                 or bool(getattr(args, 'soft_mixture_hard_rematching', False))
                 or bool(getattr(args, 'soft_hard_selector_rematching', False))
@@ -1540,6 +1631,19 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         ).format(
             avg_stat[49], avg_stat[50], avg_stat[51], avg_stat[52],
             avg_stat[53], avg_stat[54], avg_stat[55], avg_stat[56])
+    if bool(getattr(args, 'prediction_proposal_cross_adapter_audit', False)):
+        result_str += (
+            "\tCrossVoteAcc@1: {:.4f}"
+            "\tCrossAdapterOracleAcc@1: {:.4f}"
+            "\tCrossVoteStrength: {:.4f}"
+            "\tCrossVoteOnlyCorrect: {:.4f}"
+            "\tProposalOnlyVsCrossVote: {:.4f}"
+            "\tCrossProposalOracleAcc@1: {:.4f}"
+            "\tCrossRescueAcc@1: {:.4f}"
+            "\tCrossRescueRate: {:.4f}"
+        ).format(
+            avg_stat[57], avg_stat[58], avg_stat[59], avg_stat[60],
+            avg_stat[61], avg_stat[62], avg_stat[63], avg_stat[64])
     if (bool(getattr(args, 'soft_mixture_rematching', False))
             or bool(getattr(args, 'soft_mixture_hard_rematching', False))
             or bool(getattr(args, 'soft_hard_selector_rematching', False))
