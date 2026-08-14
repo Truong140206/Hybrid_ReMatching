@@ -21,6 +21,7 @@ from engines.calibrated_progressive_rematching import (
 import vits.hrm_lora_vision_transformer as hide_lora_vision_transformer
 import torch.nn as nn
 import torch.nn.init as init
+from engines.cfs_pmi_diagnostic import run_cfs_pmi_diagnostic
 
 
         
@@ -65,6 +66,8 @@ def train(args):
 
     if args.eval:
         acc_matrix = np.zeros((args.num_tasks, args.num_tasks))
+        cfs_pmi_diagnostic_enabled = bool(
+            getattr(args, 'cfs_pmi_diagnostic', False))
         prototype_enabled = bool(getattr(args, 'prototype_rematching', False))
         local_prototype_enabled = (
             float(getattr(args, 'exhaustive_local_prototype_weight', 0.0)) > 0.0
@@ -99,6 +102,26 @@ def train(args):
                 model.load_state_dict(checkpoint['model'])
             else:
                 print('No checkpoint found at:', checkpoint_path)
+                return
+            if (cfs_pmi_diagnostic_enabled
+                    and task_id + 1 == int(args.cfs_pmi_diag_task)):
+                results = run_cfs_pmi_diagnostic(
+                    model=model,
+                    data_loader_per_cls=data_loader_per_cls,
+                    class_ids=class_mask[task_id],
+                    task_id=task_id,
+                    args=args,
+                    device=device,
+                )
+                if utils.is_main_process():
+                    import json
+                    output_path = os.path.join(
+                        args.output_dir,
+                        'cfs_pmi_diagnostic_task{}.json'.format(task_id + 1),
+                    )
+                    with open(output_path, 'w', encoding='utf-8') as handle:
+                        json.dump(results, handle, indent=2, sort_keys=True)
+                    print('CFS-PMI diagnostic report:', output_path)
                 return
             original_checkpoint_path = os.path.join(args.trained_original_model,
                                                     'checkpoint/task{}_checkpoint.pth'.format(task_id + 1))
