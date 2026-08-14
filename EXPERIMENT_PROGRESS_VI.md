@@ -2548,3 +2548,9 @@ kiem tra truc tiep trade-off plasticity/retention ma hybrid gate can bao ve.
 - Acc@1 +0.5806, Loss -0.0212, Forgetting -0.7077, Backward +0.7077.
 - Acc@5 giảm 0.7196 nên strict gate FAIL; chưa được chạy full.
 - Script nhận biến `CFS_SELECTION_RATIO`; lần kế tiếp thử 0.25 với toàn bộ thiết lập khác giữ nguyên.
+## TII-CFS ratio 0.25 và sửa metric đánh giá
+
+- Ratio 0.25: Acc@1 +1.0530, Loss -0.0235, Forgetting -0.5641 nhưng Acc@5 -0.9960; strict gate FAIL.
+- Dừng tuning tỷ lệ CFS.
+- Phát hiện TII engine chưa đo Acc@task dù downstream dùng class-to-task mapping để chọn LoRA.
+- Thêm Acc@task và script eval-only cho baseline/candidate checkpoint 3 task; không train lại.

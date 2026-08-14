@@ -181,3 +181,30 @@ Kết quả sau 3 task:
 Strict gate thất bại vì Acc@5 giảm. Không chạy full 10 task với tỷ lệ 0.5.
 
 CFS đã cải thiện top-1, độ chắc chắn trung bình và khả năng giữ task cũ, nên cơ chế có tín hiệu tích cực tại TII. Tuy nhiên việc chọn 50% replay theo diversity làm giảm độ phủ các lớp cạnh tranh trong top 5. Ablation kế tiếp chỉ giảm `cfs_selection_ratio` từ 0.5 xuống 0.25, nghĩa là giữ 75% mẫu Gaussian và dùng 25% mẫu CFS. Mọi tham số khác giữ nguyên. Mục tiêu là giữ lợi ích Acc@1/forgetting nhưng phục hồi Acc@5; đây là kiểm tra nội suy có cơ sở, không phải thêm cơ chế mới.
+## 15. Pilot TII-CFS tỷ lệ 0.25
+
+Giảm CFS từ 50% xuống 25% không phục hồi Acc@5:
+
+| Chỉ số | TII gốc | CFS 0.25 | Thay đổi |
+|---|---:|---:|---:|
+| Acc@1 | 61.8101 | 62.8631 | +1.0530 |
+| Acc@5 | 84.2751 | 83.2791 | -0.9960 |
+| Loss | 1.5935 | 1.5700 | -0.0235 |
+| Forgetting | 7.4051 | 6.8410 | -0.5641 |
+| Backward | -7.4051 | -6.8410 | +0.5641 |
+
+Kết quả vẫn FAIL strict gate. Không tiếp tục tuning tỷ lệ vì xu hướng Acc@5 giảm đã lặp lại ở cả 0.5 và 0.25.
+
+## 16. Sửa thiếu sót đánh giá TII
+
+TII được dùng để chọn task/LoRA bằng quy trình: lấy lớp top-1 của TII rồi ánh xạ lớp đó sang task. Tuy nhiên engine TII trước đây nhận `target_task_map` nhưng không đo `Acc@task`; các pilot chỉ báo class Acc@1/Acc@5.
+
+Đã bổ sung eval-only trên checkpoint có sẵn:
+
+- `Acc@task` được tính đúng bằng cùng ánh xạ class-to-task mà LoRA engine dùng;
+- baseline và candidate đều được đánh giá lại từ checkpoint task 1 đến task 3;
+- không train lại, không thay checkpoint và không lưu dữ liệu;
+- `TII_ROUTING_GATE` đo đúng mục tiêu vận hành của TII;
+- `STRICT_ALL_METRIC_GATE` vẫn bao gồm Acc@5 để công khai hạn chế.
+
+Nếu Acc@task không tốt hơn baseline thì dừng CFS tại TII. Nếu Acc@task tốt hơn nhưng strict gate vẫn fail, chỉ được xem là tín hiệu routing và phải kiểm chứng downstream; không được tuyên bố cải thiện toàn diện.

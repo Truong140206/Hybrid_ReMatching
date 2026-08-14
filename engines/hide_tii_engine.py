@@ -104,16 +104,23 @@ def evaluate(model: torch.nn.Module, data_loader,
             loss = criterion(logits, target)
 
             acc1, acc5 = accuracy(logits, target, topk=(1, 5))
+            predicted_class = torch.argmax(logits, dim=1)
+            predicted_task = torch.tensor(
+                [target_task_map[value.item()] for value in predicted_class],
+                dtype=torch.long, device=device)
+            task_acc = utils.task_inference_accuracy(
+                predicted_task.unsqueeze(-1), target, target_task_map)
 
             metric_logger.meters['Loss'].update(loss.item())
             metric_logger.meters['Acc@1'].update(acc1.item(), n=input.shape[0])
             metric_logger.meters['Acc@5'].update(acc5.item(), n=input.shape[0])
+            metric_logger.meters['Acc@task'].update(task_acc.item(), n=input.shape[0])
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print(
-        '* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} loss {losses.global_avg:.3f}'
-        .format(top1=metric_logger.meters['Acc@1'], top5=metric_logger.meters['Acc@5'],
+        '* Acc@task {task.global_avg:.3f} Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} loss {losses.global_avg:.3f}'
+        .format(task=metric_logger.meters['Acc@task'], top1=metric_logger.meters['Acc@1'], top5=metric_logger.meters['Acc@5'],
                 losses=metric_logger.meters['Loss']))
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
@@ -122,16 +129,17 @@ def evaluate(model: torch.nn.Module, data_loader,
 @torch.no_grad()
 def evaluate_till_now(model: torch.nn.Module, data_loader,
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
-    stat_matrix = np.zeros((3, args.num_tasks))  # 3 for Acc@1, Acc@5, Loss
+    stat_matrix = np.zeros((4, args.num_tasks))  # Acc@task, Acc@1, Acc@5, Loss
 
     for i in range(task_id + 1):
         test_stats = evaluate(model=model, data_loader=data_loader[i]['val'],
                               device=device, task_id=i, class_mask=class_mask, target_task_map=target_task_map,
                               args=args)
 
-        stat_matrix[0, i] = test_stats['Acc@1']
-        stat_matrix[1, i] = test_stats['Acc@5']
-        stat_matrix[2, i] = test_stats['Loss']
+        stat_matrix[0, i] = test_stats['Acc@task']
+        stat_matrix[1, i] = test_stats['Acc@1']
+        stat_matrix[2, i] = test_stats['Acc@5']
+        stat_matrix[3, i] = test_stats['Loss']
 
         acc_matrix[i, task_id] = test_stats['Acc@1']
 
@@ -139,11 +147,12 @@ def evaluate_till_now(model: torch.nn.Module, data_loader,
 
     diagonal = np.diag(acc_matrix)
 
-    result_str = "[Average accuracy till task{}]\tAcc@1: {:.4f}\tAcc@5: {:.4f}\tLoss: {:.4f}".format(
+    result_str = "[Average accuracy till task{}]\tAcc@task: {:.4f}\tAcc@1: {:.4f}\tAcc@5: {:.4f}\tLoss: {:.4f}".format(
         task_id + 1,
         avg_stat[0],
         avg_stat[1],
-        avg_stat[2])
+        avg_stat[2],
+        avg_stat[3])
     if task_id > 0:
         forgetting = np.mean((np.max(acc_matrix, axis=1) -
                               acc_matrix[:, task_id])[:task_id])
