@@ -80,8 +80,8 @@ TASK_TEMP_TAG="$(tag_value "${TASK_TEMPERATURE}")"
 PRIOR_TAG="$(tag_value "${TII_PRIOR_WEIGHT}")"
 LOGIT_TEMP_TAG="$(tag_value "${LOGIT_TEMPERATURE}")"
 LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_soft_mixture_k${TOP_K}_tt${TASK_TEMP_TAG}_p${PRIOR_TAG}_lt${LOGIT_TEMP_TAG}.log"
-BASELINE_LOG="${BASELINE_LOG:-${OUTPUT_ROOT}/imr_lora_rank8_baseline_10tasks_seed42.log}"
-EXHAUSTIVE_LOG="${EXHAUSTIVE_LOG:-${OUTPUT_ROOT}/${RUN_BASENAME}_eval_arrow_oracle_audit_p${PRIOR_TAG}_t${LOGIT_TEMP_TAG}.log}"
+BASELINE_LOG="${BASELINE_LOG:-${OUTPUT_ROOT}/${RUN_BASENAME}.log}"
+EXHAUSTIVE_LOG="${EXHAUSTIVE_LOG:-${OUTPUT_ROOT}/${RUN_BASENAME}_eval_vectorized_exhaustive_c4_p${PRIOR_TAG}_t${LOGIT_TEMP_TAG}.log}"
 
 if [[ -s "${LOG_PATH}" ]]; then
   if grep -q "Soft-mixture wall time seconds:" "${LOG_PATH}"; then

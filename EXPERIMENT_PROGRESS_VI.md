@@ -16,6 +16,19 @@
   nhan ket qua cho toi khi unit test va danh gia ImageNet-R tren RTX 4090 hoan
   tat.
 
+### Ket qua soft-mixture top-4
+
+- Acc@task `79.2034`, Acc@1 `73.4173`, Acc@5 `87.0402`, Loss `1.1775`,
+  Forgetting `2.9761`, Backward `-2.6194`.
+- Chi phi dat dung muc tieu: `LoRA/sample=4.0`, `ForwardCalls/sample=1.0`.
+- So sanh tu dong ban dau dung nham baseline rank-8 cho checkpoint rank-5; da
+  sua script de mac dinh dung log conventional cua chinh run va log vectorized
+  exhaustive cung checkpoint.
+- Du reference cu, ket qua van cho thay routing, top-5, loss va retention tot
+  hon, nhung Acc@1 giam khoang `0.6` diem. Nguyen nhan phu hop nhat la convex
+  mixture giu task evidence nhung lam mo class evidence cua tung LoRA.
+- Ket luan: efficiency gate PASS, quality gate FAIL; khong quet temperature.
+
 # Ti?n d? th� nghi?m HRM-PET + CFS + Semantic
 
 ## 1. M?c ti�u
