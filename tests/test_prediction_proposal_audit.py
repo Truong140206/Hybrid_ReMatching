@@ -6,6 +6,7 @@ from torch import nn
 from protocols import validate_exemplar_free_protocol
 from engines.prediction_proposal_rematching import (
     _complete_with_tii_probability_mass,
+    initial_branch_confidence_dominance,
     prediction_proposal_adapter_rematching,
 )
 from engines.progressive_oracle_audit import prediction_proposal_diagnostics
@@ -153,3 +154,21 @@ def test_tii_completion_preserves_top1_and_assigns_finite_outside_mass():
     assert completed[0, 4] > -20.0
     assert torch.allclose(
         completed.exp().sum(dim=1), torch.ones(1), atol=1e-6)
+
+
+def test_initial_branch_selector_requires_confidence_and_margin_dominance():
+    initial_logits = torch.tensor([
+        [4.0, 0.0],
+        [2.0, 1.0],
+        [3.0, 0.0],
+    ])
+    proposal_logits = torch.tensor([
+        [0.0, 2.0],
+        [0.0, 4.0],
+        [2.0, 0.0],
+    ])
+
+    selected = initial_branch_confidence_dominance(
+        initial_logits, proposal_logits)
+
+    assert selected.tolist() == [True, False, False]

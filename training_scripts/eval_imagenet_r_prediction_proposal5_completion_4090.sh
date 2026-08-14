@@ -114,7 +114,7 @@ fi
 AUDIT_SUFFIX=""
 AUDIT_ARGS=()
 if [[ "${AUDIT_INITIAL_BRANCH}" == "1" ]]; then
-  AUDIT_SUFFIX="_initial_branch_audit"
+  AUDIT_SUFFIX="_initial_branch_dominance_audit"
   AUDIT_ARGS+=(--prediction_proposal_initial_branch_audit)
 fi
 LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_prediction_proposal_i2_p3_c5_tiicomplete_strict${AUDIT_SUFFIX}.log"
@@ -243,13 +243,20 @@ if 'InitialProposalOracleAcc@1:' in candidate:
     oracle = metric(candidate, 'InitialProposalOracleAcc@1')
     initial_only = metric(candidate, 'InitialOnlyCorrect')
     proposal_only = metric(candidate, 'ProposalOnlyCorrect')
+    dominance = metric(candidate, 'DominanceAcc@1')
+    select_rate = metric(candidate, 'InitialSelectRate')
     print('Free initial-branch complementarity audit:')
     print(f'  Initial branch Acc@1={initial:.4f}')
     print(f'  Proposal Acc@1={proposal:.4f}')
     print(f'  Initial-only correct={initial_only:.4f}')
     print(f'  Proposal-only correct={proposal_only:.4f}')
     print(f'  Label oracle Acc@1={oracle:.4f}; headroom={oracle - proposal:+.4f}')
+    print(f'  Parameter-free dominance Acc@1={dominance:.4f}; '
+          f'gain={dominance - proposal:+.4f}; '
+          f'initial select rate={select_rate:.4f}')
     viable = initial_only >= 0.25 and proposal_only > 0.0
     print('INITIAL_BRANCH_COMPLEMENTARITY_AUDIT=' + (
         'PASS' if viable else 'FAIL'))
+    print('PARAMETER_FREE_DOMINANCE_GATE=' + (
+        'PASS' if dominance >= proposal else 'FAIL'))
 PY

@@ -18,6 +18,22 @@ def _evaluate_candidate_tasks(model, inputs, candidate_tasks):
     )['logits'].reshape(batch_size, candidate_count, -1)
 
 
+def initial_branch_confidence_dominance(initial_logits, proposal_logits):
+    """Select initial output only when it Pareto-dominates proposal confidence."""
+    initial_probabilities = torch.softmax(initial_logits, dim=1)
+    proposal_probabilities = torch.softmax(proposal_logits, dim=1)
+    initial_top2 = torch.topk(initial_probabilities, k=2, dim=1).values
+    proposal_top2 = torch.topk(proposal_probabilities, k=2, dim=1).values
+    initial_prediction = initial_logits.argmax(dim=1)
+    proposal_prediction = proposal_logits.argmax(dim=1)
+    return (
+        initial_prediction.ne(proposal_prediction)
+        & initial_top2[:, 0].gt(proposal_top2[:, 0])
+        & (initial_top2[:, 0] - initial_top2[:, 1]).gt(
+            proposal_top2[:, 0] - proposal_top2[:, 1])
+    )
+
+
 def _complete_with_tii_probability_mass(
         candidate_logits, tii_logits, class_mask, candidate_tasks,
         seen_task_count):

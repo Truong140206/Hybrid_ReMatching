@@ -2825,3 +2825,7 @@ Kết quả strict seed 42 cho thấy proposal không làm giảm độ chính x
 - `InitialProposalOracleAcc@1`: trần lý thuyết nếu chọn đúng giữa hai đầu ra bằng nhãn.
 
 Nhãn chỉ dùng để báo cáo audit, không đi vào routing. Audit không giữ ảnh/feature cũ, không thêm LoRA và không thêm forward call. Chỉ phát triển selector nếu audit chứng minh có đủ headroom; nếu không thì đóng hướng này thay vì tiếp tục tinh chỉnh mù.
+
+### Kết quả complementarity và giả thuyết khóa trước
+
+Audit seed 42 xác nhận nhánh TII-top1 và proposal bổ sung cho nhau: `InitialOnlyCorrect=2.0376`, `ProposalOnlyCorrect=5.4334`, oracle hai nhánh đạt `77.1226` Acc@1 so với proposal `75.0850`. Bước kế tiếp dùng một quy tắc không tham số, không fit trên test: chỉ chọn nhánh đầu khi dự đoán khác nhau và nhánh đầu đồng thời có top-1 probability cùng top1-top2 margin cao hơn proposal. Đây là Pareto-confidence dominance; nếu không tăng Acc@1 trong một lần đánh giá thì đóng hướng selector này, không tune threshold trên test.

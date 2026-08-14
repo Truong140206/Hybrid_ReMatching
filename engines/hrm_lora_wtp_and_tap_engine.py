@@ -29,6 +29,7 @@ from engines.budgeted_rematching import budgeted_exhaustive_fallback
 from engines.progressive_rematching import progressive_adapter_rematching
 from engines.progressive_oracle_audit import progressive_oracle_audit
 from engines.prediction_proposal_rematching import (
+    initial_branch_confidence_dominance,
     prediction_proposal_adapter_rematching,
 )
 from engines.calibrated_progressive_rematching import (
@@ -928,6 +929,12 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                         proposal_prediction = logits.argmax(dim=1)
                         initial_correct = initial_prediction.eq(target)
                         proposal_correct = proposal_prediction.eq(target)
+                        select_initial = initial_branch_confidence_dominance(
+                            initial_branch_logits, logits)
+                        dominance_prediction = torch.where(
+                            select_initial, initial_prediction,
+                            proposal_prediction)
+                        dominance_correct = dominance_prediction.eq(target)
                         comparison_metrics = {
                             'InitialBranchAcc@1': initial_correct.float(
                                 ).mean() * 100.0,
@@ -944,6 +951,10 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                             'InitialProposalOracleAcc@1': (
                                 initial_correct | proposal_correct
                                 ).float().mean() * 100.0,
+                            'DominanceAcc@1': dominance_correct.float(
+                                ).mean() * 100.0,
+                            'InitialSelectRate': select_initial.float(
+                                ).mean() * 100.0,
                         }
                         for metric_name, metric_value in comparison_metrics.items():
                             metric_logger.meters[metric_name].update(
@@ -1274,7 +1285,9 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 '{proposal.global_avg:.3f} Agree {agree.global_avg:.3f} '
                 'InitialOnly {initial_only.global_avg:.3f} '
                 'ProposalOnly {proposal_only.global_avg:.3f} '
-                'OracleAcc@1 {oracle.global_avg:.3f}'
+                'OracleAcc@1 {oracle.global_avg:.3f} '
+                'DominanceAcc@1 {dominance.global_avg:.3f} '
+                'InitialSelectRate {select_rate.global_avg:.3f}'
                 .format(
                     initial=metric_logger.meters['InitialBranchAcc@1'],
                     proposal=metric_logger.meters['ProposalAuditAcc@1'],
@@ -1283,7 +1296,9 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                         'InitialOnlyCorrect'],
                     proposal_only=metric_logger.meters['ProposalOnlyCorrect'],
                     oracle=metric_logger.meters[
-                        'InitialProposalOracleAcc@1']))
+                        'InitialProposalOracleAcc@1'],
+                    dominance=metric_logger.meters['DominanceAcc@1'],
+                    select_rate=metric_logger.meters['InitialSelectRate']))
     if bool(getattr(args, 'vectorized_exhaustive_rematching', False)):
         print(
             '* VectorizedExhaustive LoRA/sample {cost.global_avg:.3f} '
@@ -1359,7 +1374,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((55, args.num_tasks))
+    stat_matrix = np.zeros((57, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -1423,6 +1438,8 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
             stat_matrix[53, i] = test_stats.get('ProposalOnlyCorrect', 0.0)
             stat_matrix[54, i] = test_stats.get(
                 'InitialProposalOracleAcc@1', 0.0)
+            stat_matrix[55, i] = test_stats.get('DominanceAcc@1', 0.0)
+            stat_matrix[56, i] = test_stats.get('InitialSelectRate', 0.0)
         if (bool(getattr(args, 'soft_mixture_rematching', False))
                 or bool(getattr(args, 'soft_mixture_hard_rematching', False))
                 or bool(getattr(args, 'soft_hard_selector_rematching', False))
@@ -1518,9 +1535,11 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
             "\tInitialOnlyCorrect: {:.4f}"
             "\tProposalOnlyCorrect: {:.4f}"
             "\tInitialProposalOracleAcc@1: {:.4f}"
+            "\tDominanceAcc@1: {:.4f}"
+            "\tInitialSelectRate: {:.4f}"
         ).format(
             avg_stat[49], avg_stat[50], avg_stat[51], avg_stat[52],
-            avg_stat[53], avg_stat[54])
+            avg_stat[53], avg_stat[54], avg_stat[55], avg_stat[56])
     if (bool(getattr(args, 'soft_mixture_rematching', False))
             or bool(getattr(args, 'soft_mixture_hard_rematching', False))
             or bool(getattr(args, 'soft_hard_selector_rematching', False))
