@@ -2560,3 +2560,9 @@ kiem tra truc tiep trade-off plasticity/retention ma hybrid gate can bao ve.
 - TII_ROUTING_GATE=PASS nhưng STRICT_ALL_METRIC_GATE=FAIL do Acc@5 -0.9960.
 - Thêm eval-only dùng cùng LoRA rank-8 và thay duy nhất TII gốc/CFS ở inference 3 task.
 - Chưa chạy full TII; chỉ cân nhắc nếu END_TO_END_GATE=PASS.
+## CFS-TII end-to-end: loại bỏ
+
+- Fixed LoRA + TII gốc: Acc@task 89.1321, Acc@1 80.9782, Acc@5 93.7122, Loss 0.8372.
+- Fixed LoRA + TII-CFS: Acc@task 89.0233, Acc@1 80.9999, Acc@5 93.5829, Loss 0.8446.
+- END_TO_END_GATE=FAIL; Acc@1 chỉ +0.0217 trong khi Acc@task, Acc@5 và Loss xấu hơn.
+- Dừng CFS-TII, không train full 10 task và không tuning thêm tỷ lệ.

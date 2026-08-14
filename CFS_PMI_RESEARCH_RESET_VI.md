@@ -227,3 +227,27 @@ Phép thử kế tiếp dùng cùng checkpoint LoRA rank 8 và chỉ thay checkp
 - gate end-to-end yêu cầu Acc@task, Acc@1, Acc@5, Loss, Forgetting và Backward đều không xấu hơn.
 
 Nếu gate này fail thì lợi ích TII routing không chuyển thành lợi ích HRM đầu-cuối và dừng nhánh CFS-TII. Chỉ khi PASS mới cân nhắc train TII-CFS đủ 10 task.
+## 18. Kết quả end-to-end và quyết định dừng CFS-TII
+
+Phép thử giữ nguyên checkpoint LoRA rank 8 và chỉ thay TII cho kết quả:
+
+| Chỉ số | TII gốc | TII-CFS 0.25 | Thay đổi |
+|---|---:|---:|---:|
+| Acc@task | 89.1321 | 89.0233 | -0.1088 |
+| Acc@1 | 80.9782 | 80.9999 | +0.0217 |
+| Acc@5 | 93.7122 | 93.5829 | -0.1293 |
+| Loss | 0.8372 | 0.8446 | +0.0074 |
+| Forgetting | 2.8462 | 2.8462 | 0.0000 |
+| Backward | -2.5128 | -2.2462 | +0.2666 |
+
+`END_TO_END_GATE=FAIL`.
+
+Kết luận:
+
+- mức tăng routing ở TII độc lập không chuyển thành task accuracy tốt hơn trong HRM;
+- Acc@1 tăng 0.0217 là quá nhỏ và đi kèm Acc@task, Acc@5, Loss xấu hơn;
+- CFS-TII không phải cải tiến đa mục tiêu và không được chạy full 10 task;
+- dừng tuning tỷ lệ và dừng nhánh CFS-TII theo tiêu chí đã đặt trước;
+- CFS-PMI chỉ được ghi nhận là cơ chế inversion khả thi và một ablation âm trên ImageNet-R, không được trình bày như đóng góp cải thiện HRM-PET.
+
+Kết quả này cũng cho thấy CFS thay đổi thứ hạng giữa các lớp nhưng không sửa đúng lỗi rematching cuối cùng. Hướng tiếp theo phải tác động trực tiếp vào rematching/LoRA selection dưới giao thức exemplar-free, thay vì tiếp tục ép CFS vào classifier correction.
