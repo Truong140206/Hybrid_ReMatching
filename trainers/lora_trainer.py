@@ -94,7 +94,10 @@ def train(args):
         if shared_router_enabled:
             print('Shared prototype evaluation will reconstruct backbone feature memory.')
 
-        for task_id in range(args.num_tasks):
+        task_count = args.num_tasks
+        if args.max_train_tasks > 0:
+            task_count = min(task_count, args.max_train_tasks)
+        for task_id in range(task_count):
             checkpoint_path = os.path.join(args.output_dir, 'checkpoint/task{}_checkpoint.pth'.format(task_id + 1))
             if os.path.exists(checkpoint_path):
                 print('Loading checkpoint from:', checkpoint_path)

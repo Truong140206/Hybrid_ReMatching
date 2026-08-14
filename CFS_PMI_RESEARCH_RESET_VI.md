@@ -208,3 +208,22 @@ TII được dùng để chọn task/LoRA bằng quy trình: lấy lớp top-1 c
 - `STRICT_ALL_METRIC_GATE` vẫn bao gồm Acc@5 để công khai hạn chế.
 
 Nếu Acc@task không tốt hơn baseline thì dừng CFS tại TII. Nếu Acc@task tốt hơn nhưng strict gate vẫn fail, chỉ được xem là tín hiệu routing và phải kiểm chứng downstream; không được tuyên bố cải thiện toàn diện.
+## 17. Kết quả task-routing và phép kiểm tra end-to-end
+
+Đánh giá lại checkpoint 3 task cho thấy:
+
+- Acc@task: 78.4962 -> 78.6438, tăng 0.1476;
+- Acc@1: tăng 1.0530;
+- Loss, Forgetting và Backward đều tốt hơn;
+- Acc@5 vẫn giảm 0.9960.
+
+Vì vậy `TII_ROUTING_GATE=PASS` nhưng `STRICT_ALL_METRIC_GATE=FAIL`. CFS có tín hiệu cải thiện chọn task, nhưng mức tăng routing nhỏ và chưa đủ để biện minh cho một lượt train full 10 task.
+
+Phép thử kế tiếp dùng cùng checkpoint LoRA rank 8 và chỉ thay checkpoint TII khi inference:
+
+- nhánh A: LoRA cố định + TII gốc;
+- nhánh B: cùng LoRA + TII-CFS ratio 0.25;
+- chỉ đánh giá 3 task, không train và không sửa checkpoint;
+- gate end-to-end yêu cầu Acc@task, Acc@1, Acc@5, Loss, Forgetting và Backward đều không xấu hơn.
+
+Nếu gate này fail thì lợi ích TII routing không chuyển thành lợi ích HRM đầu-cuối và dừng nhánh CFS-TII. Chỉ khi PASS mới cân nhắc train TII-CFS đủ 10 task.

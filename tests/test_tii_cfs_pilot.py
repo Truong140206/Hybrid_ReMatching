@@ -62,3 +62,24 @@ def test_task_accuracy_eval_reuses_checkpoints_without_training():
     assert "TII_ROUTING_GATE=" in script
     assert "STRICT_ALL_METRIC_GATE=" in script
     assert "--cfs_sampling" not in script
+
+
+def test_lora_eval_can_stop_at_existing_pilot_checkpoints():
+    trainer = (ROOT / 'trainers' / 'lora_trainer.py').read_text()
+    assert "task_count = min(task_count, args.max_train_tasks)" in trainer
+    assert "for task_id in range(task_count):" in trainer
+
+
+def test_end_to_end_tii_ablation_changes_only_the_tii_directory():
+    script = (
+        ROOT / 'training_scripts' /
+        'eval_imagenet_r_lora_with_tii_ablation_4090.sh'
+    ).read_text()
+    assert "--eval" in script
+    assert "--lora_rank 8" in script
+    assert '--output_dir "${LORA_DIR}"' in script
+    assert '--trained_original_model "${tii_dir}"' in script
+    assert "END_TO_END_GATE=" in script
+    assert "--cfs_sampling" not in script
+    assert "--epochs" not in script
+    assert "--crct_epochs" not in script
