@@ -2780,3 +2780,30 @@ vay day chi la ablation ve routing/chi phi, khong phai claim exemplar-free
 end-to-end. Buoc bat buoc tiep theo la chay nguyen cau hinh proposal tren
 `imr_lora_rank8_baseline_10tasks_seed42`, sau do moi lap lai nhieu seed va bao
 cao mean/std. Khong tune them top-k, prior, completion hay temperature.
+## 2026-08-15: Ket qua strict rank-8 prediction proposal
+
+Audit end-to-end da dat:
+
+- `Checkpoint training protocol: PASS`.
+- `STRICT_CHECKPOINT_AUDIT=PASS`.
+- Checkpoint khong co `real_feature_memory`.
+
+Ket qua cung seed 42 va checkpoint rank-8 exemplar-free:
+
+| Cau hinh | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward | Time |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Conventional | 77.7914 | 74.0191 | 86.8893 | 1.2305 | 3.2801 | -2.9119 | 148 s |
+| Exhaustive | 81.1182 | 75.4277 | 88.9183 | 1.0860 | 3.0772 | -2.9088 | 409 s |
+| Proposal 5 LoRA | 80.7780 | 75.0850 | 87.3132 | 1.2087 | 3.3122 | -3.0612 | 295 s |
+
+Proposal tang Acc@task 2.9866, Acc@1 1.0659, Acc@5 0.4239 va giam
+Loss 0.0218 so voi conventional. Tuy nhien Forgetting tang 0.0321 va Backward
+giam 0.1493, nen `BASELINE_ALL_METRIC_GATE=FAIL`. Efficiency gate PASS voi
+5 LoRA/mau va 2 call/mau. So voi exhaustive, wall time giam 114 giay (27.9%)
+va nhanh hon 1.39 lan; so voi conventional, proposal van cham hon 147 giay,
+gan 1.99 lan.
+
+Quyet dinh: chua chay seed 43/44 va khong tune threshold tren test set. Buoc
+ke tiep la tai dung ma tran accuracy stage-task tu ba log de xac dinh Forgetting
+tang do peak accuracy som cao hon hay do final accuracy cua task cu giam. Chi
+sua routing sau khi chuan doan nay co ket qua.

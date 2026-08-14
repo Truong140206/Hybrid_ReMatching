@@ -486,3 +486,29 @@ bash training_scripts/validate_imagenet_r_strict_proposal_4090.sh run
 4. Nếu quality gate strict PASS, chạy tối thiểu ba seed và tổng hợp bằng
    `summarize_imagenet_r_multiseed.py`.
 5. Giữ các ablation âm và feature-memory ablation trong báo cáo.
+---
+
+## 19. Kết quả strict rank-8 mới nhất
+
+Audit giao thức và checkpoint đều PASS. Kết quả proposal strict là
+`80.7780 Acc@task / 75.0850 Acc@1 / 87.3132 Acc@5 / 1.2087 Loss / 3.3122
+Forgetting / -3.0612 Backward`, chi phí 5 LoRA, 2 calls và 295 giây.
+
+So với conventional strict, accuracy và Loss tốt hơn nhưng Forgetting tăng
+0.0321 và Backward giảm 0.1493. Vì vậy quality gate FAIL, chưa chạy seed 43/44.
+Proposal nhanh hơn exhaustive 1.39 lần nhưng chậm hơn conventional 1.99 lần.
+
+Lệnh chẩn đoán tiếp theo:
+
+```bash
+cd ~/Documents/truongnguyen/Hybrid_ReMatching
+git pull --ff-only
+
+python training_scripts/compare_imagenet_r_taskwise.py \
+  --baseline ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed42_eval_conventional.log \
+  --proposal ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed42_eval_prediction_proposal_i2_p3_c5_tiicomplete_strict.log \
+  --exhaustive ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed42_eval_vectorized_exhaustive_c4_p0p3_t1p0.log \
+  --output ~/Documents/truongnguyen/hrm-pet-output/imagenet_r_strict_seed42_taskwise.md
+```
+
+Không train hoặc eval lại; lệnh chỉ đọc ba log đã có.

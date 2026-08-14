@@ -257,3 +257,29 @@ vi phạm giao thức. Lệnh chuẩn là
 `training_scripts/validate_imagenet_r_strict_proposal_4090.sh run`; nó tạo log
 strict riêng và báo cáo conventional/exhaustive/proposal cùng seed. Chỉ khi
 kiểm chứng này đạt mới chuyển sang mean/std.
+## 14. Kết quả strict trên baseline rank-8
+
+Audit đã xác nhận log huấn luyện không bật cơ chế lưu dữ liệu lịch sử và
+checkpoint không chứa `real_feature_memory`:
+
+```text
+Checkpoint training protocol: PASS
+STRICT_CHECKPOINT_AUDIT=PASS
+```
+
+| Cấu hình | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward | LoRA/mẫu | Calls/mẫu | Thời gian |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Conventional strict | 77.7914 | 74.0191 | 86.8893 | 1.2305 | 3.2801 | -2.9119 | -- | -- | 148 giây |
+| Exhaustive strict | 81.1182 | 75.4277 | 88.9183 | 1.0860 | 3.0772 | -2.9088 | 10 | 3 | 409 giây |
+| Proposal strict | 80.7780 | 75.0850 | 87.3132 | 1.2087 | 3.3122 | -3.0612 | 5 | 2 | 295 giây |
+
+So với conventional, proposal tăng Acc@task 2.9866 điểm, Acc@1 1.0659 điểm,
+Acc@5 0.4239 điểm và giảm Loss 0.0218. Nhưng Forgetting tăng 0.0321 và
+Backward giảm 0.1493, nên quality gate toàn diện FAIL. So với exhaustive,
+proposal giảm 27.9% wall time và 50% số LoRA nhưng Acc@1 thấp hơn 0.3427 điểm.
+So với conventional, proposal vẫn chậm gần 1.99 lần.
+
+Đây là kết quả strict hợp lệ nhưng chưa đủ để công bố là cải thiện toàn diện.
+Không chạy nhiều seed trước khi xác định nguyên nhân retention giảm. Công cụ
+`compare_imagenet_r_taskwise.py` tái dựng ma trận accuracy theo stage và task
+để phân biệt giảm final accuracy với tăng peak accuracy ban đầu.
