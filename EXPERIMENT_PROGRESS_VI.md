@@ -2749,7 +2749,7 @@ Cau hinh tiep theo duoc khoa o TII top-2 + 3 proposal, TII probability
 completion, toi da 5 LoRA/mau va van chi 2 forward call. Muc tieu cua proposal
 thu ba la dua BWT gan exhaustive; completion nham sua Loss ma khong doi top-1.
 
-## 2026-08-15: Ket qua chot prediction proposal 5 LoRA
+## 2026-08-15: Ablation prediction proposal 5 LoRA tren checkpoint feature-memory
 
 Cau hinh TII top-2 + 3 task proposal + TII probability completion dat:
 
@@ -2774,6 +2774,9 @@ Wall time tren RTX 4090 la 295 giay (4 phut 55 giay), so voi 495 giay cua
 vectorized exhaustive tren cung setting. Nhu vay proposal giam 40.4% thoi gian
 va dat toc do nhanh hon 1.68 lan, trong khi Acc@1 chi giam 0.0863 diem.
 
-Day la cau hinh duoc chon hien tai. Khong tiep tuc tune top-k, prior, completion
-hay temperature tren seed 42. Buoc tiep theo la lap lai tren nhieu seed va bao
-cao mean/std.
+Day la cau hinh inference duoc khoa, nhung cac so tren dung checkpoint
+`hybrid_real_ageaware` da duoc train voi per-example real-feature memory. Vi
+vay day chi la ablation ve routing/chi phi, khong phai claim exemplar-free
+end-to-end. Buoc bat buoc tiep theo la chay nguyen cau hinh proposal tren
+`imr_lora_rank8_baseline_10tasks_seed42`, sau do moi lap lai nhieu seed va bao
+cao mean/std. Khong tune them top-k, prior, completion hay temperature.

@@ -216,7 +216,7 @@ Log bổ sung hai chỉ số:
 
 Mục tiêu là giữ mức tăng Acc@1 của CTIRD, loại các teacher ít liên quan để phục hồi Acc@5 và Backward. Đây là áp dụng ý tưởng semantic-aware vào đúng nơi phát sinh nhiễu, không dịch chuyển feature và không tăng chi phí suy luận.
 
-## 13. Kết quả chốt: prediction-induced proposal rematching
+## 13. Ablation chi phí: prediction-induced proposal rematching
 
 Sau các nhánh CFS, semantic, prototype, soft-mixture và learned routing không
 đạt gate, nút thắt được xác định là TII top-k bỏ sót LoRA thắng của exhaustive.
@@ -230,22 +230,30 @@ Phương pháp chốt xử lý trực tiếp nút thắt này:
 6. TII probability completion cấp xác suất cho lớp ngoài candidate và giới hạn
    khối lượng theo từng mẫu để không đảo top-1 của nhánh LoRA.
 
-Phương pháp không lưu ảnh cũ, không dùng nhãn test để routing, không học router
-trên dữ liệu lịch sử và đã chạy với `strict_exemplar_free`.
+Bản thân thuật toán inference không đọc ảnh cũ, feature cũ, nhãn test hay
+router học từ dữ liệu lịch sử. Tuy nhiên các số dưới đây được đo trên checkpoint
+`hybrid_real_ageaware`, vốn đã dùng per-example real-feature memory khi train.
+Cờ `strict_exemplar_free` lúc eval chỉ kiểm tra cơ chế inference, không thể làm
+checkpoint huấn luyện đó trở thành exemplar-free. Vì vậy bảng này chỉ là
+ablation routing/chi phí, chưa phải kết quả chính end-to-end.
 
 | Cấu hình | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward | LoRA/mẫu | Calls/mẫu | Thời gian |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Baseline | 77.5854 | 74.0477 | 86.4646 | 1.2230 | 3.3264 | -2.9319 | -- | -- | chưa đo |
-| Exhaustive | 80.6549 | 75.1798 | 88.5327 | 1.0809 | 2.8848 | -2.8449 | 10 | 3* | 495 giây |
-| Proposal + completion | 80.6062 | 75.0935 | 87.5040 | 1.1801 | 2.9703 | -2.8927 | 5 | 2 | 295 giây |
+| Feature-memory baseline | 77.5854 | 74.0477 | 86.4646 | 1.2230 | 3.3264 | -2.9319 | -- | -- | chưa đo |
+| Exhaustive cùng checkpoint | 80.6549 | 75.1798 | 88.5327 | 1.0809 | 2.8848 | -2.8449 | 10 | 3* | 495 giây |
+| Proposal cùng checkpoint | 80.6062 | 75.0935 | 87.5040 | 1.1801 | 2.9703 | -2.8927 | 5 | 2 | 295 giây |
 
 `*` Ba model call là cấu hình vectorized exhaustive với task chunk size 4.
 
 So với baseline, cả sáu chỉ số chất lượng đều tốt hơn; số LoRA được đánh giá
 chỉ bằng 50% exhaustive. So với exhaustive, Acc@task giữ lại trong 0.0487 điểm
 và Acc@1 trong 0.0863 điểm. Thời gian đánh giá giảm từ 495 xuống 295 giây,
-tức giảm 200 giây (40.4%) và nhanh hơn 1.68 lần trên RTX 4090. Đây là kết quả
-ImageNet-R chính hiện tại.
+tức giảm 200 giây (40.4%) và nhanh hơn 1.68 lần trên RTX 4090. Đây là bằng
+chứng hiệu quả inference trên cùng checkpoint, không phải claim strict chính.
 
-Quyết định: khóa cấu hình seed 42. Không tiếp tục tối ưu theo test set; chuyển
-sang xác nhận nhiều seed, mean/std và wall time thực đo.
+Quyết định: khóa cấu hình. Trước khi chạy nhiều seed, phải kiểm chứng trên
+baseline rank-8 không lưu feature cũ; evaluator mới sẽ từ chối log huấn luyện
+vi phạm giao thức. Lệnh chuẩn là
+`training_scripts/validate_imagenet_r_strict_proposal_4090.sh run`; nó tạo log
+strict riêng và báo cáo conventional/exhaustive/proposal cùng seed. Chỉ khi
+kiểm chứng này đạt mới chuyển sang mean/std.

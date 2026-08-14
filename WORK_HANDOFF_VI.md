@@ -431,13 +431,15 @@ thêm bất kỳ scale/threshold/selector nào cho nhánh soft-hard.
 Hướng tiếp theo phải xử lý trực tiếp bài toán tìm LoRA thắng của exhaustive với
 ít lần đánh giá hơn; không tiếp tục trộn hoặc chọn giữa các output yếu hơn.
 
-## 18. Mốc mới thay thế trạng thái bàn giao cũ
+## 18. Mốc ablation inference thay thế trạng thái bàn giao cũ
 
 Mục 14--17 phía trên mô tả trạng thái trước prediction-induced proposal và đã
-lỗi thời. Hiện đã có phương pháp exemplar-free giảm chi phí inference nhưng
-vẫn vượt baseline trên toàn bộ sáu metric.
+lỗi thời. Hiện đã có phương pháp giảm chi phí inference và vượt conventional
+routing trên toàn bộ sáu metric trong cùng checkpoint. Tuy nhiên checkpoint
+`hybrid_real_ageaware` có real-feature memory khi train, nên đây là ablation
+inference chứ chưa phải claim exemplar-free end-to-end.
 
-### Phương pháp được chọn
+### Cấu hình inference được khóa
 
 - TII top-2 tạo hai candidate đầu.
 - Dự đoán top-5 lớp từ hai LoRA đầu đề xuất thêm ba task.
@@ -445,9 +447,11 @@ vẫn vượt baseline trên toàn bộ sáu metric.
 - TII probability completion bổ sung xác suất cho lớp ngoài candidate, với
   giới hạn bảo toàn top-1.
 - Không có exhaustive fallback, ảnh cũ, per-example feature memory, nhãn test
-  trong routing hoặc learned router trên dữ liệu lịch sử.
+  trong chính bước inference hoặc learned router trên dữ liệu lịch sử.
+- Các metric 80.6062/75.0935 chưa được dùng làm claim strict vì checkpoint đầu
+  vào đã được train bằng real-feature replay.
 
-### Kết quả ImageNet-R, 10 task, seed 42
+### Ablation ImageNet-R, 10 task, seed 42
 
 | Cấu hình | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
 |---|---:|---:|---:|---:|---:|---:|
@@ -468,14 +472,17 @@ nhanh hơn 1.68 lần trên RTX 4090 trong cùng thiết lập đánh giá.
 cd ~/Documents/truongnguyen/Hybrid_ReMatching
 git pull --ff-only
 
-bash training_scripts/eval_imagenet_r_prediction_proposal5_completion_4090.sh \
-  ~/Documents/truongnguyen/hrm-pet-output/imr_lora_hybrid_real_ageaware_crct30_old035_new010_seed42
+# Kiểm chứng strict bắt buộc, không dùng checkpoint hybrid_real_ageaware.
+# Wrapper tự audit, đo conventional, dùng/rerun exhaustive và chạy proposal:
+bash training_scripts/validate_imagenet_r_strict_proposal_4090.sh run
 ```
 
 ### Việc tiếp theo
 
 1. Không tune thêm trên test seed 42.
-2. Chạy cùng cấu hình trên tối thiểu ba seed và báo cáo mean/std.
-3. Đo wall time baseline, exhaustive và proposal trên cùng máy, batch size và
-   trạng thái GPU.
-4. Giữ các ablation âm trong báo cáo để chứng minh quá trình chọn thiết kế.
+2. Chạy proposal đã khóa trên baseline rank-8 strict; evaluator phải in
+   `Checkpoint training protocol: PASS`.
+3. Đo conventional wall time bằng `eval_imagenet_r_conventional_4090.sh`.
+4. Nếu quality gate strict PASS, chạy tối thiểu ba seed và tổng hợp bằng
+   `summarize_imagenet_r_multiseed.py`.
+5. Giữ các ablation âm và feature-memory ablation trong báo cáo.

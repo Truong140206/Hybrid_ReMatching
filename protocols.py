@@ -1,5 +1,8 @@
 """Protocol validation for rehearsal-free continual-learning experiments."""
 
+import re
+from types import SimpleNamespace
+
 
 _FORBIDDEN_BOOLEAN_FLAGS = {
     'crct_real_feature_replay': 'stores per-example real features',
@@ -35,3 +38,34 @@ def validate_exemplar_free_protocol(args):
     print(
         'Strict exemplar-free protocol: PASS '
         '(no historical images or per-example real features).')
+
+
+def exemplar_free_log_violations(text):
+    """Recover protocol flags from a printed argparse Namespace."""
+    if 'Namespace(' not in text:
+        raise ValueError('Training log does not contain a Namespace configuration')
+
+    values = {}
+    for name in _FORBIDDEN_BOOLEAN_FLAGS:
+        match = re.search(rf'\b{re.escape(name)}=(True|False)\b', text)
+        values[name] = bool(match and match.group(1) == 'True')
+
+    weight_match = re.search(
+        r'\bexhaustive_local_prototype_weight=([-+0-9.eE]+)\b', text)
+    values['exhaustive_local_prototype_weight'] = (
+        float(weight_match.group(1)) if weight_match else 0.0)
+    return exemplar_free_violations(SimpleNamespace(**values))
+
+
+def validate_exemplar_free_training_log(path):
+    """Fail closed when a checkpoint's training log violates the protocol."""
+    with open(path, 'r', encoding='utf-8', errors='replace') as handle:
+        text = handle.read()
+    violations = exemplar_free_log_violations(text)
+    if violations:
+        details = '\n  - '.join(violations)
+        raise ValueError(
+            'Checkpoint training protocol is not exemplar-free:\n  - ' + details)
+    print(
+        'Checkpoint training protocol: PASS '
+        '(no forbidden historical-image or per-example-feature mechanism).')

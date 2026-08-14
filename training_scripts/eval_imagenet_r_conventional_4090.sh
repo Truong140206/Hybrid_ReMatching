@@ -8,13 +8,10 @@ PYTHON_BIN="${PYTHON_BIN:-${REPO_ROOT}/.venv/bin/python}"
 DATASETS_ROOT="${DATASETS_ROOT:-${WORK_ROOT}/datasets}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-${WORK_ROOT}/hrm-pet-output}"
 RUN_DIR="${1:-}"
-TASK_CHUNK_SIZE="${2:-4}"
-TII_PRIOR_WEIGHT="${3:-0.3}"
-LOGIT_TEMPERATURE="${4:-1.0}"
 LORA_RANK="${LORA_RANK:-}"
 
 if [[ -z "${RUN_DIR}" ]]; then
-  echo "Usage: $0 RUN_DIR [task_chunk_size] [tii_prior_weight] [logit_temperature]" >&2
+  echo "Usage: $0 RUN_DIR" >&2
   exit 64
 fi
 if [[ ! -x "${PYTHON_BIN}" ]]; then
@@ -30,10 +27,7 @@ fi
 SEED="${SEED:-42}"
 TII_DIR="${TII_DIR:-${OUTPUT_ROOT}/imr_tii_original_10tasks_seed${SEED}}"
 TRAIN_LOG="${TRAIN_LOG:-${OUTPUT_ROOT}/${RUN_BASENAME}.log}"
-if (( TASK_CHUNK_SIZE < 1 || TASK_CHUNK_SIZE > 10 )); then
-  echo "task_chunk_size must be between 1 and 10" >&2
-  exit 64
-fi
+LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_conventional.log"
 
 if [[ -n "${DATA_PATH:-}" ]]; then
   IMR_DATA_PATH="${DATA_PATH}"
@@ -53,11 +47,15 @@ for task_id in $(seq 1 10); do
     exit 2
   }
 done
-
 if [[ ! -s "${TRAIN_LOG}" ]]; then
   echo "Training log required for protocol audit: ${TRAIN_LOG}" >&2
   exit 2
 fi
+if [[ -s "${LOG_PATH}" ]]; then
+  echo "Refusing to overwrite completed evaluation log: ${LOG_PATH}" >&2
+  exit 3
+fi
+
 cd "${REPO_ROOT}"
 PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" "${PYTHON_BIN}" -c '
 import sys
@@ -87,27 +85,14 @@ elif [[ "${LORA_RANK}" != "${CHECKPOINT_RANK}" ]]; then
   exit 2
 fi
 
-tag_value() {
-  printf '%s' "$1" | tr '.' 'p'
-}
-
-PRIOR_TAG="$(tag_value "${TII_PRIOR_WEIGHT}")"
-TEMP_TAG="$(tag_value "${LOGIT_TEMPERATURE}")"
-LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_vectorized_exhaustive_c${TASK_CHUNK_SIZE}_p${PRIOR_TAG}_t${TEMP_TAG}.log"
-REFERENCE_LOG="${REFERENCE_LOG:-${OUTPUT_ROOT}/${RUN_BASENAME}_eval_arrow_oracle_audit_p${PRIOR_TAG}_t${TEMP_TAG}.log}"
-if [[ -s "${LOG_PATH}" ]]; then
-  echo "Refusing to overwrite existing evaluation log: ${LOG_PATH}" >&2
-  exit 3
-fi
-
-cd "${REPO_ROOT}"
-echo "Vectorized exhaustive rematching: exact exhaustive math, ${TASK_CHUNK_SIZE} task LoRAs per forward call"
-echo "Run=${RUN_DIR}; rank=${LORA_RANK}; prior=${TII_PRIOR_WEIGHT}; temperature=${LOGIT_TEMPERATURE}"
+echo "Conventional HRM-PET evaluation"
+echo "Run=${RUN_DIR}; seed=${SEED}; rank=${LORA_RANK}"
+echo "Protocol source log: ${TRAIN_LOG}"
 
 START_TIME="$(date +%s)"
 PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --nproc_per_node=1 \
-  --master_port="${MASTER_PORT:-29583}" \
+  --master_port="${MASTER_PORT:-29590}" \
   main.py \
   imr_lora \
   --model vit_base_patch16_224 \
@@ -128,51 +113,40 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --lora_type hide \
   --trained_original_model "${TII_DIR}" \
   --num_tasks 10 \
-  --vectorized_exhaustive_rematching \
-  --vectorized_exhaustive_task_chunk_size "${TASK_CHUNK_SIZE}" \
-  --exhaustive_tii_prior_weight "${TII_PRIOR_WEIGHT}" \
-  --exhaustive_logit_temperature "${LOGIT_TEMPERATURE}" \
   --strict_exemplar_free \
   --eval \
   --output_dir "${RUN_DIR}" \
   2>&1 | tee "${LOG_PATH}"
 
 END_TIME="$(date +%s)"
-ELAPSED="$((END_TIME - START_TIME))"
-printf 'Vectorized exhaustive wall time seconds: %s\n' "${ELAPSED}" | tee -a "${LOG_PATH}"
+printf 'Conventional evaluation wall time seconds: %s\n' "$((END_TIME - START_TIME))" | tee -a "${LOG_PATH}"
 FINAL_LINE="$(grep "Average accuracy till task10" "${LOG_PATH}" | tail -n 1 || true)"
-echo "Final vectorized exhaustive metrics:"
+REFERENCE_LINE="$(grep "Average accuracy till task10" "${TRAIN_LOG}" | tail -n 1 || true)"
+echo "Final conventional metrics:"
 echo "${FINAL_LINE}"
 
-if [[ -s "${REFERENCE_LOG}" ]]; then
-  REFERENCE_LINE="$(grep "Average accuracy till task10" "${REFERENCE_LOG}" | tail -n 1 || true)"
-  "${PYTHON_BIN}" -c '
+"${PYTHON_BIN}" - "${FINAL_LINE}" "${REFERENCE_LINE}" <<'PY'
 import re
 import sys
 
-candidate, reference = sys.argv[1], sys.argv[2]
-names = ("Acc@task", "Acc@1", "Acc@5", "Loss", "Forgetting", "Backward")
-limits = {"Acc@task": 0.01, "Acc@1": 0.01, "Acc@5": 0.01,
-          "Loss": 0.001, "Forgetting": 0.01, "Backward": 0.01}
-def metric(line, name):
-    match = re.search(re.escape(name) + r":\s*([-+0-9.]+)", line)
+candidate, reference = sys.argv[1:]
+metrics = ('Acc@task', 'Acc@1', 'Acc@5', 'Loss', 'Forgetting', 'Backward')
+limits = {'Loss': 0.001}
+
+
+def metric(row, name):
+    match = re.search(re.escape(name) + r':\s*([-+0-9.]+)', row)
     if match is None:
-        raise SystemExit("Missing metric: " + name)
+        raise SystemExit(f'Missing {name}: {row}')
     return float(match.group(1))
 
-passed = True
-for name in names:
-    delta = metric(candidate, name) - metric(reference, name)
-    ok = abs(delta) <= limits[name]
-    passed = passed and ok
-    print(f"{name} delta={delta:+.6f}: " + ("PASS" if ok else "FAIL"))
-print("VECTORIZED_EQUIVALENCE_GATE=" + ("PASS" if passed else "FAIL"))
-' "${FINAL_LINE}" "${REFERENCE_LINE}"
 
-  REFERENCE_SECONDS="$(grep -E 'Arrow oracle audit wall time seconds:' "${REFERENCE_LOG}" | tail -n 1 | awk '{print $NF}' || true)"
-  if [[ "${REFERENCE_SECONDS}" =~ ^[0-9]+$ ]] && (( ELAPSED > 0 )); then
-    "${PYTHON_BIN}" -c 'import sys; print(f"Conservative wall-time speedup: {int(sys.argv[1]) / int(sys.argv[2]):.3f}x")' "${REFERENCE_SECONDS}" "${ELAPSED}"
-  fi
-else
-  echo "Reference log not found; metric-equivalence gate skipped: ${REFERENCE_LOG}"
-fi
+passed = True
+for name in metrics:
+    delta = metric(candidate, name) - metric(reference, name)
+    tolerance = limits.get(name, 0.01)
+    ok = abs(delta) <= tolerance
+    passed = passed and ok
+    print(f'{name} delta={delta:+.6f}: {"PASS" if ok else "FAIL"}')
+print('CONVENTIONAL_REPRODUCTION_GATE=' + ('PASS' if passed else 'FAIL'))
+PY

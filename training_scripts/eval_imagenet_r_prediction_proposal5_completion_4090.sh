@@ -8,7 +8,7 @@ PYTHON_BIN="${PYTHON_BIN:-${REPO_ROOT}/.venv/bin/python}"
 DATASETS_ROOT="${DATASETS_ROOT:-${WORK_ROOT}/datasets}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-${WORK_ROOT}/hrm-pet-output}"
 RUN_DIR="${1:-}"
-TII_DIR="${TII_DIR:-${OUTPUT_ROOT}/imr_tii_original_10tasks_seed42}"
+LORA_RANK="${LORA_RANK:-}"
 
 if [[ -z "${RUN_DIR}" ]]; then
   echo "Usage: $0 RUN_DIR" >&2
@@ -18,6 +18,25 @@ if [[ ! -x "${PYTHON_BIN}" ]]; then
   echo "Python environment not found: ${PYTHON_BIN}" >&2
   exit 1
 fi
+
+RUN_BASENAME="$(basename "${RUN_DIR}")"
+SEED="${SEED:-}"
+if [[ -z "${SEED}" && "${RUN_BASENAME}" =~ seed([0-9]+)$ ]]; then
+  SEED="${BASH_REMATCH[1]}"
+fi
+SEED="${SEED:-42}"
+TII_DIR="${TII_DIR:-${OUTPUT_ROOT}/imr_tii_original_10tasks_seed${SEED}}"
+TRAIN_LOG="${TRAIN_LOG:-${OUTPUT_ROOT}/${RUN_BASENAME}.log}"
+BASELINE_LOG="${BASELINE_LOG:-}"
+if [[ -z "${BASELINE_LOG}" ]]; then
+  CONVENTIONAL_LOG="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_conventional.log"
+  if [[ -s "${CONVENTIONAL_LOG}" ]]; then
+    BASELINE_LOG="${CONVENTIONAL_LOG}"
+  else
+    BASELINE_LOG="${TRAIN_LOG}"
+  fi
+fi
+EXHAUSTIVE_LOG="${EXHAUSTIVE_LOG:-${OUTPUT_ROOT}/${RUN_BASENAME}_eval_vectorized_exhaustive_c4_p0p3_t1p0.log}"
 
 if [[ -n "${DATA_PATH:-}" ]]; then
   IMR_DATA_PATH="${DATA_PATH}"
@@ -38,14 +57,65 @@ for task_id in $(seq 1 10); do
   }
 done
 
-RUN_BASENAME="$(basename "${RUN_DIR}")"
-LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_prediction_proposal_i2_p3_c5_tiicomplete.log"
+if [[ ! -s "${TRAIN_LOG}" ]]; then
+  echo "Training log required for protocol audit: ${TRAIN_LOG}" >&2
+  exit 2
+fi
+
+cd "${REPO_ROOT}"
+PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" "${PYTHON_BIN}" -c '
+import sys
+from protocols import validate_exemplar_free_training_log
+validate_exemplar_free_training_log(sys.argv[1])
+' "${TRAIN_LOG}"
+
+CHECKPOINT_RANK="$("${PYTHON_BIN}" -c '
+import sys
+import torch
+checkpoint = torch.load(sys.argv[1], map_location="cpu", weights_only=False)
+if checkpoint.get("real_feature_memory"):
+    raise SystemExit(
+        "Checkpoint protocol audit failed: real_feature_memory is present")
+state = checkpoint.get("model", checkpoint)
+matches = [value for key, value in state.items()
+           if key.endswith("lora_layer.k_lora_A")]
+if len(matches) != 1:
+    raise SystemExit(
+        f"Expected one lora_layer.k_lora_A tensor, found {len(matches)}")
+print(int(matches[0].shape[-1]))
+' "${RUN_DIR}/checkpoint/task1_checkpoint.pth")"
+
+if [[ -z "${LORA_RANK}" ]]; then
+  LORA_RANK="${CHECKPOINT_RANK}"
+elif [[ "${LORA_RANK}" != "${CHECKPOINT_RANK}" ]]; then
+  echo "Requested LoRA rank ${LORA_RANK}, but checkpoint rank is ${CHECKPOINT_RANK}" >&2
+  exit 2
+fi
+
+if [[ ! -s "${EXHAUSTIVE_LOG}" ]]; then
+  for candidate in \
+      "${OUTPUT_ROOT}/${RUN_BASENAME}"_eval_vectorized_exhaustive*.log \
+      "${OUTPUT_ROOT}/${RUN_BASENAME}"_eval_arrow_oracle_audit*.log \
+      "${OUTPUT_ROOT}/${RUN_BASENAME}"_eval_lora_response_oracle_audit*.log; do
+    if [[ -s "${candidate}" ]]; then
+      EXHAUSTIVE_LOG="${candidate}"
+      echo "Using exhaustive fallback reference: ${EXHAUSTIVE_LOG}"
+      break
+    fi
+  done
+fi
+if [[ ! -s "${EXHAUSTIVE_LOG}" ]]; then
+  echo "Exhaustive reference required: ${EXHAUSTIVE_LOG}" >&2
+  echo "Run eval_imagenet_r_vectorized_exhaustive_4090.sh first." >&2
+  exit 2
+fi
+
+LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_prediction_proposal_i2_p3_c5_tiicomplete_strict.log"
 if [[ -s "${LOG_PATH}" ]]; then
   echo "Refusing to overwrite existing evaluation log: ${LOG_PATH}" >&2
   exit 3
 fi
 
-cd "${REPO_ROOT}"
 "${PYTHON_BIN}" -m pytest -q \
   tests/test_prediction_proposal_audit.py \
   tests/test_progressive_oracle_audit.py \
@@ -54,6 +124,10 @@ cd "${REPO_ROOT}"
 echo "Operational prediction-induced task proposal rematching"
 echo "TII top-2 + three post-LoRA class-prediction proposals with TII probability completion"
 echo "Fixed deployment budget: at most 5 LoRAs/sample in 2 vectorized model calls"
+echo "Run=${RUN_DIR}; seed=${SEED}; rank=${LORA_RANK}"
+echo "Protocol source log: ${TRAIN_LOG}"
+echo "Baseline reference: ${BASELINE_LOG}"
+echo "Exhaustive reference: ${EXHAUSTIVE_LOG}"
 
 START_TIME="$(date +%s)"
 PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
@@ -66,10 +140,10 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --batch-size "${EVAL_BATCH_SIZE:-24}" \
   --epochs 1 \
   --data-path "${IMR_DATA_PATH}" \
-  --seed 42 \
+  --seed "${SEED}" \
   --lr 0.03 \
   --con 0.2 \
-  --lora_rank 5 \
+  --lora_rank "${LORA_RANK}" \
   --En gen \
   --tau -10 \
   --K 5 \
@@ -93,68 +167,62 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
 
 END_TIME="$(date +%s)"
 printf 'Prediction-proposal evaluation wall time seconds: %s\n' "$((END_TIME - START_TIME))" | tee -a "${LOG_PATH}"
+FINAL_LINE="$(grep "Average accuracy till task10" "${LOG_PATH}" | tail -n 1 || true)"
 echo "Final operational prediction-proposal metrics:"
-grep "Average accuracy till task10" "${LOG_PATH}" | tail -n 1 || true
+echo "${FINAL_LINE}"
 
-"${PYTHON_BIN}" - "${LOG_PATH}" <<'PY'
+"${PYTHON_BIN}" - "${LOG_PATH}" "${BASELINE_LOG}" "${EXHAUSTIVE_LOG}" <<'PY'
 import re
 import sys
 
-BASELINE = {
-    'Acc@task': 77.5854,
-    'Acc@1': 74.0477,
-    'Acc@5': 86.4646,
-    'Loss': 1.2230,
-    'Forgetting': 3.3264,
-    'Backward': -2.9319,
-}
-EXHAUSTIVE = {
-    'Acc@task': 80.6549,
-    'Acc@1': 75.1798,
-    'Acc@5': 88.5327,
-    'Loss': 1.0809,
-    'Forgetting': 2.8848,
-    'Backward': -2.8449,
-}
+METRICS = ('Acc@task', 'Acc@1', 'Acc@5', 'Loss', 'Forgetting', 'Backward')
+HIGHER = ('Acc@task', 'Acc@1', 'Acc@5', 'Backward')
+LOWER = ('Loss', 'Forgetting')
 
-with open(sys.argv[1], 'r', encoding='utf-8') as handle:
-    rows = [line.strip() for line in handle if 'Average accuracy till task10' in line]
-if not rows:
-    raise SystemExit('OPERATIONAL_PROPOSAL_GATE=FAIL (missing task-10 metrics)')
-row = rows[-1]
 
-def metric(name):
-    match = re.search(rf'{re.escape(name)}:\s*(-?[0-9]+(?:\.[0-9]+)?)', row)
+def final_row(path):
+    with open(path, 'r', encoding='utf-8', errors='replace') as handle:
+        rows = [line.strip() for line in handle
+                if 'Average accuracy till task10' in line]
+    if not rows:
+        raise SystemExit(f'Missing task-10 metrics in {path}')
+    return rows[-1]
+
+
+def metric(row, name):
+    match = re.search(
+        rf'{re.escape(name)}:\s*(-?[0-9]+(?:\.[0-9]+)?)', row)
     if not match:
-        raise SystemExit(f'OPERATIONAL_PROPOSAL_GATE=FAIL (missing {name})')
+        raise SystemExit(f'Missing {name}: {row}')
     return float(match.group(1))
 
-higher = ('Acc@task', 'Acc@1', 'Acc@5', 'Backward')
-lower = ('Loss', 'Forgetting')
-baseline_checks = {}
+
+candidate = final_row(sys.argv[1])
+baseline = final_row(sys.argv[2])
+exhaustive = final_row(sys.argv[3])
+
+checks = {}
 print('Comparison with conventional baseline:')
-for name in higher:
-    value = metric(name)
-    delta = value - BASELINE[name]
-    baseline_checks[name] = delta >= 0.0
-    print(f'  {name} delta={delta:+.4f}: {"PASS" if delta >= 0.0 else "FAIL"}')
-for name in lower:
-    value = metric(name)
-    delta = value - BASELINE[name]
-    baseline_checks[name] = delta <= 0.0
-    print(f'  {name} delta={delta:+.4f}: {"PASS" if delta <= 0.0 else "FAIL"}')
+for name in HIGHER:
+    delta = metric(candidate, name) - metric(baseline, name)
+    checks[name] = delta >= 0.0
+    print(f'  {name} delta={delta:+.4f}: {"PASS" if checks[name] else "FAIL"}')
+for name in LOWER:
+    delta = metric(candidate, name) - metric(baseline, name)
+    checks[name] = delta <= 0.0
+    print(f'  {name} delta={delta:+.4f}: {"PASS" if checks[name] else "FAIL"}')
 
 print('Retention relative to exhaustive:')
-for name in (*higher, *lower):
-    delta = metric(name) - EXHAUSTIVE[name]
+for name in METRICS:
+    delta = metric(candidate, name) - metric(exhaustive, name)
     print(f'  {name} delta={delta:+.4f}')
 
-cost_ok = metric('LoRA/sample') <= 5.0001
-call_ok = metric('ForwardCalls/sample') <= 2.0001
+cost_ok = metric(candidate, 'LoRA/sample') <= 5.0001
+call_ok = metric(candidate, 'ForwardCalls/sample') <= 2.0001
 print(f'  LoRA/sample <= 5: {"PASS" if cost_ok else "FAIL"}')
 print(f'  ForwardCalls/sample <= 2: {"PASS" if call_ok else "FAIL"}')
 print('BASELINE_ALL_METRIC_GATE=' + (
-    'PASS' if all(baseline_checks.values()) else 'FAIL'))
+    'PASS' if all(checks.values()) else 'FAIL'))
 print('OPERATIONAL_PROPOSAL_EFFICIENCY_GATE=' + (
     'PASS' if cost_ok and call_ok else 'FAIL'))
 PY

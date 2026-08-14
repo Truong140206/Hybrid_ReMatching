@@ -2,7 +2,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from protocols import validate_exemplar_free_protocol
+from protocols import (
+    exemplar_free_log_violations,
+    validate_exemplar_free_protocol,
+    validate_exemplar_free_training_log,
+)
 
 
 def test_strict_protocol_accepts_cfs_statistics_and_synthetic_replay():
@@ -37,3 +41,35 @@ def test_strict_protocol_rejects_local_real_prototypes():
     )
     with pytest.raises(ValueError, match='exhaustive_local_prototype_weight'):
         validate_exemplar_free_protocol(args)
+
+
+def test_training_log_audit_accepts_statistical_replay(tmp_path):
+    log_path = tmp_path / 'baseline.log'
+    log_path.write_text(
+        'Namespace(crct_real_feature_replay=False, prototype_rematching=False, '
+        'shared_prototype_router=False, replay_logit_calibration=False, '
+        'replay_task_router=False, calibrated_progressive_rematching=False, '
+        'distilled_router_rematching=False, '
+        'exhaustive_local_prototype_weight=0.0, cfs_sampling=True)',
+        encoding='utf-8',
+    )
+    assert exemplar_free_log_violations(log_path.read_text()) == []
+    validate_exemplar_free_training_log(log_path)
+
+
+def test_training_log_audit_rejects_real_feature_replay(tmp_path):
+    log_path = tmp_path / 'feature_memory.log'
+    log_path.write_text(
+        'Namespace(crct_real_feature_replay=True, '
+        'exhaustive_local_prototype_weight=0.0)',
+        encoding='utf-8',
+    )
+    with pytest.raises(ValueError, match='crct_real_feature_replay'):
+        validate_exemplar_free_training_log(log_path)
+
+
+def test_training_log_audit_fails_closed_without_namespace(tmp_path):
+    log_path = tmp_path / 'incomplete.log'
+    log_path.write_text('training started', encoding='utf-8')
+    with pytest.raises(ValueError, match='does not contain a Namespace'):
+        validate_exemplar_free_training_log(log_path)
