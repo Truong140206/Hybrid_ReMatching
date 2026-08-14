@@ -8,6 +8,7 @@ from engines.soft_mixture_rematching import (
     soft_mixture_adapter_rematching,
     soft_hard_confidence_selector_rematching,
     soft_mixture_hard_adapter_rematching,
+    soft_mixture_local_hard_refinement,
 )
 from vits.hrm_lora_vision_transformer import Attention
 
@@ -174,3 +175,45 @@ def test_confidence_selector_uses_larger_normalized_margin_without_labels():
         [3.0, 1.0, 0.0],
     ])
     assert torch.allclose(logits, expected)
+
+
+class LocalRefinementModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.call_count = 0
+
+    def forward(
+            self, inputs, task_id, ensemble_id=None, ensemble_weights=None):
+        self.call_count += 1
+        if ensemble_id is not None:
+            logits = torch.tensor([
+                [3.0, 2.0, 1.0, 0.0],
+                [0.0, 1.0, 3.0, 2.0],
+            ], device=inputs.device)
+        else:
+            logits = torch.tensor([
+                [1.0, 4.0, 9.0, 8.0],
+                [9.0, 8.0, 1.0, 4.0],
+            ], device=inputs.device)
+        return {'logits': logits.to(dtype=inputs.dtype)}
+
+
+def test_local_hard_refinement_preserves_task_evidence_and_changes_local_rank():
+    model = LocalRefinementModel().eval()
+    inputs = torch.zeros(2, 1)
+    tii_logits = torch.zeros(2, 4)
+    class_mask = [[0, 1], [2, 3]]
+
+    logits, routed_tasks, diagnostics = soft_mixture_local_hard_refinement(
+        model, inputs, tii_logits, class_mask, 2, _args())
+
+    soft_logits = diagnostics['soft_logits']
+    assert model.call_count == 2
+    assert routed_tasks.tolist() == [0, 1]
+    assert diagnostics['lora_counts'].tolist() == [3.0, 3.0]
+    assert diagnostics['forward_calls'].tolist() == [2.0, 2.0]
+    assert logits.argmax(dim=1).tolist() == [1, 3]
+    assert torch.allclose(logits[0, 2:], soft_logits[0, 2:])
+    assert torch.allclose(logits[1, :2], soft_logits[1, :2])
+    assert torch.allclose(logits[0, :2].max(), soft_logits[0, :2].max())
+    assert torch.allclose(logits[1, 2:].max(), soft_logits[1, 2:].max())

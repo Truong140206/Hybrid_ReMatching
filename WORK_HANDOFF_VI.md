@@ -407,3 +407,15 @@ có thêm `SoftAcc@1`, `HardAcc@1`, `SoftHardAgree`, `SoftOnlyCorrect`,
 Quyết định đã khóa: oracle headroom dưới 0.5 điểm thì đóng nhánh; selector tăng
 dưới 0.3 điểm Acc@1 so với thành phần tốt nhất thì cũng đóng nhánh. Không quét
 threshold hoặc hệ số sau khi thấy kết quả.
+## 16. Kết quả selector và thí nghiệm local refinement kế tiếp
+
+Selector theo normalized margin đã FAIL: Acc@1 73.7807, thấp hơn baseline
+0.2670 điểm dù năm chỉ số còn lại đều tốt hơn. Oracle headroom đạt 1.2049 điểm
+nhưng selector chỉ lấy được 0.0421 điểm, nên không được tune threshold tiếp.
+
+Mode kế tiếp là `refine`. Soft-mixture giữ điểm giữa các task; hard LoRA chỉ
+sắp xếp lại lớp thuộc task đã dự đoán. Phép chuẩn hóa giữ nguyên max và std của
+soft logits trong task, do đó không phá task evidence, không dùng nhãn và không
+huấn luyện/lưu replay. Chi phí dự kiến vẫn 5 LoRA/mẫu, 2 forward call/mẫu.
+Gate khóa trước: `LOCAL_REFINEMENT_GAIN_GATE` yêu cầu ít nhất +0.3 Acc@1 so với
+soft, đồng thời `BASELINE_GATE` phải PASS.

@@ -2642,3 +2642,26 @@ Tieu chi khoa truoc khi chay:
 - Selector thuc te phai cao hon thanh phan tot nhat it nhat 0.3 diem Acc@1.
 - Van doi chieu day du voi baseline va exhaustive; khong chap nhan danh doi
   Acc@5, Loss, Forgetting hoac Backward chi de tang Acc@1.
+## 61. Ket qua soft-hard selector va local hard refinement
+
+Soft-hard selector task 10 dat Acc@task 79.2034, Acc@1 73.7807, Acc@5
+86.6564, Loss 1.2157, Forgetting 2.9704 va Backward -2.5390 voi chi phi
+5 LoRA/mau, 2 forward call/mau. So voi baseline: Acc@task +1.6180, Acc@5
++0.1918, Loss -0.0073, Forgetting -0.3560 va Backward +0.3929, nhung Acc@1
+-0.2670 nen strict baseline gate FAIL.
+
+OracleAcc@1 74.9435 cao hon hard component 1.2049 diem, vi vay hai dau ra co
+bo sung. Tuy nhien normalized-margin selector chi tang 0.0421 diem so voi hard,
+thu duoc khoang 3.5% oracle headroom; SELECTOR_GAIN_GATE FAIL. Dong nhanh chon
+theo global normalized margin, khong quet threshold.
+
+Chan doan moi: soft Acc@task 79.2034 cao hon hard Acc@1 73.7386 toi 5.4648
+diem. Hard LoRA dang de logits cua tat ca 200 lop canh tranh, du LoRA duoc chon
+cho mot task cu the. Trien khai local hard refinement: soft giu toan bo bang
+chung cross-task; hard chi thay thu tu lop trong task soft da route. Hard local
+logits duoc bien doi affine theo tung mau de giu nguyen max va std cua soft
+local logits. Cach nay khong dung nhan, khong train gate, khong luu mau cu va
+van co chi phi 5 LoRA/mau, 2 forward call/mau.
+
+Tieu chi khoa truoc: refined Acc@1 phai hon soft it nhat 0.3 diem va strict
+baseline gate van phai PASS; neu khong thi dong nhanh local refinement.

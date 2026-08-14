@@ -17,7 +17,7 @@ LORA_RANK="${LORA_RANK:-}"
 TII_DIR="${TII_DIR:-${OUTPUT_ROOT}/imr_tii_original_10tasks_seed42}"
 
 if [[ -z "${RUN_DIR}" ]]; then
-  echo "Usage: $0 RUN_DIR [top_k] [task_temperature] [tii_prior_weight] [logit_temperature] [soft|hard|selector]" >&2
+  echo "Usage: $0 RUN_DIR [top_k] [task_temperature] [tii_prior_weight] [logit_temperature] [soft|hard|selector|refine]" >&2
   exit 64
 fi
 if [[ ! -x "${PYTHON_BIN}" ]]; then
@@ -51,8 +51,15 @@ case "${MODE}" in
     EXPECTED_LORA_COST="5.0001"
     EXPECTED_FORWARD_CALLS="2.0001"
     ;;
+  refine)
+    REMATCHING_FLAG="--soft_local_hard_refinement"
+    METHOD_TAG="soft_local_hard_refinement"
+    METHOD_LABEL="Soft-local-hard-refinement"
+    EXPECTED_LORA_COST="5.0001"
+    EXPECTED_FORWARD_CALLS="2.0001"
+    ;;
   *)
-    echo "mode must be 'soft', 'hard', or 'selector'" >&2
+    echo "mode must be 'soft', 'hard', 'selector', or 'refine'" >&2
     exit 64
     ;;
 esac
@@ -140,6 +147,8 @@ if [[ "${MODE}" == "hard" ]]; then
   echo "Soft-hard rematching: TII top-${TOP_K} mixture routes, then one selected LoRA classifies"
 elif [[ "${MODE}" == "selector" ]]; then
   echo "Soft-hard selector: compute both outputs, then choose by label-free normalized top-1 margin"
+elif [[ "${MODE}" == "refine" ]]; then
+  echo "Soft-local-hard refinement: preserve soft task evidence and replace only routed-task class rankings"
 else
   echo "Soft-mixture rematching: TII top-${TOP_K}, posterior-weighted LoRA residuals, one model forward"
 fi
@@ -276,5 +285,34 @@ print("SELECTOR_ORACLE_HEADROOM_GATE=" + ("PASS" if headroom_pass else "FAIL"))
 print(
     f"Selector gain over best component={selector_gain:+.4f}; "
     "SELECTOR_GAIN_GATE=" + ("PASS" if selector_pass else "FAIL"))
+' "${FINAL_LINE}"
+fi
+
+if [[ "${MODE}" == "refine" ]]; then
+  "${PYTHON_BIN}" -c '
+import re
+import sys
+
+line = sys.argv[1]
+def metric(name):
+    match = re.search(re.escape(name) + r":\s*([-+0-9.]+)", line)
+    if match is None:
+        raise SystemExit("Missing refinement metric: " + name)
+    return float(match.group(1))
+
+soft = metric("RefineSoftAcc@1")
+refined = metric("RefinedAcc@1")
+oracle = metric("RefineOracleAcc@1")
+soft_only = metric("RefineSoftOnlyCorrect")
+refine_only = metric("RefineOnlyCorrect")
+gain = refined - soft
+headroom = oracle - max(soft, refined)
+passed = gain >= 0.3
+print(
+    f"Refinement audit: SoftAcc@1={soft:.4f}; RefinedAcc@1={refined:.4f}; "
+    f"gain={gain:+.4f}; OracleAcc@1={oracle:.4f}; "
+    f"remaining_headroom={headroom:+.4f}; SoftOnly={soft_only:.4f}; "
+    f"RefineOnly={refine_only:.4f}")
+print("LOCAL_REFINEMENT_GAIN_GATE=" + ("PASS" if passed else "FAIL"))
 ' "${FINAL_LINE}"
 fi

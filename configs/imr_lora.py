@@ -252,6 +252,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--soft_mixture_rematching', action='store_true', help='mix TII top-k LoRA residuals by normalized task posterior in one forward pass')
     subparsers.add_argument('--soft_mixture_hard_rematching', action='store_true', help='route with a soft LoRA mixture, then classify with the selected hard LoRA')
     subparsers.add_argument('--soft_hard_selector_rematching', action='store_true', help='choose between soft-mixture and routed hard-LoRA logits using a label-free normalized margin')
+    subparsers.add_argument('--soft_local_hard_refinement', action='store_true', help='preserve soft cross-task evidence while using hard-LoRA rankings inside the routed task')
     subparsers.add_argument('--soft_mixture_top_k', default=4, type=int)
     subparsers.add_argument('--soft_mixture_task_temperature', default=1.0, type=float)
     subparsers.add_argument('--soft_mixture_logit_temperature', default=1.0, type=float)

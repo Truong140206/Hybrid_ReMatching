@@ -129,3 +129,45 @@ def soft_hard_confidence_selector_rematching(
     diagnostics['soft_margin'] = soft_margin
     diagnostics['hard_margin'] = hard_margin
     return selected_logits, routed_tasks, diagnostics
+
+
+@torch.no_grad()
+def soft_mixture_local_hard_refinement(
+        model, inputs, tii_logits, class_mask, seen_task_count, args):
+    """Use hard LoRA rankings locally without changing soft task evidence."""
+    soft_logits, routed_tasks, diagnostics = soft_mixture_adapter_rematching(
+        model, inputs, tii_logits, class_mask, seen_task_count, args)
+
+    hard_output = model(inputs, task_id=routed_tasks)
+    hard_logits = hard_output['logits'] / max(
+        1e-6, float(getattr(args, 'soft_mixture_logit_temperature', 1.0)))
+    refined_logits = soft_logits.clone()
+
+    for task_index in range(seen_task_count):
+        sample_index = routed_tasks.eq(task_index).nonzero(
+            as_tuple=False).flatten()
+        if sample_index.numel() == 0:
+            continue
+        class_index = torch.as_tensor(
+            class_mask[task_index], dtype=torch.long, device=inputs.device)
+        soft_local = soft_logits.index_select(
+            0, sample_index).index_select(1, class_index)
+        hard_local = hard_logits.index_select(
+            0, sample_index).index_select(1, class_index)
+
+        soft_max = soft_local.max(dim=1, keepdim=True).values
+        soft_std = soft_local.std(
+            dim=1, keepdim=True, unbiased=False).clamp_min(1e-6)
+        hard_max = hard_local.max(dim=1, keepdim=True).values
+        hard_std = hard_local.std(
+            dim=1, keepdim=True, unbiased=False).clamp_min(1e-6)
+        aligned_hard = (hard_local - hard_max) / hard_std * soft_std + soft_max
+        refined_logits[
+            sample_index.unsqueeze(1), class_index.unsqueeze(0)] = aligned_hard
+
+    diagnostics = dict(diagnostics)
+    diagnostics['lora_counts'] = diagnostics['lora_counts'] + 1.0
+    diagnostics['forward_calls'] = diagnostics['forward_calls'] + 1.0
+    diagnostics['soft_logits'] = soft_logits
+    diagnostics['refined_logits'] = refined_logits
+    return refined_logits, routed_tasks, diagnostics
