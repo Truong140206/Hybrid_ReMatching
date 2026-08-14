@@ -28,6 +28,9 @@ from engines.hierarchical_rematching import hierarchical_adapter_rematching
 from engines.budgeted_rematching import budgeted_exhaustive_fallback
 from engines.progressive_rematching import progressive_adapter_rematching
 from engines.progressive_oracle_audit import progressive_oracle_audit
+from engines.prediction_proposal_rematching import (
+    prediction_proposal_adapter_rematching,
+)
 from engines.calibrated_progressive_rematching import (
     calibrated_progressive_rematching,
     get_progressive_halting_gates,
@@ -838,8 +841,9 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
 
             if (bool(getattr(args, 'hierarchical_rematching', False))
                     or bool(getattr(args, 'exhaustive_rematching', False))
-                    or bool(getattr(args, 'vectorized_exhaustive_rematching', False))):
-                vectorized_diagnostics = None
+                    or bool(getattr(args, 'vectorized_exhaustive_rematching', False))
+                    or bool(getattr(args, 'prediction_proposal_rematching', False))):
+                cost_diagnostics = None
                 if bool(getattr(args, 'hierarchical_rematching', False)):
                     logits, prompt_id = hierarchical_adapter_rematching(
                         model=model,
@@ -849,8 +853,19 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                         seen_task_count=task_id + 1,
                         args=args,
                     )
+                elif bool(getattr(args, 'prediction_proposal_rematching', False)):
+                    logits, prompt_id, cost_diagnostics = (
+                        prediction_proposal_adapter_rematching(
+                            model=model,
+                            inputs=input,
+                            tii_logits=old_logits,
+                            class_mask=class_mask,
+                            seen_task_count=task_id + 1,
+                            args=args,
+                        )
+                    )
                 elif bool(getattr(args, 'vectorized_exhaustive_rematching', False)):
-                    logits, prompt_id, vectorized_diagnostics = (
+                    logits, prompt_id, cost_diagnostics = (
                         vectorized_exhaustive_adapter_rematching(
                             model=model,
                             inputs=input,
@@ -886,12 +901,12 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     acc5.item(), n=input.shape[0])
                 metric_logger.meters['Acc@task'].update(
                     task_inference_acc.item(), n=input.shape[0])
-                if vectorized_diagnostics is not None:
+                if cost_diagnostics is not None:
                     metric_logger.meters['LoRA/sample'].update(
-                        vectorized_diagnostics['lora_counts'].mean().item(),
+                        cost_diagnostics['lora_counts'].mean().item(),
                         n=input.shape[0])
                     metric_logger.meters['ForwardCalls/sample'].update(
-                        vectorized_diagnostics['forward_calls'].mean().item(),
+                        cost_diagnostics['forward_calls'].mean().item(),
                         n=input.shape[0])
                 continue
 
@@ -1205,6 +1220,12 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 agreement=metric_logger.meters['ProposalExactAgreement'],
                 new_winner=metric_logger.meters['ProposalNewWinner'],
                 cost=metric_logger.meters['ProposalLoRA/sample']))
+    if bool(getattr(args, 'prediction_proposal_rematching', False)):
+        print(
+            '* PredictionProposal LoRA/sample {cost.global_avg:.3f} '
+            'ForwardCalls/sample {calls.global_avg:.3f}'
+            .format(cost=metric_logger.meters['LoRA/sample'],
+                    calls=metric_logger.meters['ForwardCalls/sample']))
     if bool(getattr(args, 'vectorized_exhaustive_rematching', False)):
         print(
             '* VectorizedExhaustive LoRA/sample {cost.global_avg:.3f} '
@@ -1329,7 +1350,8 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
             stat_matrix[46, i] = test_stats.get('ProposalExactAgreement', 0.0)
             stat_matrix[47, i] = test_stats.get('ProposalLoRA/sample', 0.0)
             stat_matrix[48, i] = test_stats.get('ProposalNewWinner', 0.0)
-        if bool(getattr(args, 'vectorized_exhaustive_rematching', False)):
+        if (bool(getattr(args, 'vectorized_exhaustive_rematching', False))
+                or bool(getattr(args, 'prediction_proposal_rematching', False))):
             stat_matrix[28, i] = test_stats.get('LoRA/sample', 0.0)
             stat_matrix[29, i] = test_stats.get('ForwardCalls/sample', 0.0)
         if (bool(getattr(args, 'soft_mixture_rematching', False))
@@ -1415,7 +1437,8 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
             "\tProposalLoRA/sample: {:.4f}"
             "\tProposalNewWinner: {:.4f}"
         ).format(avg_stat[45], avg_stat[46], avg_stat[47], avg_stat[48])
-    if bool(getattr(args, 'vectorized_exhaustive_rematching', False)):
+    if (bool(getattr(args, 'vectorized_exhaustive_rematching', False))
+            or bool(getattr(args, 'prediction_proposal_rematching', False))):
         result_str += (
             "\tLoRA/sample: {:.4f}\tForwardCalls/sample: {:.4f}"
         ).format(avg_stat[28], avg_stat[29])

@@ -2708,3 +2708,22 @@ Chi trien khai thanh phuong phap inference that neu dong task-10 thoa tat ca:
 - ProposalLoRA/sample <= 4.
 
 Neu gate khong dat, dong nhanh nay va khong quet tham so top-k de tranh toi uu theo test set.
+## 2026-08-15: Ket qua prediction-induced proposal oracle
+
+Cau hinh khoa truoc TII top-2 + 2 task de xuat tu top-5 lop da dat:
+
+- ProposalWinnerRecall 97.2243%.
+- ProposalExactAgreement 97.2243%.
+- ProposalLoRA/sample 4.0000.
+- Tang 8.1576 diem recall so voi TII top-4 (89.0667%).
+- Ca bon dieu kien cua PREDICTION_PROPOSAL_GATE deu PASS.
+
+Dong Acc@task 80.6549, Acc@1 75.1798, Acc@5 88.5327, Loss 1.0809,
+Forgetting 2.8848 va Backward -2.8449 trong audit van la ket qua exhaustive,
+khong phai ket qua deployment 4 LoRA. Audit phai chay 10 LoRA de biet winner
+that va chi dung winner do de tinh recall/exact agreement.
+
+Buoc tiep theo da duoc trien khai la prediction_proposal_rematching that: hai
+LoRA TII dau duoc chay trong mot model call, hai LoRA de xuat duoc chay trong
+model call thu hai, sau do chi gop logit cua bon task nay. Cau hinh khong co
+exhaustive fallback, khong hoc router va chay voi strict_exemplar_free.

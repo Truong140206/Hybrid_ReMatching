@@ -1,8 +1,12 @@
 from types import SimpleNamespace
 
 import torch
+from torch import nn
 
 from protocols import validate_exemplar_free_protocol
+from engines.prediction_proposal_rematching import (
+    prediction_proposal_adapter_rematching,
+)
 from engines.progressive_oracle_audit import prediction_proposal_diagnostics
 
 
@@ -64,4 +68,62 @@ def test_prediction_proposal_is_allowed_by_strict_exemplar_free_protocol():
         strict_exemplar_free=True,
         progressive_oracle_audit=True,
         progressive_prediction_proposal_audit=True,
+        prediction_proposal_rematching=True,
     ))
+
+
+class ProposalTaskModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.batch_sizes = []
+
+    def forward(self, inputs, task_id):
+        self.batch_sizes.append(int(inputs.shape[0]))
+        logits = torch.full((inputs.shape[0], 10), -10.0)
+        for row, selected_task in enumerate(task_id.tolist()):
+            if selected_task == 0:
+                logits[row, 0] = 5.0
+                logits[row, 8] = 9.0
+                logits[row, 4] = 8.0
+            elif selected_task == 1:
+                logits[row, 2] = 4.0
+                logits[row, 9] = 7.0
+                logits[row, 5] = 6.0
+            elif selected_task == 2:
+                logits[row, 4] = 3.0
+            elif selected_task == 3:
+                logits[row, 6] = 2.0
+            else:
+                logits[row, 8] = 8.0
+        return {'logits': logits}
+
+
+def test_operational_prediction_proposal_runs_only_four_loras_in_two_calls():
+    model = ProposalTaskModel()
+    tii_logits = torch.tensor([[
+        5.0, 4.9, 4.0, 3.9, 3.0,
+        2.9, 2.0, 1.9, 1.0, 0.9,
+    ]])
+    args = SimpleNamespace(
+        progressive_logit_temperature=1.0,
+        progressive_tii_prior_weight=0.0,
+        progressive_excluded_logit_margin=20.0,
+        prediction_proposal_initial_count=2,
+        prediction_proposal_count=2,
+        prediction_proposal_top_classes=2,
+    )
+
+    logits, routed, diagnostics = prediction_proposal_adapter_rematching(
+        model=model,
+        inputs=torch.tensor([[1.0]]),
+        tii_logits=tii_logits,
+        class_mask=[[0, 1], [2, 3], [4, 5], [6, 7], [8, 9]],
+        seen_task_count=5,
+        args=args,
+    )
+
+    assert routed.tolist() == [4]
+    assert logits.argmax(dim=1).tolist() == [8]
+    assert diagnostics['lora_counts'].tolist() == [4.0]
+    assert diagnostics['forward_calls'].tolist() == [2.0]
+    assert model.batch_sizes == [2, 2]

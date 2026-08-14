@@ -281,6 +281,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--progressive_arrow_audit', action='store_true', help='audit layerwise Arrow-style LoRA parameter routing and its fixed union with TII candidates')
     subparsers.add_argument('--progressive_lora_response_audit', action='store_true', help='audit normalized full-rank K/V LoRA response routing and its fixed union with TII candidates')
     subparsers.add_argument('--progressive_prediction_proposal_audit', action='store_true', help='audit tasks proposed by top class predictions from the initial hard LoRAs')
+    subparsers.add_argument('--prediction_proposal_rematching', action='store_true', help='run only TII initial LoRAs plus fixed-budget tasks proposed by their class predictions')
     subparsers.add_argument('--prediction_proposal_initial_count', default=2, type=int)
     subparsers.add_argument('--prediction_proposal_count', default=2, type=int)
     subparsers.add_argument('--prediction_proposal_top_classes', default=5, type=int)

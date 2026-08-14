@@ -1,0 +1,101 @@
+import torch
+
+from engines.progressive_oracle_audit import (
+    _finalize_partial_logits,
+    prediction_proposal_candidates,
+)
+from engines.progressive_rematching import _tii_task_prior
+
+
+def _evaluate_candidate_tasks(model, inputs, candidate_tasks):
+    batch_size, candidate_count = candidate_tasks.shape
+    expanded_inputs = inputs.unsqueeze(1).expand(
+        batch_size, candidate_count, *inputs.shape[1:]
+    ).reshape(batch_size * candidate_count, *inputs.shape[1:])
+    expanded_task_ids = candidate_tasks.reshape(-1)
+    return model(
+        expanded_inputs, task_id=expanded_task_ids
+    )['logits'].reshape(batch_size, candidate_count, -1)
+
+
+@torch.no_grad()
+def prediction_proposal_adapter_rematching(
+        model, inputs, tii_logits, class_mask, seen_task_count, args):
+    """Route through TII top tasks plus post-LoRA prediction proposals."""
+    device = inputs.device
+    batch_size = inputs.shape[0]
+    temperature = max(
+        1e-6, float(getattr(args, 'progressive_logit_temperature', 1.0)))
+    prior_weight = max(
+        0.0, float(getattr(args, 'progressive_tii_prior_weight', 0.3)))
+    excluded_margin = max(
+        1.0, float(getattr(args, 'progressive_excluded_logit_margin', 20.0)))
+    initial_count = min(
+        max(1, int(getattr(args, 'prediction_proposal_initial_count', 2))),
+        seen_task_count)
+    proposal_count = min(
+        max(0, int(getattr(args, 'prediction_proposal_count', 2))),
+        seen_task_count - initial_count)
+    top_classes = max(
+        1, int(getattr(args, 'prediction_proposal_top_classes', 5)))
+
+    tii_prior = _tii_task_prior(tii_logits, class_mask, seen_task_count)
+    tii_ranking = torch.argsort(tii_prior, dim=1, descending=True)
+    initial_tasks = tii_ranking[:, :initial_count]
+    initial_logits = _evaluate_candidate_tasks(
+        model, inputs, initial_tasks)
+    candidate_tasks, _ = prediction_proposal_candidates(
+        tii_ranking,
+        initial_logits,
+        class_mask,
+        initial_count=initial_count,
+        proposal_count=proposal_count,
+        top_classes=top_classes,
+    )
+
+    candidate_logits = initial_logits
+    forward_calls = 1
+    if proposal_count > 0:
+        proposal_tasks = candidate_tasks[:, initial_count:]
+        proposal_logits = _evaluate_candidate_tasks(
+            model, inputs, proposal_tasks)
+        candidate_logits = torch.cat(
+            [candidate_logits, proposal_logits], dim=1)
+        forward_calls += 1
+
+    candidate_count = candidate_tasks.shape[1]
+    merged_logits = torch.full_like(tii_logits, float('-inf'))
+    task_evidence = torch.full(
+        (batch_size, candidate_count), float('-inf'),
+        dtype=tii_logits.dtype, device=device)
+    for candidate_slot in range(candidate_count):
+        active_tasks = candidate_tasks[:, candidate_slot]
+        adapter_logits = candidate_logits[:, candidate_slot]
+        for task_index in active_tasks.unique().tolist():
+            rows = torch.nonzero(active_tasks == task_index).flatten()
+            class_index = torch.as_tensor(
+                class_mask[task_index], dtype=torch.long, device=device)
+            local_logits = adapter_logits.index_select(
+                0, rows).index_select(1, class_index) / temperature
+            calibrated_logits = local_logits + prior_weight * tii_prior[
+                rows, task_index].unsqueeze(1)
+            merged_logits[
+                rows.unsqueeze(1), class_index.unsqueeze(0)
+            ] = calibrated_logits
+            task_evidence[rows, candidate_slot] = calibrated_logits.max(
+                dim=1).values
+
+    selected_slot = task_evidence.argmax(dim=1)
+    routed_tasks = candidate_tasks.gather(
+        1, selected_slot.unsqueeze(1)).squeeze(1)
+    merged_logits = _finalize_partial_logits(
+        merged_logits, excluded_margin)
+    diagnostics = {
+        'lora_counts': torch.full(
+            (batch_size,), float(candidate_count),
+            dtype=torch.float32, device=device),
+        'forward_calls': torch.full(
+            (batch_size,), float(forward_calls),
+            dtype=torch.float32, device=device),
+    }
+    return merged_logits, routed_tasks, diagnostics

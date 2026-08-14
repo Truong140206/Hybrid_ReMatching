@@ -19,11 +19,10 @@ def _finalize_partial_logits(partial_logits, excluded_margin):
         finite_mask, partial_logits, row_min - excluded_margin)
 
 
-def prediction_proposal_diagnostics(
-        tii_ranking, initial_adapter_logits, rank_logits, task_evidence,
-        winner_tasks, full_predictions, class_mask, initial_count=2,
-        proposal_count=2, top_classes=5, excluded_margin=20.0):
-    """Audit task proposals induced by predictions from initial hard LoRAs."""
+def prediction_proposal_candidates(
+        tii_ranking, initial_adapter_logits, class_mask, initial_count=2,
+        proposal_count=2, top_classes=5):
+    """Build a fixed-budget hard task set from post-LoRA class predictions."""
     batch_size, seen_task_count = tii_ranking.shape
     device = tii_ranking.device
     initial_count = min(max(1, int(initial_count)), seen_task_count)
@@ -58,9 +57,11 @@ def prediction_proposal_diagnostics(
         proposal_scores.scatter_reduce_(
             1, proposed_tasks, top_values, reduce='amax', include_self=True)
 
+    initial_tasks = tii_ranking[:, :initial_count]
+    candidate_parts = [initial_tasks]
     candidate_mask = torch.zeros(
         (batch_size, seen_task_count), dtype=torch.bool, device=device)
-    candidate_mask.scatter_(1, tii_ranking[:, :initial_count], True)
+    candidate_mask.scatter_(1, initial_tasks, True)
     proposal_scores = proposal_scores.masked_fill(candidate_mask, float('-inf'))
 
     for _ in range(proposal_count):
@@ -75,10 +76,27 @@ def prediction_proposal_diagnostics(
             1, fallback_rank.unsqueeze(1)).squeeze(1)
         selected_task = torch.where(
             has_proposal, proposed_task, fallback_task)
+        candidate_parts.append(selected_task.unsqueeze(1))
         candidate_mask.scatter_(1, selected_task.unsqueeze(1), True)
         proposal_scores.scatter_(
             1, selected_task.unsqueeze(1), float('-inf'))
 
+    return torch.cat(candidate_parts, dim=1), candidate_mask
+
+
+def prediction_proposal_diagnostics(
+        tii_ranking, initial_adapter_logits, rank_logits, task_evidence,
+        winner_tasks, full_predictions, class_mask, initial_count=2,
+        proposal_count=2, top_classes=5, excluded_margin=20.0):
+    """Audit task proposals induced by predictions from initial hard LoRAs."""
+    _, candidate_mask = prediction_proposal_candidates(
+        tii_ranking,
+        initial_adapter_logits,
+        class_mask,
+        initial_count=initial_count,
+        proposal_count=proposal_count,
+        top_classes=top_classes,
+    )
     selected_rank_mask = candidate_mask.gather(1, tii_ranking)
     candidate_evidence = task_evidence.masked_fill(
         ~selected_rank_mask, float('-inf'))
