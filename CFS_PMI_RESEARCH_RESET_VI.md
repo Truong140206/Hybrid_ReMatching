@@ -128,3 +128,41 @@ Diagnostic v2 sửa như sau:
 - tăng screening lên 4 lớp và 5 target mỗi lớp.
 
 Vì vậy kết quả v1 chỉ là bằng chứng rằng diagnostic cũ thiếu năng lực hội tụ, không phải bằng chứng bác bỏ CFS.
+## 11. Kết quả diagnostic v2
+
+Diagnostic v2 trên checkpoint task 1 trả về `PASS` và có positive control hợp lệ:
+
+| Chỉ số | Real control | Gaussian | CFS |
+|---|---:|---:|---:|
+| Target cosine | 0.9983 | 0.9938 | 0.9930 |
+| Class accuracy | 1.0000 | 1.0000 | 1.0000 |
+| Class confidence | 0.9895 | 0.9953 | 0.9936 |
+| Output pairwise cosine | 0.3155 | 0.3992 | 0.3732 |
+| Nearest-real cosine distance | 0.0017 | 0.4720 | 0.4845 |
+
+Kết luận đúng phạm vi:
+
+- inversion đã hội tụ và tái tạo được cả feature thật lẫn feature tổng hợp;
+- CFS giữ đúng lớp và làm các mẫu tổng hợp đa dạng hơn Gaussian trung bình khoảng 0.026 pairwise cosine;
+- chưa có bằng chứng CFS cải thiện continual learning;
+- CFS không gần manifold thật hơn Gaussian ở mức tổng hợp. Riêng lớp 2 và 3, khoảng cách output tăng lần lượt khoảng 0.041 và 0.028. Vì vậy không được chạy full chỉ dựa trên diagnostic này.
+
+## 12. Vì sao chưa đưa PMI inversion vào CRCT LoRA
+
+CRCT hiện tại huấn luyện classifier trực tiếp trên final feature; backbone và các LoRA cũ không thay đổi. Diagnostic cho thấy PMI inversion ánh xạ patch-token trở lại gần như đúng final feature mục tiêu với cosine khoảng 0.993. Sau đó đưa feature đó vào cùng classifier gần như lặp lại dữ liệu final-feature mà CRCT đã có, nhưng tốn thêm hàng trăm bước tối ưu.
+
+PMI inversion có ý nghĩa hơn khi student backbone thay đổi và cần teacher truyền tri thức qua input tổng hợp. Điều kiện đó không đúng với head-only CRCT hiện tại. Vì vậy chưa triển khai synthetic KD theo hướng này để tránh thêm chi phí mà không có cơ chế tạo lợi ích rõ ràng.
+
+## 13. Pilot tiếp theo: CFS cho TII
+
+Exhaustive rematching cho thấy lỗi chọn task/LoRA là nút thắt lớn trên ImageNet-R. Trong khi đó các thí nghiệm ImageNet-R trước đều dùng lại TII gốc; CFS chưa được đánh giá trực tiếp tại bộ suy luận task.
+
+Pilot mới chèn CFS vào classifier correction của TII:
+
+1. giữ nguyên ViT-B/16, seed, 20 epoch mỗi task, covariance đầy đủ, learning rate và 30 epoch correction của baseline;
+2. chỉ bật CFS paper-style với đúng feature của từng lớp;
+3. không semantic, không boundary replay, không ảnh cũ và không per-example feature memory;
+4. dừng sau 3 task nhưng vẫn giữ partition 10 task;
+5. chỉ cho phép chạy full khi Acc@1, Acc@5, Loss, Forgetting và Backward đều không xấu hơn baseline task 3.
+
+Đây là ablation của thành phần CFS, không phải triển khai toàn bộ PMI-CFS. Nếu gate thất bại, phải kết luận CFS chưa cải thiện TII trên ImageNet-R và dừng nhánh này.

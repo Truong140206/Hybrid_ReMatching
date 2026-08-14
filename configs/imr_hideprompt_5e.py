@@ -90,6 +90,8 @@ def get_args_parser(subparsers):
 
     # Continual learning parameters
     subparsers.add_argument('--num_tasks', default=10, type=int, help='number of sequential tasks')
+    subparsers.add_argument('--max_train_tasks', default=0, type=int,
+                            help='stop after this many tasks while preserving the num_tasks split; 0 runs all tasks')
     subparsers.add_argument('--train_mask', default=True, type=bool, help='if using the class mask at training')
     subparsers.add_argument('--task_inc', default=False, type=bool, help='if doing task incremental')
 
@@ -152,6 +154,8 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--ca_storage_efficient_method', default='covariance', choices=['covariance', 'multi-centroid', 'variance'], type=str)
     subparsers.add_argument('--n_centroids', default=10, type=int)
     subparsers.add_argument('--cfs_sampling', action='store_true', help='use CFS-selected Gaussian samples for CRCT')
+    subparsers.add_argument('--strict_exemplar_free', action='store_true',
+                            help='reject configurations that retain historical images or per-example real features')
     subparsers.add_argument('--cfs_epochs', default=50, type=int)
     subparsers.add_argument('--cfs_lr', default=0.01, type=float)
     subparsers.add_argument('--cfs_momentum', default=0.9, type=float)

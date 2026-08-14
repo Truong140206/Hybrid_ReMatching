@@ -2535,3 +2535,11 @@ classes bi loai bo. Gate vi the khong thay mau hien tai bi lop cu canh tranh.
 Da sua metric de chi loc mau theo old/current, nhung luon tinh du doan va CE
 tren tat ca seen classes. Cach tinh nay khop class-incremental evaluation va
 kiem tra truc tiep trade-off plasticity/retention ma hybrid gate can bao ve.
+## CFS-PMI diagnostic v2 và chuyển pilot sang TII
+
+- Diagnostic v2: PASS, inversion hợp lệ (real-control cosine 0.9983).
+- CFS giữ class accuracy 100% và giảm output pairwise cosine từ 0.3992 xuống 0.3732.
+- Khoảng cách tới manifold thật không tốt hơn Gaussian: 0.4845 so với 0.4720; lớp 2 và 3 xấu hơn rõ nhất.
+- Không đưa PMI inversion vào head-only LoRA CRCT vì nó gần như tái tạo lại final feature đã được CRCT dùng trực tiếp.
+- Thêm pilot ImageNet-R 3 task để đánh giá CFS paper-style tại TII, nơi quyết định task ban đầu.
+- Pilot giữ nguyên cấu hình TII baseline, strict exemplar-free và dùng gate 5 chỉ số.

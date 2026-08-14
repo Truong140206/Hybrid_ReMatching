@@ -220,7 +220,12 @@ def train_and_evaluate(model: torch.nn.Module, model_without_ddp: torch.nn.Modul
     cls_cov = dict()
     cls_cfs_model = dict()
 
-    for task_id in range(args.num_tasks):
+    task_count = args.num_tasks
+    max_train_tasks = int(getattr(args, 'max_train_tasks', 0))
+    if max_train_tasks > 0:
+        task_count = min(task_count, max_train_tasks)
+
+    for task_id in range(task_count):
 
         # Create new optimizer for each task to clear optimizer status
         if task_id > 0 and args.reinit_optimizer:
