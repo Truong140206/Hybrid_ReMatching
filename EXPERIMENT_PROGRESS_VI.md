@@ -2837,3 +2837,7 @@ Pareto-confidence selector giảm Acc@1 từ `75.0850` xuống `74.9055`, vì v�
 ### Calibration-free Borda rank aggregation
 
 Cross-adapter plurality vote có oracle rất cao (`82.4275`) nhưng rescue giảm Acc@1 xuống `73.7517`; top-1 vote bị chi phối bởi thiên lệch chung giữa các adapter. Phép thử cuối của hướng fusion không học dùng Borda aggregation: chuyển logits của từng adapter thành thứ hạng lớp, cộng thứ hạng qua 5 adapter, phá hòa bằng tổng xác suất và chỉ rescue proposal khi lớp Borda thắng nằm trong top-5 của đa số adapter. Không có threshold fit từ test; nếu Borda rescue không vượt `75.0850`, đóng hướng no-learning fusion.
+
+Kết quả Borda seed 42: `BordaAcc@1=71.2973`, `BordaRescueAcc@1=71.3306`, thấp hơn proposal `3.7544` điểm. Rescue kích hoạt trên `17.2585%` mẫu, trong khi top-5 support trung bình là `98.3229%`; điều kiện support vì vậy gần như không có khả năng loại các quyết định sai. `Proposal/Borda oracle=77.9539` chỉ xác nhận hai nhánh có tính bổ sung, nhưng không cung cấp quy tắc chọn nhánh khả dụng khi không có nhãn. `CROSS_BORDA_HEADROOM_GATE=PASS` và `CROSS_BORDA_RESCUE_GATE=FAIL`.
+
+Quyết định: đóng toàn bộ hướng fusion không học gồm confidence dominance, plurality vote, strict-majority rescue và Borda. Không tiếp tục tune ngưỡng trên test. Nếu khai thác headroom cross-adapter, bước sau phải là selector được học trên calibration data hợp lệ và rehearsal-free, được khóa trước khi đánh giá test; nếu không đáp ứng giao thức này thì giữ proposal hiện tại.
