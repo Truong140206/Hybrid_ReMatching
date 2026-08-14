@@ -89,6 +89,7 @@ def prediction_proposal_diagnostics(
         winner_tasks, full_predictions, class_mask, initial_count=2,
         proposal_count=2, top_classes=5, excluded_margin=20.0):
     """Audit task proposals induced by predictions from initial hard LoRAs."""
+    seen_task_count = tii_ranking.shape[1]
     _, candidate_mask = prediction_proposal_candidates(
         tii_ranking,
         initial_adapter_logits,
