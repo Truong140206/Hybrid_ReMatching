@@ -692,6 +692,23 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     metric_logger.meters['ResponseUnionLoRA/sample'].update(
                         audit['response_union_lora_counts'].mean().item(),
                         n=input.shape[0])
+                if bool(getattr(
+                        args, 'progressive_prediction_proposal_audit', False)):
+                    proposal_percent_metrics = {
+                        'ProposalWinnerRecall':
+                            'prediction_proposal_winner_recall',
+                        'ProposalExactAgreement':
+                            'prediction_proposal_exact_agreement',
+                        'ProposalNewWinner':
+                            'prediction_proposal_new_winner',
+                    }
+                    for metric_name, audit_name in proposal_percent_metrics.items():
+                        metric_logger.meters[metric_name].update(
+                            audit[audit_name].float().mean().mul(100.0).item(),
+                            n=input.shape[0])
+                    metric_logger.meters['ProposalLoRA/sample'].update(
+                        audit['prediction_proposal_lora_counts'].mean().item(),
+                        n=input.shape[0])
                 continue
 
             if bool(getattr(args, 'progressive_rematching', False)):
@@ -1177,6 +1194,17 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 union=metric_logger.meters['ResponseUnionRecall@2x2'],
                 cost=metric_logger.meters['ResponseUnionLoRA/sample'],
                 agreement=metric_logger.meters['TIIResponseTop1Agree']))
+    if bool(getattr(args, 'progressive_prediction_proposal_audit', False)):
+        print(
+            '* PredictionProposalAudit WinnerRecall {recall.global_avg:.3f} '
+            'ExactAgreement {agreement.global_avg:.3f} '
+            'NewWinner {new_winner.global_avg:.3f} '
+            'LoRA/sample {cost.global_avg:.3f}'
+            .format(
+                recall=metric_logger.meters['ProposalWinnerRecall'],
+                agreement=metric_logger.meters['ProposalExactAgreement'],
+                new_winner=metric_logger.meters['ProposalNewWinner'],
+                cost=metric_logger.meters['ProposalLoRA/sample']))
     if bool(getattr(args, 'vectorized_exhaustive_rematching', False)):
         print(
             '* VectorizedExhaustive LoRA/sample {cost.global_avg:.3f} '
@@ -1252,7 +1280,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((45, args.num_tasks))
+    stat_matrix = np.zeros((49, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -1296,6 +1324,11 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
             stat_matrix[25, i] = test_stats.get('ResponseUnionRecall@2x2', 0.0)
             stat_matrix[26, i] = test_stats.get('ResponseUnionLoRA/sample', 0.0)
             stat_matrix[27, i] = test_stats.get('TIIResponseTop1Agree', 0.0)
+        if bool(getattr(args, 'progressive_prediction_proposal_audit', False)):
+            stat_matrix[45, i] = test_stats.get('ProposalWinnerRecall', 0.0)
+            stat_matrix[46, i] = test_stats.get('ProposalExactAgreement', 0.0)
+            stat_matrix[47, i] = test_stats.get('ProposalLoRA/sample', 0.0)
+            stat_matrix[48, i] = test_stats.get('ProposalNewWinner', 0.0)
         if bool(getattr(args, 'vectorized_exhaustive_rematching', False)):
             stat_matrix[28, i] = test_stats.get('LoRA/sample', 0.0)
             stat_matrix[29, i] = test_stats.get('ForwardCalls/sample', 0.0)
@@ -1375,6 +1408,13 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         ).format(
             avg_stat[23], avg_stat[24], avg_stat[25], avg_stat[26],
             avg_stat[27])
+    if bool(getattr(args, 'progressive_prediction_proposal_audit', False)):
+        result_str += (
+            "\tProposalWinnerRecall: {:.4f}"
+            "\tProposalExactAgreement: {:.4f}"
+            "\tProposalLoRA/sample: {:.4f}"
+            "\tProposalNewWinner: {:.4f}"
+        ).format(avg_stat[45], avg_stat[46], avg_stat[47], avg_stat[48])
     if bool(getattr(args, 'vectorized_exhaustive_rematching', False)):
         result_str += (
             "\tLoRA/sample: {:.4f}\tForwardCalls/sample: {:.4f}"

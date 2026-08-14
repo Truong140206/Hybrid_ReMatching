@@ -19,6 +19,94 @@ def _finalize_partial_logits(partial_logits, excluded_margin):
         finite_mask, partial_logits, row_min - excluded_margin)
 
 
+def prediction_proposal_diagnostics(
+        tii_ranking, initial_adapter_logits, rank_logits, task_evidence,
+        winner_tasks, full_predictions, class_mask, initial_count=2,
+        proposal_count=2, top_classes=5, excluded_margin=20.0):
+    """Audit task proposals induced by predictions from initial hard LoRAs."""
+    batch_size, seen_task_count = tii_ranking.shape
+    device = tii_ranking.device
+    initial_count = min(max(1, int(initial_count)), seen_task_count)
+    proposal_count = min(
+        max(0, int(proposal_count)), seen_task_count - initial_count)
+
+    seen_classes = [
+        int(class_id)
+        for task_index in range(seen_task_count)
+        for class_id in class_mask[task_index]
+    ]
+    seen_class_index = torch.as_tensor(
+        seen_classes, dtype=torch.long, device=device)
+    class_to_task = torch.full(
+        (initial_adapter_logits.shape[-1],), -1,
+        dtype=torch.long, device=device)
+    for task_index in range(seen_task_count):
+        class_index = torch.as_tensor(
+            class_mask[task_index], dtype=torch.long, device=device)
+        class_to_task[class_index] = task_index
+
+    proposal_scores = torch.full(
+        (batch_size, seen_task_count), float('-inf'),
+        dtype=initial_adapter_logits.dtype, device=device)
+    top_classes = min(max(1, int(top_classes)), len(seen_classes))
+    for initial_rank in range(initial_count):
+        seen_logits = initial_adapter_logits[:, initial_rank].index_select(
+            1, seen_class_index)
+        top_values, top_positions = torch.topk(
+            seen_logits, k=top_classes, dim=1)
+        proposed_tasks = class_to_task[seen_class_index[top_positions]]
+        proposal_scores.scatter_reduce_(
+            1, proposed_tasks, top_values, reduce='amax', include_self=True)
+
+    candidate_mask = torch.zeros(
+        (batch_size, seen_task_count), dtype=torch.bool, device=device)
+    candidate_mask.scatter_(1, tii_ranking[:, :initial_count], True)
+    proposal_scores = proposal_scores.masked_fill(candidate_mask, float('-inf'))
+
+    for _ in range(proposal_count):
+        proposed_task = proposal_scores.argmax(dim=1)
+        proposed_score = proposal_scores.gather(
+            1, proposed_task.unsqueeze(1)).squeeze(1)
+        has_proposal = torch.isfinite(proposed_score)
+
+        fallback_mask = candidate_mask.gather(1, tii_ranking)
+        fallback_rank = (~fallback_mask).float().argmax(dim=1)
+        fallback_task = tii_ranking.gather(
+            1, fallback_rank.unsqueeze(1)).squeeze(1)
+        selected_task = torch.where(
+            has_proposal, proposed_task, fallback_task)
+        candidate_mask.scatter_(1, selected_task.unsqueeze(1), True)
+        proposal_scores.scatter_(
+            1, selected_task.unsqueeze(1), float('-inf'))
+
+    selected_rank_mask = candidate_mask.gather(1, tii_ranking)
+    candidate_evidence = task_evidence.masked_fill(
+        ~selected_rank_mask, float('-inf'))
+    selected_rank = candidate_evidence.argmax(dim=1)
+    selected_tasks = tii_ranking.gather(
+        1, selected_rank.unsqueeze(1)).squeeze(1)
+    selected_logits = rank_logits.masked_fill(
+        ~selected_rank_mask.unsqueeze(2), float('-inf')).max(dim=1).values
+    selected_logits = _finalize_partial_logits(
+        selected_logits, excluded_margin)
+
+    winner_recall = candidate_mask.gather(
+        1, winner_tasks.unsqueeze(1)).squeeze(1)
+    exact_agreement = (
+        selected_tasks.eq(winner_tasks)
+        & selected_logits.argmax(dim=1).eq(full_predictions)
+    )
+    tii_top4_count = min(4, seen_task_count)
+    tii_top4_recall = tii_ranking[:, :tii_top4_count].eq(
+        winner_tasks.unsqueeze(1)).any(dim=1)
+    return {
+        'prediction_proposal_winner_recall': winner_recall,
+        'prediction_proposal_exact_agreement': exact_agreement,
+        'prediction_proposal_lora_counts': candidate_mask.sum(dim=1).float(),
+        'prediction_proposal_new_winner': winner_recall & ~tii_top4_recall,
+    }
+
+
 @torch.no_grad()
 def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
                              seen_task_count, args):
@@ -41,10 +129,18 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
     task_evidence = torch.full(
         (batch_size, seen_task_count), float('-inf'),
         dtype=tii_logits.dtype, device=device)
+    initial_count = min(
+        max(1, int(getattr(args, 'prediction_proposal_initial_count', 2))),
+        seen_task_count)
+    initial_adapter_logits = torch.empty(
+        (batch_size, initial_count, tii_logits.shape[1]),
+        dtype=tii_logits.dtype, device=device)
 
     for rank in range(seen_task_count):
         active_tasks = candidate_tasks[:, rank]
         adapter_logits = model(inputs, task_id=active_tasks)['logits']
+        if rank < initial_count:
+            initial_adapter_logits[:, rank] = adapter_logits
         for task_index in active_tasks.unique().tolist():
             rows = torch.nonzero(active_tasks == task_index).flatten()
             class_index = torch.as_tensor(
@@ -110,6 +206,20 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
         'actual_lora_counts': torch.full_like(
             oracle_counts, float(seen_task_count)),
     }
+    if bool(getattr(args, 'progressive_prediction_proposal_audit', False)):
+        diagnostics.update(prediction_proposal_diagnostics(
+            candidate_tasks,
+            initial_adapter_logits,
+            rank_logits,
+            task_evidence,
+            routed_tasks,
+            full_predictions,
+            class_mask,
+            initial_count=initial_count,
+            proposal_count=getattr(args, 'prediction_proposal_count', 2),
+            top_classes=getattr(args, 'prediction_proposal_top_classes', 5),
+            excluded_margin=excluded_margin,
+        ))
     if bool(getattr(args, 'progressive_arrow_audit', False)):
         arrow_scores = arrow_task_scores(model, inputs, seen_task_count)
         arrow_ranking = torch.argsort(arrow_scores, dim=1, descending=True)

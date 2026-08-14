@@ -2682,3 +2682,29 @@ Quyet dinh: dong hoan toan nhanh soft/local-hard refinement; khong tune scale,
 std, threshold hoac selector. Cung dong viec ket hop lai hai output soft/hard
 tren checkpoint nay. Huong tiep theo phai danh truc tiep vao chi phi tim LoRA
 thang cua exhaustive, vi day moi la nguon khoang cach accuracy con lai.
+## 2026-08-15: Prediction-induced task proposal oracle audit
+
+### Ly do chon huong nay
+
+Cac audit routing chi dua vao TII, prototype, tham so LoRA, Arrow va nang luong dap ung LoRA deu khong dat recall du cao. Ket qua oracle cho thay TII top-4 chi chua exhaustive winner tren 88.8299% mau, trong khi exhaustive phai chay 10 LoRA. Vi vay nut that hien tai la de xuat dung cac task nam ngoai top-k cua TII.
+
+Huong moi mo rong direct rematching cua HRM-PET ma khong dung anh cu, nhan that, feature replay hay router duoc hoc:
+
+1. Chay hai LoRA dau theo TII.
+2. Lay top-5 lop co logit cao nhat tu moi LoRA da chay.
+3. Anh xa cac lop du doan ve task so huu lop do.
+4. Them toi da hai task moi co bang chung lop manh nhat; neu khong du thi dien theo thu tu TII.
+5. Oracle audit van chay du 10 LoRA chi de xac dinh exhaustive winner va do recall. Chi phi trien khai dang duoc audit luon bi gioi han boi 4 LoRA/mau.
+
+Day la hard routing, nen khong tron trong so va khong lam thay doi bien do LoRA nhu cac soft-mixture da thu. Tin hieu de de xuat task den tu du doan hau-LoRA tren chinh mau test, vi vay no khac Arrow/response audit chi nhin tham so hoac nang luong adapter.
+
+### Gate khai bao truoc
+
+Chi trien khai thanh phuong phap inference that neu dong task-10 thoa tat ca:
+
+- ProposalWinnerRecall >= 95%.
+- ProposalExactAgreement >= 95%.
+- ProposalWinnerRecall - WinnerRecall@4 >= 5 diem phan tram.
+- ProposalLoRA/sample <= 4.
+
+Neu gate khong dat, dong nhanh nay va khong quet tham so top-k de tranh toi uu theo test set.
