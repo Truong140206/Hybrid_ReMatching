@@ -20,6 +20,7 @@ from engines.exhaustive_rematching import exhaustive_adapter_rematching
 from engines.vectorized_exhaustive_rematching import vectorized_exhaustive_adapter_rematching
 from engines.soft_mixture_rematching import (
     soft_mixture_adapter_rematching,
+    soft_hard_confidence_selector_rematching,
     soft_mixture_hard_adapter_rematching,
 )
 from engines.hierarchical_rematching import hierarchical_adapter_rematching
@@ -729,9 +730,12 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 continue
 
             if (bool(getattr(args, 'soft_mixture_rematching', False))
-                    or bool(getattr(args, 'soft_mixture_hard_rematching', False))):
+                    or bool(getattr(args, 'soft_mixture_hard_rematching', False))
+                    or bool(getattr(args, 'soft_hard_selector_rematching', False))):
                 mixture_function = soft_mixture_adapter_rematching
-                if bool(getattr(args, 'soft_mixture_hard_rematching', False)):
+                if bool(getattr(args, 'soft_hard_selector_rematching', False)):
+                    mixture_function = soft_hard_confidence_selector_rematching
+                elif bool(getattr(args, 'soft_mixture_hard_rematching', False)):
                     mixture_function = soft_mixture_hard_adapter_rematching
                 logits, prompt_id, mixture_diagnostics = (
                     mixture_function(
@@ -764,6 +768,30 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 metric_logger.meters['ForwardCalls/sample'].update(
                     mixture_diagnostics['forward_calls'].mean().item(),
                     n=input.shape[0])
+                if bool(getattr(args, 'soft_hard_selector_rematching', False)):
+                    soft_prediction = mixture_diagnostics[
+                        'soft_logits'].argmax(dim=1)
+                    hard_prediction = mixture_diagnostics[
+                        'hard_logits'].argmax(dim=1)
+                    soft_correct = soft_prediction.eq(target)
+                    hard_correct = hard_prediction.eq(target)
+                    selector_metrics = {
+                        'SoftAcc@1': soft_correct.float().mean() * 100.0,
+                        'HardAcc@1': hard_correct.float().mean() * 100.0,
+                        'SoftHardAgree': soft_prediction.eq(
+                            hard_prediction).float().mean() * 100.0,
+                        'SoftOnlyCorrect': (soft_correct & ~hard_correct).float(
+                            ).mean() * 100.0,
+                        'HardOnlyCorrect': (hard_correct & ~soft_correct).float(
+                            ).mean() * 100.0,
+                        'OracleAcc@1': (soft_correct | hard_correct).float(
+                            ).mean() * 100.0,
+                        'HardSelectRate': mixture_diagnostics[
+                            'select_hard'].float().mean() * 100.0,
+                    }
+                    for metric_name, metric_value in selector_metrics.items():
+                        metric_logger.meters[metric_name].update(
+                            metric_value.item(), n=input.shape[0])
                 continue
 
             if (bool(getattr(args, 'hierarchical_rematching', False))
@@ -1131,14 +1159,36 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
             .format(cost=metric_logger.meters['LoRA/sample'],
                     calls=metric_logger.meters['ForwardCalls/sample']))
     if (bool(getattr(args, 'soft_mixture_rematching', False))
-            or bool(getattr(args, 'soft_mixture_hard_rematching', False))):
-        mixture_name = 'SoftHard' if bool(getattr(
-            args, 'soft_mixture_hard_rematching', False)) else 'SoftMixture'
+            or bool(getattr(args, 'soft_mixture_hard_rematching', False))
+            or bool(getattr(args, 'soft_hard_selector_rematching', False))):
+        if bool(getattr(args, 'soft_hard_selector_rematching', False)):
+            mixture_name = 'SoftHardSelector'
+        elif bool(getattr(args, 'soft_mixture_hard_rematching', False)):
+            mixture_name = 'SoftHard'
+        else:
+            mixture_name = 'SoftMixture'
         print(
             '* {name} LoRA/sample {cost.global_avg:.3f} '
             'ForwardCalls/sample {calls.global_avg:.3f}'
             .format(name=mixture_name, cost=metric_logger.meters['LoRA/sample'],
                     calls=metric_logger.meters['ForwardCalls/sample']))
+        if bool(getattr(args, 'soft_hard_selector_rematching', False)):
+            print(
+                '* SelectorAudit SoftAcc@1 {soft.global_avg:.3f} '
+                'HardAcc@1 {hard.global_avg:.3f} '
+                'Agree {agree.global_avg:.3f} '
+                'SoftOnly {soft_only.global_avg:.3f} '
+                'HardOnly {hard_only.global_avg:.3f} '
+                'OracleAcc@1 {oracle.global_avg:.3f} '
+                'HardSelectRate {select.global_avg:.3f}'
+                .format(
+                    soft=metric_logger.meters['SoftAcc@1'],
+                    hard=metric_logger.meters['HardAcc@1'],
+                    agree=metric_logger.meters['SoftHardAgree'],
+                    soft_only=metric_logger.meters['SoftOnlyCorrect'],
+                    hard_only=metric_logger.meters['HardOnlyCorrect'],
+                    oracle=metric_logger.meters['OracleAcc@1'],
+                    select=metric_logger.meters['HardSelectRate']))
     if bool(getattr(args, 'calibrated_progressive_rematching', False)):
         print(
             '* CalibratedProgressive Stage1Stop {stage1.global_avg:.3f} '
@@ -1159,7 +1209,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((32, args.num_tasks))
+    stat_matrix = np.zeros((39, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -1207,9 +1257,18 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
             stat_matrix[28, i] = test_stats.get('LoRA/sample', 0.0)
             stat_matrix[29, i] = test_stats.get('ForwardCalls/sample', 0.0)
         if (bool(getattr(args, 'soft_mixture_rematching', False))
-                or bool(getattr(args, 'soft_mixture_hard_rematching', False))):
+                or bool(getattr(args, 'soft_mixture_hard_rematching', False))
+                or bool(getattr(args, 'soft_hard_selector_rematching', False))):
             stat_matrix[30, i] = test_stats.get('LoRA/sample', 0.0)
             stat_matrix[31, i] = test_stats.get('ForwardCalls/sample', 0.0)
+        if bool(getattr(args, 'soft_hard_selector_rematching', False)):
+            stat_matrix[32, i] = test_stats.get('SoftAcc@1', 0.0)
+            stat_matrix[33, i] = test_stats.get('HardAcc@1', 0.0)
+            stat_matrix[34, i] = test_stats.get('SoftHardAgree', 0.0)
+            stat_matrix[35, i] = test_stats.get('SoftOnlyCorrect', 0.0)
+            stat_matrix[36, i] = test_stats.get('HardOnlyCorrect', 0.0)
+            stat_matrix[37, i] = test_stats.get('OracleAcc@1', 0.0)
+            stat_matrix[38, i] = test_stats.get('HardSelectRate', 0.0)
         if bool(getattr(args, 'calibrated_progressive_rematching', False)):
             stat_matrix[7, i] = test_stats.get('Stage1StopRate', 0.0)
             stat_matrix[8, i] = test_stats.get('Stage2StopRate', 0.0)
@@ -1270,10 +1329,20 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
             "\tLoRA/sample: {:.4f}\tForwardCalls/sample: {:.4f}"
         ).format(avg_stat[28], avg_stat[29])
     if (bool(getattr(args, 'soft_mixture_rematching', False))
-            or bool(getattr(args, 'soft_mixture_hard_rematching', False))):
+            or bool(getattr(args, 'soft_mixture_hard_rematching', False))
+            or bool(getattr(args, 'soft_hard_selector_rematching', False))):
         result_str += (
             "\tLoRA/sample: {:.4f}\tForwardCalls/sample: {:.4f}"
         ).format(avg_stat[30], avg_stat[31])
+    if bool(getattr(args, 'soft_hard_selector_rematching', False)):
+        result_str += (
+            "\tSoftAcc@1: {:.4f}\tHardAcc@1: {:.4f}"
+            "\tSoftHardAgree: {:.4f}\tSoftOnlyCorrect: {:.4f}"
+            "\tHardOnlyCorrect: {:.4f}\tOracleAcc@1: {:.4f}"
+            "\tHardSelectRate: {:.4f}"
+        ).format(
+            avg_stat[32], avg_stat[33], avg_stat[34], avg_stat[35],
+            avg_stat[36], avg_stat[37], avg_stat[38])
     if bool(getattr(args, 'calibrated_progressive_rematching', False)):
         result_str += (
             "\tStage1Stop: {:.4f}\tStage2Stop: {:.4f}"

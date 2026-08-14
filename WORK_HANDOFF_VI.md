@@ -388,3 +388,22 @@ trên đúng checkpoint đó. Không trộn kết quả rank 5/rank 8 hoặc str
 - Chưa có phương pháp mới vừa vượt exhaustive/conventional về chất lượng vừa
   giảm mạnh chi phí.
 - Bước hợp lý tiếp theo là audit complementarity, không phải tuning mù.
+
+## 15. Thí nghiệm đang chờ chạy: soft-hard confidence selector
+
+Mục tiêu của bước này là kiểm tra dứt điểm liệu hai đầu ra soft-mixture và
+soft-route/hard-classify có sửa lỗi bổ sung cho nhau hay không. Mỗi mẫu được
+chạy qua cả hai nhánh; bộ chọn không dùng nhãn so sánh top-1 margin đã chuẩn
+hóa theo độ lệch chuẩn logits. Nhãn test chỉ được dùng sau quyết định để báo
+cáo oracle headroom và không đi vào inference.
+
+Chế độ mới: `selector` trong
+`training_scripts/eval_imagenet_r_soft_mixture_4090.sh`.
+Với top-k=4, chi phí dự kiến là 5 LoRA/mẫu và 2 forward call/mẫu. Dòng cuối sẽ
+có thêm `SoftAcc@1`, `HardAcc@1`, `SoftHardAgree`, `SoftOnlyCorrect`,
+`HardOnlyCorrect`, `OracleAcc@1`, `HardSelectRate`, cùng hai gate:
+`SELECTOR_ORACLE_HEADROOM_GATE` và `SELECTOR_GAIN_GATE`.
+
+Quyết định đã khóa: oracle headroom dưới 0.5 điểm thì đóng nhánh; selector tăng
+dưới 0.3 điểm Acc@1 so với thành phần tốt nhất thì cũng đóng nhánh. Không quét
+threshold hoặc hệ số sau khi thấy kết quả.

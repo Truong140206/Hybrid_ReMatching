@@ -17,7 +17,7 @@ LORA_RANK="${LORA_RANK:-}"
 TII_DIR="${TII_DIR:-${OUTPUT_ROOT}/imr_tii_original_10tasks_seed42}"
 
 if [[ -z "${RUN_DIR}" ]]; then
-  echo "Usage: $0 RUN_DIR [top_k] [task_temperature] [tii_prior_weight] [logit_temperature] [soft|hard]" >&2
+  echo "Usage: $0 RUN_DIR [top_k] [task_temperature] [tii_prior_weight] [logit_temperature] [soft|hard|selector]" >&2
   exit 64
 fi
 if [[ ! -x "${PYTHON_BIN}" ]]; then
@@ -44,8 +44,15 @@ case "${MODE}" in
     EXPECTED_LORA_COST="5.0001"
     EXPECTED_FORWARD_CALLS="2.0001"
     ;;
+  selector)
+    REMATCHING_FLAG="--soft_hard_selector_rematching"
+    METHOD_TAG="soft_hard_selector"
+    METHOD_LABEL="Soft-hard-selector"
+    EXPECTED_LORA_COST="5.0001"
+    EXPECTED_FORWARD_CALLS="2.0001"
+    ;;
   *)
-    echo "mode must be 'soft' or 'hard'" >&2
+    echo "mode must be 'soft', 'hard', or 'selector'" >&2
     exit 64
     ;;
 esac
@@ -131,6 +138,8 @@ fi
 cd "${REPO_ROOT}"
 if [[ "${MODE}" == "hard" ]]; then
   echo "Soft-hard rematching: TII top-${TOP_K} mixture routes, then one selected LoRA classifies"
+elif [[ "${MODE}" == "selector" ]]; then
+  echo "Soft-hard selector: compute both outputs, then choose by label-free normalized top-1 margin"
 else
   echo "Soft-mixture rematching: TII top-${TOP_K}, posterior-weighted LoRA residuals, one model forward"
 fi
@@ -235,3 +244,37 @@ passed = cost <= expected_cost and calls <= expected_calls
 print(f"Efficiency: LoRA/sample={cost:.4f}; ForwardCalls/sample={calls:.4f}")
 print(mode.upper().replace("-", "_") + "_EFFICIENCY_GATE=" + ("PASS" if passed else "FAIL"))
 ' "${FINAL_LINE}" "${METHOD_LABEL}" "${EXPECTED_LORA_COST}" "${EXPECTED_FORWARD_CALLS}"
+
+if [[ "${MODE}" == "selector" ]]; then
+  "${PYTHON_BIN}" -c '
+import re
+import sys
+
+line = sys.argv[1]
+def metric(name):
+    match = re.search(re.escape(name) + r":\s*([-+0-9.]+)", line)
+    if match is None:
+        raise SystemExit("Missing selector metric: " + name)
+    return float(match.group(1))
+
+soft = metric("SoftAcc@1")
+hard = metric("HardAcc@1")
+selected = metric("Acc@1")
+oracle = metric("OracleAcc@1")
+soft_only = metric("SoftOnlyCorrect")
+hard_only = metric("HardOnlyCorrect")
+best_component = max(soft, hard)
+headroom = oracle - best_component
+selector_gain = selected - best_component
+headroom_pass = headroom >= 0.5
+selector_pass = selector_gain >= 0.3
+print(
+    f"Selector audit: SoftAcc@1={soft:.4f}; HardAcc@1={hard:.4f}; "
+    f"OracleAcc@1={oracle:.4f}; headroom={headroom:+.4f}; "
+    f"SoftOnly={soft_only:.4f}; HardOnly={hard_only:.4f}")
+print("SELECTOR_ORACLE_HEADROOM_GATE=" + ("PASS" if headroom_pass else "FAIL"))
+print(
+    f"Selector gain over best component={selector_gain:+.4f}; "
+    "SELECTOR_GAIN_GATE=" + ("PASS" if selector_pass else "FAIL"))
+' "${FINAL_LINE}"
+fi

@@ -2621,3 +2621,24 @@ kiem tra truc tiep trade-off plasticity/retention ma hybrid gate can bao ve.
 - Fixed LoRA + TII-CFS: Acc@task 89.0233, Acc@1 80.9999, Acc@5 93.5829, Loss 0.8446.
 - END_TO_END_GATE=FAIL; Acc@1 chỉ +0.0217 trong khi Acc@task, Acc@5 và Loss xấu hơn.
 - Dừng CFS-TII, không train full 10 task và không tuning thêm tỷ lệ.
+
+## 60. Selector soft/hard theo confidence va oracle audit
+
+Sau khi soft-mixture va soft-route/hard-classify deu khong dat strict quality gate,
+khong tiep tuc quet he so. Trien khai mot phep thu co kha nang bac bo nhanh:
+chay hai dau ra trong cung mot lan danh gia, sau do chon theo tung mau bang
+normalized top-1 margin. Margin duoc chuan hoa theo do lech chuan logits tren
+cac lop da hoc, nen bat bien voi phep cong hang so va nhan he so duong. Selector
+khong dung nhan test; khi margin bang nhau thi giu soft output.
+
+Chi phi ky vong voi top-k=4 la 5 LoRA/mau va 2 forward call/mau. Log bo sung
+SoftAcc@1, HardAcc@1, SoftHardAgree, SoftOnlyCorrect, HardOnlyCorrect,
+OracleAcc@1 va HardSelectRate. Nhan chi duoc dung de tinh oracle diagnostic,
+khong tham gia quyet dinh dau ra.
+
+Tieu chi khoa truoc khi chay:
+- OracleAcc@1 phai cao hon thanh phan tot nhat it nhat 0.5 diem; neu khong,
+  hai dau ra khong du bo sung de tiep tuc nhanh nay.
+- Selector thuc te phai cao hon thanh phan tot nhat it nhat 0.3 diem Acc@1.
+- Van doi chieu day du voi baseline va exhaustive; khong chap nhan danh doi
+  Acc@5, Loss, Forgetting hoac Backward chi de tang Acc@1.

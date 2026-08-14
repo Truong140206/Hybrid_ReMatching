@@ -81,3 +81,51 @@ def soft_mixture_hard_adapter_rematching(
     diagnostics['lora_counts'] = diagnostics['lora_counts'] + 1.0
     diagnostics['forward_calls'] = diagnostics['forward_calls'] + 1.0
     return merged_logits, routed_tasks, diagnostics
+
+
+def _scale_invariant_top1_margin(logits, class_index):
+    local_logits = logits.index_select(1, class_index)
+    centered = local_logits - local_logits.mean(dim=1, keepdim=True)
+    normalized = centered / local_logits.std(
+        dim=1, keepdim=True, unbiased=False).clamp_min(1e-6)
+    top_count = min(2, normalized.shape[1])
+    top_values = torch.topk(normalized, k=top_count, dim=1).values
+    if top_count == 1:
+        return torch.full_like(top_values[:, 0], float('inf'))
+    return top_values[:, 0] - top_values[:, 1]
+
+
+@torch.no_grad()
+def soft_hard_confidence_selector_rematching(
+        model, inputs, tii_logits, class_mask, seen_task_count, args):
+    """Select soft or hard logits using a label-free normalized margin."""
+    soft_logits, routed_tasks, diagnostics = soft_mixture_adapter_rematching(
+        model, inputs, tii_logits, class_mask, seen_task_count, args)
+
+    hard_output = model(inputs, task_id=routed_tasks)
+    hard_output_logits = hard_output['logits'] / max(
+        1e-6, float(getattr(args, 'soft_mixture_logit_temperature', 1.0)))
+    hard_logits = torch.full_like(tii_logits, float('-inf'))
+    seen_classes = []
+    for task_index in range(seen_task_count):
+        seen_classes.extend(class_mask[task_index])
+    seen_index = torch.as_tensor(
+        seen_classes, dtype=torch.long, device=inputs.device)
+    hard_logits[:, seen_index] = hard_output_logits.index_select(
+        1, seen_index)
+
+    soft_margin = _scale_invariant_top1_margin(soft_logits, seen_index)
+    hard_margin = _scale_invariant_top1_margin(hard_logits, seen_index)
+    select_hard = hard_margin > soft_margin
+    selected_logits = torch.where(
+        select_hard.unsqueeze(1), hard_logits, soft_logits)
+
+    diagnostics = dict(diagnostics)
+    diagnostics['lora_counts'] = diagnostics['lora_counts'] + 1.0
+    diagnostics['forward_calls'] = diagnostics['forward_calls'] + 1.0
+    diagnostics['soft_logits'] = soft_logits
+    diagnostics['hard_logits'] = hard_logits
+    diagnostics['select_hard'] = select_hard
+    diagnostics['soft_margin'] = soft_margin
+    diagnostics['hard_margin'] = hard_margin
+    return selected_logits, routed_tasks, diagnostics
