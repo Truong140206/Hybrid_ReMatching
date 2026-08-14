@@ -2,6 +2,7 @@ import torch
 from torch import nn
 
 from engines.cfs_pmi_diagnostic import (
+    _evaluate_diagnostic,
     images_to_patch_tokens,
     partial_invert_feature_targets,
     patch_tokens_to_output,
@@ -117,3 +118,65 @@ def test_partial_inversion_improves_alignment_and_preserves_model():
     for name, parameter in model.named_parameters():
         assert torch.equal(parameter, parameters_before[name])
         assert parameter.requires_grad
+
+
+def _metric_row(**updates):
+    row = {
+        'target_cosine': 0.95,
+        'class_accuracy': 1.0,
+        'class_confidence': 0.95,
+        'nearest_real_cosine_distance': 0.03,
+        'target_nearest_real_cosine_distance': 0.10,
+        'output_pairwise_cosine': 0.80,
+    }
+    row.update(updates)
+    return row
+
+
+def test_gate_is_inconclusive_when_positive_control_fails():
+    aggregate = {
+        'real_control': _metric_row(target_cosine=0.70),
+        'gaussian': _metric_row(),
+        'cfs': _metric_row(output_pairwise_cosine=0.70),
+    }
+
+    checks, status = _evaluate_diagnostic(aggregate)
+
+    assert not checks['inversion_valid']
+    assert status == 'INCONCLUSIVE'
+
+
+def test_gate_passes_only_after_valid_control_and_cfs_checks():
+    aggregate = {
+        'real_control': _metric_row(),
+        'gaussian': _metric_row(
+            target_cosine=0.85,
+            target_nearest_real_cosine_distance=0.20,
+            nearest_real_cosine_distance=0.20,
+        ),
+        'cfs': _metric_row(
+            target_cosine=0.84,
+            target_nearest_real_cosine_distance=0.20,
+            nearest_real_cosine_distance=0.20,
+            output_pairwise_cosine=0.79,
+        ),
+    }
+
+    checks, status = _evaluate_diagnostic(aggregate)
+
+    assert all(checks.values())
+    assert status == 'PASS'
+
+
+def test_gate_fails_method_only_after_valid_control():
+    aggregate = {
+        'real_control': _metric_row(),
+        'gaussian': _metric_row(),
+        'cfs': _metric_row(output_pairwise_cosine=0.80),
+    }
+
+    checks, status = _evaluate_diagnostic(aggregate)
+
+    assert checks['inversion_valid']
+    assert not checks['diversity_gain']
+    assert status == 'FAIL'

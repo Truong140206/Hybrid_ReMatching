@@ -19,7 +19,7 @@ fi
 
 RUN_DIR="${RUN_DIR:-${OUTPUT_ROOT}/imr_lora_rank8_baseline_10tasks_seed${SEED}}"
 TII_DIR="${TII_DIR:-${OUTPUT_ROOT}/imr_tii_original_10tasks_seed${SEED}}"
-LOG_PATH="${LOG_PATH:-${OUTPUT_ROOT}/imr_rank8_cfs_pmi_diagnostic_task1_seed${SEED}.log}"
+LOG_PATH="${LOG_PATH:-${OUTPUT_ROOT}/imr_rank8_cfs_pmi_diagnostic_v2_task1_seed${SEED}.log}"
 
 if [[ ! -x "${PYTHON_BIN}" ]]; then
   echo "Python environment not found: ${PYTHON_BIN}" >&2
@@ -75,13 +75,13 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --strict_exemplar_free \
   --cfs_pmi_diagnostic \
   --cfs_pmi_diag_task 1 \
-  --cfs_pmi_diag_classes "${DIAG_CLASSES:-2}" \
-  --cfs_pmi_diag_targets_per_class "${TARGETS_PER_CLASS:-4}" \
+  --cfs_pmi_diag_classes "${DIAG_CLASSES:-4}" \
+  --cfs_pmi_diag_targets_per_class "${TARGETS_PER_CLASS:-5}" \
   --cfs_pmi_diag_real_samples_per_class "${REAL_SAMPLES_PER_CLASS:-64}" \
-  --cfs_pmi_diag_cfs_epochs "${CFS_EPOCHS:-50}" \
-  --cfs_pmi_diag_split_block "${SPLIT_BLOCK:-5}" \
-  --cfs_pmi_diag_layer_steps "${LAYER_STEPS:-20}" \
-  --cfs_pmi_diag_full_steps "${FULL_STEPS:-40}" \
+  --cfs_pmi_diag_cfs_epochs "${CFS_EPOCHS:-200}" \
+  --cfs_pmi_diag_split_block "${SPLIT_BLOCK:-1}" \
+  --cfs_pmi_diag_layer_steps "${LAYER_STEPS:-100}" \
+  --cfs_pmi_diag_full_steps "${FULL_STEPS:-300}" \
   --eval \
   --output_dir "${RUN_DIR}" \
   2>&1 | tee "${LOG_PATH}"

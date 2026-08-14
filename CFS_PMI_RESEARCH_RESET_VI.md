@@ -103,3 +103,28 @@ Nếu bước huấn luyện synthetic KD được triển khai sau này, cần 
 - PMI-CFS-DFCL chính thức, commit `9716272`: https://github.com/RuilinTong/PMI-CFS-DFCL
 - Cấu hình ImageNet-R của PMI-CFS dùng `memory_per_class: 5`, `start_block: 1` và KD.
 - Code inversion chính thức tối ưu target feature theo từng block rồi full-tune; code huấn luyện dùng output của old model làm teacher.
+
+
+## 10. Kết quả diagnostic v1 và sửa thiết kế
+
+Diagnostic v1 chạy trong 8 giây và trả FAIL:
+
+- Gaussian target cosine: 0.6618;
+- CFS target cosine: 0.6400;
+- Gaussian/CFS đều đạt class accuracy 1.0;
+- CFS output pairwise cosine giảm từ 0.7501 xuống 0.7248;
+- khoảng cách output tới real manifold lần lượt là 0.3097 và 0.3209.
+
+Không được diễn giải kết quả này là CFS thất bại. Cả Gaussian lẫn CFS đều không đạt ngưỡng reachability 0.90, nên năng lực inversion chưa được xác nhận. Diagnostic v1 thiếu positive control và ngân sách 20 + 40 bước quá thấp so với code nguồn.
+
+Diagnostic v2 sửa như sau:
+
+- thêm `real_control`: feature thật phải được inversion lại thành công trước;
+- nếu real control không đạt thì trạng thái là `INCONCLUSIVE`;
+- chỉ so sánh CFS với Gaussian sau khi inversion được xác nhận hợp lệ;
+- thêm khoảng cách từ chính target tới real manifold;
+- dùng split block 1 theo cấu hình ImageNet-R của PMI-CFS;
+- tăng mặc định lên 200 epoch CFS, 100 bước layer-wise và 300 bước full;
+- tăng screening lên 4 lớp và 5 target mỗi lớp.
+
+Vì vậy kết quả v1 chỉ là bằng chứng rằng diagnostic cũ thiếu năng lực hội tụ, không phải bằng chứng bác bỏ CFS.

@@ -117,7 +117,7 @@ def train(args):
                     import json
                     output_path = os.path.join(
                         args.output_dir,
-                        'cfs_pmi_diagnostic_task{}.json'.format(task_id + 1),
+                        'cfs_pmi_diagnostic_v2_task{}.json'.format(task_id + 1),
                     )
                     with open(output_path, 'w', encoding='utf-8') as handle:
                         json.dump(results, handle, indent=2, sort_keys=True)

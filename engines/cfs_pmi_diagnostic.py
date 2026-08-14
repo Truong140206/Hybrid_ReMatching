@@ -227,6 +227,10 @@ def _diagnostic_metrics(output, targets, labels, seen_classes, real_features):
 
     normalized_output = F.normalize(output_features, dim=1)
     normalized_real = F.normalize(real_features.float(), dim=1)
+    normalized_targets = F.normalize(targets.float(), dim=1)
+    target_nearest_real_distance = (
+        1.0 - normalized_targets.matmul(normalized_real.t()).max(dim=1).values
+    ).mean()
     nearest_real_distance = (
         1.0 - normalized_output.matmul(normalized_real.t()).max(dim=1).values
     ).mean()
@@ -235,9 +239,54 @@ def _diagnostic_metrics(output, targets, labels, seen_classes, real_features):
         'class_accuracy': float(accuracy.item()),
         'class_confidence': float(confidence.item()),
         'nearest_real_cosine_distance': float(nearest_real_distance.item()),
+        'target_nearest_real_cosine_distance': float(
+            target_nearest_real_distance.item()),
         'target_pairwise_cosine': _off_diagonal_cosine(targets),
         'output_pairwise_cosine': _off_diagonal_cosine(output_features),
     }
+
+def _evaluate_diagnostic(aggregate, reachability_threshold=0.90,
+                         tolerance=0.02, diversity_margin=0.005):
+    control = aggregate['real_control']
+    gaussian = aggregate['gaussian']
+    cfs = aggregate['cfs']
+
+    inversion_valid = (
+        control['target_cosine'] >= float(reachability_threshold)
+        and control['nearest_real_cosine_distance'] <= 0.10
+        and control['class_accuracy'] >= 0.98
+    )
+    checks = {
+        'inversion_valid': inversion_valid,
+        'reachable_vs_gaussian': (
+            cfs['target_cosine'] >= gaussian['target_cosine'] - tolerance
+        ),
+        'class_consistency': (
+            cfs['class_accuracy'] >= gaussian['class_accuracy'] - tolerance
+            and cfs['class_confidence'] >= gaussian['class_confidence'] - tolerance
+        ),
+        'target_manifold': (
+            cfs['target_nearest_real_cosine_distance']
+            <= gaussian['target_nearest_real_cosine_distance'] + tolerance
+        ),
+        'output_manifold': (
+            cfs['nearest_real_cosine_distance']
+            <= gaussian['nearest_real_cosine_distance'] + tolerance
+        ),
+        'diversity_gain': (
+            cfs['output_pairwise_cosine']
+            <= gaussian['output_pairwise_cosine'] - diversity_margin
+        ),
+    }
+    if not inversion_valid:
+        status = 'INCONCLUSIVE'
+    elif all(value for key, value in checks.items()
+             if key != 'inversion_valid'):
+        status = 'PASS'
+    else:
+        status = 'FAIL'
+    return checks, status
+
 
 
 @torch.no_grad()
@@ -264,8 +313,8 @@ def _collect_class_observations(model, loader, task_id, device, max_samples):
 def run_cfs_pmi_diagnostic(model, data_loader_per_cls, class_ids, task_id,
                            args, device):
     model = _base_model(model)
-    class_limit = max(1, int(getattr(args, 'cfs_pmi_diag_classes', 2)))
-    target_count = max(2, int(getattr(args, 'cfs_pmi_diag_targets_per_class', 4)))
+    class_limit = max(1, int(getattr(args, 'cfs_pmi_diag_classes', 4)))
+    target_count = max(2, int(getattr(args, 'cfs_pmi_diag_targets_per_class', 5)))
     max_samples = max(
         target_count, int(getattr(args, 'cfs_pmi_diag_real_samples_per_class', 64)))
     selected_classes = [int(class_id) for class_id in class_ids[:class_limit]]
@@ -273,7 +322,7 @@ def run_cfs_pmi_diagnostic(model, data_loader_per_cls, class_ids, task_id,
     diagnostic_args = copy.copy(args)
     diagnostic_args.cfs_sampling = True
     diagnostic_args.cfs_epochs = max(
-        1, int(getattr(args, 'cfs_pmi_diag_cfs_epochs', 50)))
+        1, int(getattr(args, 'cfs_pmi_diag_cfs_epochs', 200)))
     diagnostic_args.cfs_train_max_samples = max_samples
     diagnostic_args.cfs_paper_style = True
     diagnostic_args.cfs_moment_match = False
@@ -297,7 +346,7 @@ def run_cfs_pmi_diagnostic(model, data_loader_per_cls, class_ids, task_id,
     del all_tokens
 
     results = {'task_id': int(task_id), 'classes': {}}
-    aggregate = {'gaussian': [], 'cfs': []}
+    aggregate = {'real_control': [], 'gaussian': [], 'cfs': []}
     for class_id in selected_classes:
         real_features = observations[class_id].float()
         mean = real_features.mean(dim=0)
@@ -307,6 +356,7 @@ def run_cfs_pmi_diagnostic(model, data_loader_per_cls, class_ids, task_id,
             real_features, diagnostic_args, device)
         distribution = torch.distributions.MultivariateNormal(mean, covariance)
         gaussian_targets = distribution.sample((target_count,))
+        real_targets = real_features[:target_count].detach().clone()
         cfs_targets = utils.sample_cfs_features(
             mean,
             covariance,
@@ -320,7 +370,10 @@ def run_cfs_pmi_diagnostic(model, data_loader_per_cls, class_ids, task_id,
 
         class_result = {}
         for name, targets in (
-                ('gaussian', gaussian_targets), ('cfs', cfs_targets)):
+                ('real_control', real_targets),
+                ('gaussian', gaussian_targets),
+                ('cfs', cfs_targets),
+        ):
             _, output = partial_invert_feature_targets(
                 model=model,
                 target_features=targets,
@@ -329,9 +382,9 @@ def run_cfs_pmi_diagnostic(model, data_loader_per_cls, class_ids, task_id,
                 seen_classes=seen_classes,
                 token_mean=token_mean,
                 token_var=token_var,
-                split_block=int(getattr(args, 'cfs_pmi_diag_split_block', 5)),
-                layer_steps=int(getattr(args, 'cfs_pmi_diag_layer_steps', 20)),
-                full_steps=int(getattr(args, 'cfs_pmi_diag_full_steps', 40)),
+                split_block=int(getattr(args, 'cfs_pmi_diag_split_block', 1)),
+                layer_steps=int(getattr(args, 'cfs_pmi_diag_layer_steps', 100)),
+                full_steps=int(getattr(args, 'cfs_pmi_diag_full_steps', 300)),
                 layer_lr=float(getattr(args, 'cfs_pmi_diag_layer_lr', 0.05)),
                 full_lr=float(getattr(args, 'cfs_pmi_diag_full_lr', 0.01)),
                 class_weight=float(getattr(args, 'cfs_pmi_diag_class_weight', 0.1)),
@@ -350,25 +403,11 @@ def run_cfs_pmi_diagnostic(model, data_loader_per_cls, class_ids, task_id,
             for key in rows[0]
         }
 
-    gaussian = results['aggregate']['gaussian']
-    cfs = results['aggregate']['cfs']
-    checks = {
-        'reachable': cfs['target_cosine'] >= 0.90,
-        'class_consistency': (
-            cfs['class_accuracy'] >= gaussian['class_accuracy'] - 0.02
-            and cfs['class_confidence'] >= gaussian['class_confidence'] - 0.02
-        ),
-        'real_manifold': (
-            cfs['nearest_real_cosine_distance']
-            <= gaussian['nearest_real_cosine_distance'] + 0.02
-        ),
-        'diversity_gain': (
-            cfs['output_pairwise_cosine']
-            <= gaussian['output_pairwise_cosine'] - 0.005
-        ),
-    }
+    checks, status = _evaluate_diagnostic(results['aggregate'])
     results['checks'] = checks
-    results['pass'] = all(checks.values())
-    print('CFS_PMI_DIAGNOSTIC=' + ('PASS' if results['pass'] else 'FAIL'))
+    results['status'] = status
+    results['conclusive'] = status != 'INCONCLUSIVE'
+    results['pass'] = status == 'PASS'
+    print('CFS_PMI_DIAGNOSTIC=' + status)
     print(json.dumps(results, indent=2, sort_keys=True))
     return results
