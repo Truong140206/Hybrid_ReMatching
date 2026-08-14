@@ -459,6 +459,8 @@ Delta proposal so với baseline: Acc@task +3.0208, Acc@1 +1.0458, Acc@5
 +1.0394, Loss -0.0429, Forgetting -0.3561 và Backward +0.0392. Cả
 `BASELINE_ALL_METRIC_GATE` và `OPERATIONAL_PROPOSAL_EFFICIENCY_GATE` đều PASS.
 Chi phí là 5 LoRA/mẫu và 2 forward call/mẫu, so với 10 LoRA của exhaustive.
+Wall time giảm từ 495 xuống 295 giây: tiết kiệm 200 giây (40.4%), tương đương
+nhanh hơn 1.68 lần trên RTX 4090 trong cùng thiết lập đánh giá.
 
 ### Lệnh tái lập
 

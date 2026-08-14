@@ -2770,6 +2770,10 @@ So voi exhaustive, Acc@task chi thap hon 0.0487 va Acc@1 thap hon 0.0863,
 trong khi so LoRA duoc danh gia giam tu 10 xuong 5. Acc@5 thap hon 1.0287,
 Loss cao hon 0.0992, Forgetting cao hon 0.0855 va Backward thap hon 0.0478.
 
+Wall time tren RTX 4090 la 295 giay (4 phut 55 giay), so voi 495 giay cua
+vectorized exhaustive tren cung setting. Nhu vay proposal giam 40.4% thoi gian
+va dat toc do nhanh hon 1.68 lan, trong khi Acc@1 chi giam 0.0863 diem.
+
 Day la cau hinh duoc chon hien tai. Khong tiep tuc tune top-k, prior, completion
 hay temperature tren seed 42. Buoc tiep theo la lap lai tren nhieu seed va bao
-cao mean/std, dong thoi do wall time cung mot moi truong phan cung.
+cao mean/std.
