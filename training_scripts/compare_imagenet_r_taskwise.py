@@ -7,10 +7,53 @@ from pathlib import Path
 
 
 TASK_END = re.compile(r'^Test: \[Task (\d+)\] Total time:')
-TASK_METRICS = re.compile(
-    r'^- Acc@task\s+([-+0-9.]+)\s+Acc@1\s+([-+0-9.]+)\s+'
-    r'Acc@5\s+([-+0-9.]+)\s+loss\s+([-+0-9.]+)')
+TASK_PROGRESS = re.compile(r'^Test: \[Task (\d+)\]\s+\[')
 STAGE_END = re.compile(r'\[Average accuracy till task(\d+)\]')
+NUMBER = r'[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?'
+
+
+def _summary_metrics(line):
+    if not line.startswith('- Acc@task'):
+        return None
+    patterns = {
+        'Acc@task': rf'Acc@task\s+({NUMBER})',
+        'Acc@1': rf'Acc@1\s+({NUMBER})',
+        'Acc@5': rf'Acc@5\s+({NUMBER})',
+        'Loss': rf'[Ll]oss\s+({NUMBER})',
+    }
+    matches = {name: re.search(pattern, line)
+               for name, pattern in patterns.items()}
+    if not all(matches.values()):
+        return None
+    return {name: float(match.group(1))
+            for name, match in matches.items()}
+
+
+def _progress_metrics(line):
+    patterns = {
+        'Acc@task': rf'Acc@task:\s*{NUMBER}\s*\(({NUMBER})\)',
+        'Acc@1': rf'Acc@1:\s*{NUMBER}\s*\(({NUMBER})\)',
+        'Acc@5': rf'Acc@5:\s*{NUMBER}\s*\(({NUMBER})\)',
+        'Loss': rf'Loss:\s*{NUMBER}\s*\(({NUMBER})\)',
+    }
+    matches = {name: re.search(pattern, line)
+               for name, pattern in patterns.items()}
+    if not all(matches.values()):
+        return None
+    return {name: float(match.group(1))
+            for name, match in matches.items()}
+
+
+def _normalize_stage_rows(stage_rows, stage):
+    one_based = set(range(1, stage + 1))
+    if one_based.issubset(stage_rows):
+        return {task: dict(stage_rows[task]) for task in sorted(one_based)}
+
+    zero_based = set(range(stage))
+    if zero_based.issubset(stage_rows):
+        return {task + 1: dict(stage_rows[task])
+                for task in sorted(zero_based)}
+    return None
 
 
 def parse_accuracy_matrix(path):
@@ -20,35 +63,39 @@ def parse_accuracy_matrix(path):
     for raw_line in Path(path).read_text(
             encoding='utf-8', errors='replace').splitlines():
         line = raw_line.strip()
+
+        progress_match = TASK_PROGRESS.match(line)
+        if progress_match:
+            progress_metrics = _progress_metrics(line)
+            if progress_metrics is not None:
+                stage_rows[int(progress_match.group(1))] = progress_metrics
+            continue
+
         task_match = TASK_END.match(line)
         if task_match:
             pending_task = int(task_match.group(1))
             continue
-        metric_match = TASK_METRICS.match(line)
-        if metric_match and pending_task is not None:
-            stage_rows[pending_task] = {
-                'Acc@task': float(metric_match.group(1)),
-                'Acc@1': float(metric_match.group(2)),
-                'Acc@5': float(metric_match.group(3)),
-                'Loss': float(metric_match.group(4)),
-            }
+
+        summary_metrics = _summary_metrics(line)
+        if summary_metrics is not None and pending_task is not None:
+            stage_rows[pending_task] = summary_metrics
             pending_task = None
             continue
+
         stage_match = STAGE_END.search(line)
         if stage_match:
             stage = int(stage_match.group(1))
-            expected = set(range(1, stage + 1))
-            if expected.issubset(stage_rows):
-                matrix[stage] = {
-                    task: dict(stage_rows[task]) for task in sorted(expected)}
+            normalized = _normalize_stage_rows(stage_rows, stage)
+            if normalized is not None:
+                matrix[stage] = normalized
             stage_rows = {}
             pending_task = None
 
     if 10 not in matrix or set(matrix[10]) != set(range(1, 11)):
-        raise ValueError(f'Incomplete final 10-task matrix: {path}')
+        available = {stage: sorted(rows) for stage, rows in matrix.items()}
+        raise ValueError(
+            f'Incomplete final 10-task matrix: {path}; parsed={available}')
     return matrix
-
-
 def task_retention(matrix, metric='Acc@1'):
     final_stage = max(matrix)
     rows = {}

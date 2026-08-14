@@ -47,3 +47,22 @@ def test_taskwise_parser_reconstructs_peak_final_and_backward(tmp_path):
     assert retention[1]['backward'] == -13.5
     assert 'Aggregate old-task diagnosis' in report
     assert 'Task 1:' in report
+
+def test_taskwise_parser_accepts_zero_based_progress_rows(tmp_path):
+    path = tmp_path / 'zero_based.log'
+    lines = []
+    for stage in range(1, 11):
+        for task in range(stage):
+            acc1 = 70.0 + task
+            lines.append(
+                f'Test: [Task {task}]  [41/42]  Loss: 1.0 (0.9000)  '
+                f'Acc@1: 75.0 ({acc1:.4f})  Acc@5: 95.0 (94.0000)  '
+                f'Acc@task: 80.0 (79.0000)')
+        lines.append(
+            f'[Average accuracy till task{stage}] Acc@1: 0.0000')
+    path.write_text('\n'.join(lines), encoding='utf-8')
+
+    matrix = parse_accuracy_matrix(path)
+    assert matrix[10][1]['Acc@1'] == 70.0
+    assert matrix[10][10]['Acc@1'] == 79.0
+    assert matrix[10][1]['Loss'] == 0.9
