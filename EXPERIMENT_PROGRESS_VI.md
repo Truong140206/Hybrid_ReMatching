@@ -2807,3 +2807,21 @@ Quyet dinh: chua chay seed 43/44 va khong tune threshold tren test set. Buoc
 ke tiep la tai dung ma tran accuracy stage-task tu ba log de xac dinh Forgetting
 tang do peak accuracy som cao hon hay do final accuracy cua task cu giam. Chi
 sua routing sau khi chuan doan nay co ket qua.
+
+## 2026-08-15: Chẩn đoán retention theo task và audit nhánh TII ban đầu
+
+Kết quả strict seed 42 cho thấy proposal không làm giảm độ chính xác cuối của nhóm task cũ một cách tổng thể:
+
+- Acc@1 cuối trung bình task 1-9: `74.4464 -> 75.3906` (`+0.9442`).
+- Peak trung bình task 1-9: `77.7266 -> 78.7028` (`+0.9763`).
+- Forgetting tăng rất nhẹ `+0.0321` vì mức tăng peak lớn hơn mức tăng final đúng `0.0321`, không phải vì final old-task accuracy thấp hơn baseline.
+- Backward giảm `0.1493` vì accuracy ban đầu tăng `1.0935` nhưng final chỉ tăng `0.9442`.
+- Suy giảm final thực sự tập trung ở task 6 (`-0.7169`) và task 7 (`-0.5386`). Không được hạ peak/initial để làm đẹp Forgetting/BWT vì như vậy làm chất lượng mô hình tệ đi.
+
+Đã thêm `--prediction_proposal_initial_branch_audit`. Proposal vốn đã chạy LoRA của task TII-top1 trong vectorized call đầu; audit giữ lại logits này và đo complementarity với đầu ra proposal:
+
+- `InitialOnlyCorrect`: nhánh TII-top1 đúng nhưng proposal sai.
+- `ProposalOnlyCorrect`: proposal đúng nhưng nhánh TII-top1 sai.
+- `InitialProposalOracleAcc@1`: trần lý thuyết nếu chọn đúng giữa hai đầu ra bằng nhãn.
+
+Nhãn chỉ dùng để báo cáo audit, không đi vào routing. Audit không giữ ảnh/feature cũ, không thêm LoRA và không thêm forward call. Chỉ phát triển selector nếu audit chứng minh có đủ headroom; nếu không thì đóng hướng này thay vì tiếp tục tinh chỉnh mù.

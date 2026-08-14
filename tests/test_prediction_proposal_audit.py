@@ -128,6 +128,8 @@ def test_operational_prediction_proposal_runs_only_four_loras_in_two_calls():
     assert logits.argmax(dim=1).tolist() == [8]
     assert diagnostics['lora_counts'].tolist() == [4.0]
     assert diagnostics['forward_calls'].tolist() == [2.0]
+    assert diagnostics['initial_branch_tasks'].tolist() == [0]
+    assert diagnostics['initial_branch_logits'].argmax(dim=1).tolist() == [8]
     assert model.batch_sizes == [2, 2]
 
 

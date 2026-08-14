@@ -908,6 +908,46 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     metric_logger.meters['ForwardCalls/sample'].update(
                         cost_diagnostics['forward_calls'].mean().item(),
                         n=input.shape[0])
+                    if bool(getattr(
+                            args, 'prediction_proposal_initial_branch_audit', False)):
+                        initial_branch_logits = cost_diagnostics[
+                            'initial_branch_logits']
+                        if args.train_mask and class_mask is not None:
+                            seen_classes = [
+                                class_id
+                                for seen_task in range(task_id + 1)
+                                for class_id in class_mask[seen_task]
+                            ]
+                            unseen_classes = np.setdiff1d(
+                                np.arange(args.nb_classes), seen_classes)
+                            unseen_classes = torch.as_tensor(
+                                unseen_classes, dtype=torch.long, device=device)
+                            initial_branch_logits = initial_branch_logits.index_fill(
+                                1, unseen_classes, float('-inf'))
+                        initial_prediction = initial_branch_logits.argmax(dim=1)
+                        proposal_prediction = logits.argmax(dim=1)
+                        initial_correct = initial_prediction.eq(target)
+                        proposal_correct = proposal_prediction.eq(target)
+                        comparison_metrics = {
+                            'InitialBranchAcc@1': initial_correct.float(
+                                ).mean() * 100.0,
+                            'ProposalAuditAcc@1': proposal_correct.float(
+                                ).mean() * 100.0,
+                            'InitialProposalAgree': initial_prediction.eq(
+                                proposal_prediction).float().mean() * 100.0,
+                            'InitialOnlyCorrect': (
+                                initial_correct & ~proposal_correct
+                                ).float().mean() * 100.0,
+                            'ProposalOnlyCorrect': (
+                                proposal_correct & ~initial_correct
+                                ).float().mean() * 100.0,
+                            'InitialProposalOracleAcc@1': (
+                                initial_correct | proposal_correct
+                                ).float().mean() * 100.0,
+                        }
+                        for metric_name, metric_value in comparison_metrics.items():
+                            metric_logger.meters[metric_name].update(
+                                metric_value.item(), n=input.shape[0])
                 continue
 
             if bool(getattr(args, 'selective_rematching', False)):
@@ -1226,6 +1266,24 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
             'ForwardCalls/sample {calls.global_avg:.3f}'
             .format(cost=metric_logger.meters['LoRA/sample'],
                     calls=metric_logger.meters['ForwardCalls/sample']))
+        if bool(getattr(
+                args, 'prediction_proposal_initial_branch_audit', False)):
+            print(
+                '* InitialProposalAudit InitialBranchAcc@1 '
+                '{initial.global_avg:.3f} ProposalAcc@1 '
+                '{proposal.global_avg:.3f} Agree {agree.global_avg:.3f} '
+                'InitialOnly {initial_only.global_avg:.3f} '
+                'ProposalOnly {proposal_only.global_avg:.3f} '
+                'OracleAcc@1 {oracle.global_avg:.3f}'
+                .format(
+                    initial=metric_logger.meters['InitialBranchAcc@1'],
+                    proposal=metric_logger.meters['ProposalAuditAcc@1'],
+                    agree=metric_logger.meters['InitialProposalAgree'],
+                    initial_only=metric_logger.meters[
+                        'InitialOnlyCorrect'],
+                    proposal_only=metric_logger.meters['ProposalOnlyCorrect'],
+                    oracle=metric_logger.meters[
+                        'InitialProposalOracleAcc@1']))
     if bool(getattr(args, 'vectorized_exhaustive_rematching', False)):
         print(
             '* VectorizedExhaustive LoRA/sample {cost.global_avg:.3f} '
@@ -1301,7 +1359,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((49, args.num_tasks))
+    stat_matrix = np.zeros((55, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -1354,6 +1412,17 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                 or bool(getattr(args, 'prediction_proposal_rematching', False))):
             stat_matrix[28, i] = test_stats.get('LoRA/sample', 0.0)
             stat_matrix[29, i] = test_stats.get('ForwardCalls/sample', 0.0)
+        if bool(getattr(
+                args, 'prediction_proposal_initial_branch_audit', False)):
+            stat_matrix[49, i] = test_stats.get('InitialBranchAcc@1', 0.0)
+            stat_matrix[50, i] = test_stats.get('ProposalAuditAcc@1', 0.0)
+            stat_matrix[51, i] = test_stats.get(
+                'InitialProposalAgree', 0.0)
+            stat_matrix[52, i] = test_stats.get(
+                'InitialOnlyCorrect', 0.0)
+            stat_matrix[53, i] = test_stats.get('ProposalOnlyCorrect', 0.0)
+            stat_matrix[54, i] = test_stats.get(
+                'InitialProposalOracleAcc@1', 0.0)
         if (bool(getattr(args, 'soft_mixture_rematching', False))
                 or bool(getattr(args, 'soft_mixture_hard_rematching', False))
                 or bool(getattr(args, 'soft_hard_selector_rematching', False))
@@ -1442,6 +1511,16 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         result_str += (
             "\tLoRA/sample: {:.4f}\tForwardCalls/sample: {:.4f}"
         ).format(avg_stat[28], avg_stat[29])
+    if bool(getattr(args, 'prediction_proposal_initial_branch_audit', False)):
+        result_str += (
+            "\tInitialBranchAcc@1: {:.4f}\tProposalAuditAcc@1: {:.4f}"
+            "\tInitialProposalAgree: {:.4f}"
+            "\tInitialOnlyCorrect: {:.4f}"
+            "\tProposalOnlyCorrect: {:.4f}"
+            "\tInitialProposalOracleAcc@1: {:.4f}"
+        ).format(
+            avg_stat[49], avg_stat[50], avg_stat[51], avg_stat[52],
+            avg_stat[53], avg_stat[54])
     if (bool(getattr(args, 'soft_mixture_rematching', False))
             or bool(getattr(args, 'soft_mixture_hard_rematching', False))
             or bool(getattr(args, 'soft_hard_selector_rematching', False))

@@ -9,6 +9,7 @@ DATASETS_ROOT="${DATASETS_ROOT:-${WORK_ROOT}/datasets}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-${WORK_ROOT}/hrm-pet-output}"
 RUN_DIR="${1:-}"
 LORA_RANK="${LORA_RANK:-}"
+AUDIT_INITIAL_BRANCH="${AUDIT_INITIAL_BRANCH:-0}"
 
 if [[ -z "${RUN_DIR}" ]]; then
   echo "Usage: $0 RUN_DIR" >&2
@@ -110,7 +111,13 @@ if [[ ! -s "${EXHAUSTIVE_LOG}" ]]; then
   exit 2
 fi
 
-LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_prediction_proposal_i2_p3_c5_tiicomplete_strict.log"
+AUDIT_SUFFIX=""
+AUDIT_ARGS=()
+if [[ "${AUDIT_INITIAL_BRANCH}" == "1" ]]; then
+  AUDIT_SUFFIX="_initial_branch_audit"
+  AUDIT_ARGS+=(--prediction_proposal_initial_branch_audit)
+fi
+LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_prediction_proposal_i2_p3_c5_tiicomplete_strict${AUDIT_SUFFIX}.log"
 if [[ -s "${LOG_PATH}" ]]; then
   echo "Refusing to overwrite existing evaluation log: ${LOG_PATH}" >&2
   exit 3
@@ -158,6 +165,7 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --prediction_proposal_count 3 \
   --prediction_proposal_top_classes 5 \
   --prediction_proposal_tii_completion \
+  "${AUDIT_ARGS[@]}" \
   --progressive_tii_prior_weight 0.3 \
   --progressive_logit_temperature 1.0 \
   --strict_exemplar_free \
@@ -170,6 +178,10 @@ printf 'Prediction-proposal evaluation wall time seconds: %s\n' "$((END_TIME - S
 FINAL_LINE="$(grep "Average accuracy till task10" "${LOG_PATH}" | tail -n 1 || true)"
 echo "Final operational prediction-proposal metrics:"
 echo "${FINAL_LINE}"
+if [[ "${AUDIT_INITIAL_BRANCH}" == "1" ]]; then
+  echo "Per-task initial-branch/proposal complementarity (tasks 1-10):"
+  grep "InitialProposalAudit" "${LOG_PATH}" | tail -n 10 | nl -w1 -s': '
+fi
 
 "${PYTHON_BIN}" - "${LOG_PATH}" "${BASELINE_LOG}" "${EXHAUSTIVE_LOG}" <<'PY'
 import re
@@ -225,4 +237,19 @@ print('BASELINE_ALL_METRIC_GATE=' + (
     'PASS' if all(checks.values()) else 'FAIL'))
 print('OPERATIONAL_PROPOSAL_EFFICIENCY_GATE=' + (
     'PASS' if cost_ok and call_ok else 'FAIL'))
+if 'InitialProposalOracleAcc@1:' in candidate:
+    initial = metric(candidate, 'InitialBranchAcc@1')
+    proposal = metric(candidate, 'ProposalAuditAcc@1')
+    oracle = metric(candidate, 'InitialProposalOracleAcc@1')
+    initial_only = metric(candidate, 'InitialOnlyCorrect')
+    proposal_only = metric(candidate, 'ProposalOnlyCorrect')
+    print('Free initial-branch complementarity audit:')
+    print(f'  Initial branch Acc@1={initial:.4f}')
+    print(f'  Proposal Acc@1={proposal:.4f}')
+    print(f'  Initial-only correct={initial_only:.4f}')
+    print(f'  Proposal-only correct={proposal_only:.4f}')
+    print(f'  Label oracle Acc@1={oracle:.4f}; headroom={oracle - proposal:+.4f}')
+    viable = initial_only >= 0.25 and proposal_only > 0.0
+    print('INITIAL_BRANCH_COMPLEMENTARITY_AUDIT=' + (
+        'PASS' if viable else 'FAIL'))
 PY

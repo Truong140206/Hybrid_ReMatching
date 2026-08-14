@@ -147,5 +147,9 @@ def prediction_proposal_adapter_rematching(
         'forward_calls': torch.full(
             (batch_size,), float(forward_calls),
             dtype=torch.float32, device=device),
+        # The first evaluated task is exactly the initial TII top-1
+        # route, so exposing it for audit adds neither a LoRA nor a forward.
+        'initial_branch_logits': initial_logits[:, 0],
+        'initial_branch_tasks': initial_tasks[:, 0],
     }
     return merged_logits, routed_tasks, diagnostics
