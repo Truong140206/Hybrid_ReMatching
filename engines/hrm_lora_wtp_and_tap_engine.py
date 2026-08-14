@@ -671,6 +671,20 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     metric_logger.meters['UnionLoRA/sample'].update(
                         audit['arrow_union_lora_counts'].mean().item(),
                         n=input.shape[0])
+                if bool(getattr(args, 'progressive_lora_response_audit', False)):
+                    response_percent_metrics = {
+                        'ResponseRecall@2': 'response_winner_recall_2',
+                        'ResponseRecall@4': 'response_winner_recall_4',
+                        'ResponseUnionRecall@2x2': 'response_union_recall_2x2',
+                        'TIIResponseTop1Agree': 'tii_response_top1_agreement',
+                    }
+                    for metric_name, audit_name in response_percent_metrics.items():
+                        metric_logger.meters[metric_name].update(
+                            audit[audit_name].float().mean().mul(100.0).item(),
+                            n=input.shape[0])
+                    metric_logger.meters['ResponseUnionLoRA/sample'].update(
+                        audit['response_union_lora_counts'].mean().item(),
+                        n=input.shape[0])
                 continue
 
             if bool(getattr(args, 'progressive_rematching', False)):
@@ -1033,6 +1047,19 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 union=metric_logger.meters['UnionRecall@2x2'],
                 cost=metric_logger.meters['UnionLoRA/sample'],
                 agreement=metric_logger.meters['TIIArrowTop1Agree']))
+    if bool(getattr(args, 'progressive_lora_response_audit', False)):
+        print(
+            '* LoRAResponseAudit ResponseRecall@2 {response2.global_avg:.3f} '
+            'ResponseRecall@4 {response4.global_avg:.3f} '
+            'ResponseUnionRecall@2x2 {union.global_avg:.3f} '
+            'ResponseUnionLoRA/sample {cost.global_avg:.3f} '
+            'TIIResponseTop1Agree {agreement.global_avg:.3f}'
+            .format(
+                response2=metric_logger.meters['ResponseRecall@2'],
+                response4=metric_logger.meters['ResponseRecall@4'],
+                union=metric_logger.meters['ResponseUnionRecall@2x2'],
+                cost=metric_logger.meters['ResponseUnionLoRA/sample'],
+                agreement=metric_logger.meters['TIIResponseTop1Agree']))
     if bool(getattr(args, 'calibrated_progressive_rematching', False)):
         print(
             '* CalibratedProgressive Stage1Stop {stage1.global_avg:.3f} '
@@ -1053,7 +1080,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((23, args.num_tasks))
+    stat_matrix = np.zeros((28, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -1091,6 +1118,12 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
             stat_matrix[20, i] = test_stats.get('UnionRecall@2x2', 0.0)
             stat_matrix[21, i] = test_stats.get('UnionLoRA/sample', 0.0)
             stat_matrix[22, i] = test_stats.get('TIIArrowTop1Agree', 0.0)
+        if bool(getattr(args, 'progressive_lora_response_audit', False)):
+            stat_matrix[23, i] = test_stats.get('ResponseRecall@2', 0.0)
+            stat_matrix[24, i] = test_stats.get('ResponseRecall@4', 0.0)
+            stat_matrix[25, i] = test_stats.get('ResponseUnionRecall@2x2', 0.0)
+            stat_matrix[26, i] = test_stats.get('ResponseUnionLoRA/sample', 0.0)
+            stat_matrix[27, i] = test_stats.get('TIIResponseTop1Agree', 0.0)
         if bool(getattr(args, 'calibrated_progressive_rematching', False)):
             stat_matrix[7, i] = test_stats.get('Stage1StopRate', 0.0)
             stat_matrix[8, i] = test_stats.get('Stage2StopRate', 0.0)
@@ -1137,6 +1170,15 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         ).format(
             avg_stat[18], avg_stat[19], avg_stat[20], avg_stat[21],
             avg_stat[22])
+    if bool(getattr(args, 'progressive_lora_response_audit', False)):
+        result_str += (
+            "\tResponseRecall@2: {:.4f}\tResponseRecall@4: {:.4f}"
+            "\tResponseUnionRecall@2x2: {:.4f}"
+            "\tResponseUnionLoRA/sample: {:.4f}"
+            "\tTIIResponseTop1Agree: {:.4f}"
+        ).format(
+            avg_stat[23], avg_stat[24], avg_stat[25], avg_stat[26],
+            avg_stat[27])
     if bool(getattr(args, 'calibrated_progressive_rematching', False)):
         result_str += (
             "\tStage1Stop: {:.4f}\tStage2Stop: {:.4f}"
