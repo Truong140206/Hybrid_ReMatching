@@ -3333,3 +3333,20 @@ Gate khai bao truoc:
 Neu fail bat ky dieu kien nao thi dong nhanh, khong thu beam width hoac successor
 count khac tren seed 42. Script oracle audit mot cau hinh:
 training_scripts/eval_imagenet_r_prediction_beam_closure_audit_4090.sh.
+
+## 2026-08-16 - Leader-closed beam-2 FAIL; dong nhanh
+
+Audit hoan tat trong 407 giay. Ket qua: Acc@task 80.9279, Acc@1 75.2131,
+Acc@5 87.3238, Loss 1.1820, Forgetting 3.2227, Backward -2.9894;
+BeamClosureWinnerRecall va BeamClosureExactAgreement cung dat 98.9552%,
+LoRA/sample 4.7926, calls/sample 3.1470, full-scan rate 0.0174%.
+
+So voi conventional, Acc@task +3.1365, Acc@1 +1.1940, Acc@5 +0.4345,
+Loss -0.0485 va Forgetting -0.0574 deu PASS, nhung Backward -0.0775 FAIL.
+Fidelity cung thieu 0.0448 diem phan tram so voi gate 99%. Efficiency dat:
+LoRA giam 0.7667 so voi current closure 5.5593 va nam duoi budget 5; calls
+nam duoi budget 4. Tuy nhien BEAM_CLOSURE_ALL_METRIC_GATE=FAIL.
+
+Dong nhanh dung preregistration. Khong ha gate fidelity, khong thu beam width,
+successor count, top-class count hoac threshold khac tren seed 42. Current best
+van la operational closure + TII tail 5.5593 LoRA/sample da PASS ca sau metric.

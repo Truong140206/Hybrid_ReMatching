@@ -444,3 +444,17 @@ bash training_scripts/eval_imagenet_r_prediction_beam_closure_audit_4090.sh \
 Gui lai dong task10, bang comparison, BEAM_CLOSURE_ALL_METRIC_GATE va wall
 time. Script tu choi chay neu operational closure reference chua PASS; khong
 chay song song voi job GPU khac.
+
+## 22. Leader-closed beam-2 FAIL; da dong nhanh
+
+Ket qua task10: Acc@task 80.9279, Acc@1 75.2131, Acc@5 87.3238, Loss 1.1820,
+Forgetting 3.2227, Backward -2.9894, winner/exact 98.9552%, LoRA 4.7926,
+calls 3.1470, wall time 407 giay. LoRA giam 0.7667 va quality thang conventional
+o 5/6 metric, nhung Backward delta -0.0775 FAIL; winner/exact cung thieu gate
+99% moi chi 0.0448 diem phan tram. BEAM_CLOSURE_ALL_METRIC_GATE=FAIL.
+
+Da dong nhanh dung gate khoa truoc. Khong noi gate hoac sweep beam tren seed 42.
+Current best van la operational closure + TII tail: 5.5593 LoRA/sample,
+2.5995 calls/sample va PASS du ca sau metric. Buoc hop le tiep theo la multi-seed
+reproduction cua current best; neu can nghien cuu budget <5, phai dung development
+seed/validation protocol rieng thay vi tiep tuc toi uu tren seed 42.
