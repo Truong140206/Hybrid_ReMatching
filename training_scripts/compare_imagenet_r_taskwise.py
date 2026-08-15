@@ -121,6 +121,11 @@ def average(rows, field, tasks):
     return sum(values) / len(values)
 
 
+def stage_average(matrix, stage, metric):
+    rows = matrix[stage]
+    return sum(row[metric] for row in rows.values()) / len(rows)
+
+
 def build_report(baseline_matrix, proposal_matrix, exhaustive_matrix=None):
     baseline = task_retention(baseline_matrix)
     proposal = task_retention(proposal_matrix)
@@ -158,6 +163,55 @@ def build_report(baseline_matrix, proposal_matrix, exhaustive_matrix=None):
         lines.append(
             f'| {field} | {base_value:.4f} | {prop_value:.4f} | '
             f'{prop_value - base_value:+.4f} |')
+
+
+    common_stages = sorted(set(baseline_matrix) & set(proposal_matrix))
+    lines.extend([
+        '',
+        '## Stagewise causal diagnosis',
+        '',
+        '| Stage | Base Acc@1 | Prop Acc@1 | ΔAcc@1 | Base Acc@5 | Prop Acc@5 | ΔAcc@5 | Base Loss | Prop Loss | ΔLoss |',
+        '|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
+    ])
+    for stage in common_stages:
+        base_acc1 = stage_average(baseline_matrix, stage, 'Acc@1')
+        prop_acc1 = stage_average(proposal_matrix, stage, 'Acc@1')
+        base_acc5 = stage_average(baseline_matrix, stage, 'Acc@5')
+        prop_acc5 = stage_average(proposal_matrix, stage, 'Acc@5')
+        base_loss = stage_average(baseline_matrix, stage, 'Loss')
+        prop_loss = stage_average(proposal_matrix, stage, 'Loss')
+        lines.append(
+            f'| {stage} | {base_acc1:.4f} | {prop_acc1:.4f} | '
+            f'{prop_acc1 - base_acc1:+.4f} | '
+            f'{base_acc5:.4f} | {prop_acc5:.4f} | '
+            f'{prop_acc5 - base_acc5:+.4f} | '
+            f'{base_loss:.4f} | {prop_loss:.4f} | '
+            f'{prop_loss - base_loss:+.4f} |')
+
+    lines.extend([
+        '',
+        '## Largest stage-task regressions',
+        '',
+    ])
+    for metric, reverse in (('Acc@1', False), ('Acc@5', False),
+                            ('Loss', True)):
+        cells = []
+        for stage in common_stages:
+            common_tasks = (
+                set(baseline_matrix[stage]) & set(proposal_matrix[stage]))
+            for task in common_tasks:
+                base_value = baseline_matrix[stage][task][metric]
+                prop_value = proposal_matrix[stage][task][metric]
+                cells.append((
+                    prop_value - base_value, stage, task,
+                    base_value, prop_value))
+        cells.sort(reverse=reverse)
+        lines.extend([f'### {metric}', ''])
+        for delta, stage, task, base_value, prop_value in cells[:5]:
+            lines.append(
+                f'- Stage {stage}, task {task}: base {base_value:.4f}, '
+                f'proposal {prop_value:.4f}, delta {delta:+.4f}.')
+        lines.append('')
 
     regressions = sorted(
         range(1, 10),

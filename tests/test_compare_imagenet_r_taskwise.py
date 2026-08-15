@@ -47,6 +47,10 @@ def test_taskwise_parser_reconstructs_peak_final_and_backward(tmp_path):
     assert retention[1]['backward'] == -13.5
     assert 'Aggregate old-task diagnosis' in report
     assert 'Task 1:' in report
+    assert 'Stagewise causal diagnosis' in report
+    assert '| 1 | 81.0000 | 82.0000 | +1.0000 |' in report
+    assert 'Largest stage-task regressions' in report
+    assert '### Acc@5' in report
 
 def test_taskwise_parser_accepts_zero_based_progress_rows(tmp_path):
     path = tmp_path / 'zero_based.log'

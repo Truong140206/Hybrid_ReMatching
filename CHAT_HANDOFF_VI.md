@@ -297,6 +297,23 @@ OPERATIONAL_PROPOSAL_EFFICIENCY_GATE=PASS
 ```
 
 Quyết định: đóng nhánh CRM GEN soft fusion; không sweep temperature, prior,
-gamma hoặc top-M trên test seed 42. Bước tiếp theo là dùng script taskwise có
-sẵn để so CRM với raw proposal cùng budget từ hai log đã có. Không train hoặc
-eval lại và chưa thiết kế phương pháp mới trước khi đọc audit này.
+gamma hoặc top-M trên test seed 42. Audit taskwise đã hoàn tất và xác nhận lỗi
+xảy ra cả lúc học task lẫn retention. Bước đang chờ là audit stagewise trên
+chính hai log cũ, không train hoặc eval model.
+
+## 15. Kết quả taskwise và audit stagewise đang chờ
+
+So với raw proposal cùng budget, CRM làm initial Acc@1 trung bình task 1-9 giảm
+`0.4181`, peak giảm `0.6195`, final giảm `0.8437`, Forgetting tăng
+`0.2242` và Backward giảm `0.4256`.
+
+Task 8 và 7 giảm final mạnh nhất (`-3.1461`, `-2.5135`) và đã có peak thấp
+hơn từ trước; task 3 giảm `-1.6393` chủ yếu vì Forgetting tăng `+1.4051`.
+CRM chỉ tăng final ở task 1-2, giảm bảy task cũ còn lại và giảm task 10
+`-1.1527`. Đây là lỗi rộng trên cả initial classification và retention, không
+phải một lỗi muộn cô lập; không tạo task-specific selector từ kết quả test.
+
+Script taskwise đã được mở rộng để in stagewise Acc@1, Acc@5, Loss và các ô
+stage-task suy giảm mạnh nhất. Chạy lại script trên đúng hai log cũ; không train
+hoặc eval model. Sau báo cáo stagewise, đóng hoàn toàn phần chẩn đoán CRM và chỉ
+giữ raw proposal budget-5/budget-6 như các Pareto reference.

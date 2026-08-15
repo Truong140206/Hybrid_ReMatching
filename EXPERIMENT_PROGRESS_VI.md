@@ -3142,3 +3142,27 @@ khong phai dong gop CFS.
 Buoc tiep theo chi la audit taskwise tren cac log da co, so truc tiep CRM voi
 raw proposal cung budget de xac dinh task/stage nao tao ra suy giam. Audit khong
 train, khong eval lai va khong dung nhan test de fit mot selector hay tham so.
+
+### Ket qua taskwise CRM so voi raw proposal
+
+Audit tren hai log cung checkpoint va budget cho thay CRM gay suy giam tren ca
+thoi diem task moi duoc hoc lan duy tri cuoi chuoi. Trung binh task 1-9, initial
+Acc@1 giam `0.4181`, peak giam `0.6195`, final giam `0.8437`, Forgetting
+tang `0.2242` va Backward giam `0.4256`.
+
+Task 8 va 7 co final regression lon nhat, lan luot `-3.1461` va `-2.5135`;
+ca hai da co peak thap hon raw proposal (`-2.0225`, `-1.7953`) va con bi
+Forgetting tang them (`+1.1236`, `+0.7182`). Task 3 giam final `-1.6393`
+chu yeu do Forgetting tang `+1.4051`. Task 6 co initial/peak thap hon nhung
+final gan raw hon nho Forgetting giam; day khong phai bang chung CRM cai thien
+phan loai.
+
+CRM chi tang final task 1 `+0.7692` va task 2 `+0.4000`, trong khi giam 7/9
+task cu con lai va task 10 giam `1.1527`. Loi vi vay co tinh he thong, khong
+phai mot loi retention muon o rieng task 7-8. Khong tao task-specific selector,
+threshold hay calibration tu cac nhan test nay.
+
+Script `compare_imagenet_r_taskwise.py` duoc mo rong de bao stagewise average
+Acc@1/Acc@5/Loss va nam o stage-task xau nhat cho tung metric. Day la audit tiep
+theo tren cung hai log; muc tieu la kiem tra suy giam bat dau khi nao theo so task
+da thay, khong phai tim tham so de cuu nhanh CRM.
