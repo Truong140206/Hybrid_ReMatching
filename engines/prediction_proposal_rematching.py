@@ -322,6 +322,7 @@ def crm_confidence_candidate_fusion(
         (batch_size, candidate_count))
     for candidate_slot in range(candidate_count):
         active_tasks = candidate_tasks[:, candidate_slot]
+        adapter_logits = candidate_logits[:, candidate_slot]
         task_priors[:, candidate_slot] = tii_prior.gather(
             1, active_tasks.unsqueeze(1)).squeeze(1)
         for task_index in active_tasks.unique().tolist():
@@ -329,7 +330,7 @@ def crm_confidence_candidate_fusion(
             class_index = torch.as_tensor(
                 class_mask[task_index], dtype=torch.long, device=device)
             local_log_probs = F.log_softmax(
-                candidate_logits.index_select(0, rows).index_select(
+                adapter_logits.index_select(0, rows).index_select(
                     1, class_index) / class_temperature,
                 dim=1)
             local_probs = local_log_probs.exp()
