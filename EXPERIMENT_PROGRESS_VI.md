@@ -3031,3 +3031,28 @@ sua bang cach tam tat CFS calibration rieng trong pre-CRCT diagnostic; sau CRCT,
 calibration duoc fit voi day du task roi moi bat cho final evaluation. Runtime
 van fail-closed o moi noi khac, nen checkpoint state thieu task khong bi ngam
 hieu la hop le. Lan loi khong co task-2 checkpoint va khong duoc tinh ket qua.
+### Ket qua CFS task-logit calibration pilot 3 task
+
+Cau hinh preregistered da chay thanh cong sau ban sua lifecycle. Ket qua:
+
+| Phuong phap | Acc@task | Acc@1 | Acc@5 | Loss | Forgetting | Backward |
+|---|---:|---:|---:|---:|---:|---:|
+| Same-checkpoint uncalibrated | 90.0757 | 81.3201 | 94.6017 | 0.7002 | 3.0000 | -2.4667 |
+| CFS task-logit calibration | 90.0757 | 81.3201 | 94.6017 | 0.7002 | 3.0000 | -2.5333 |
+
+So voi baseline task 3, candidate tang Acc@task `+0.9436`, Acc@1 `+0.3419`,
+Acc@5 `+0.8895` va giam Loss `-0.1370`; nhung Forgetting tang `+0.1538`
+va Backward giam `-0.0205`, nen baseline gate FAIL.
+
+Doi chung cung checkpoint cho thay calibration khong thay doi Acc@task, Acc@1,
+Acc@5, Loss hay Forgetting, trong khi Backward giam `0.0666`. Hai hang final
+giong nhau khong mau thuan voi Backward khac nhau: Backward phu thuoc accuracy
+khi moi task vua duoc hoc, va calibration da lam thay doi lich su danh gia o
+cac moc task truoc. `CFS_STRICT_GAIN=FAIL`, `CFS_CAUSAL_GATE=FAIL` va
+`PILOT_GATE=FAIL`.
+
+Quyet dinh: khong chay full 10 task, khong quet scale/bias, learning rate hoac
+CFS samples tren test. Gia thuyet rang CFS aggregate synthetic features co the
+hieu chinh cross-LoRA raw-logit scale bi bac bo voi cau hinh da khoa. Phan tang
+accuracy trong candidate den tu proposal routing, khong phai dong gop cua CFS
+calibration.
