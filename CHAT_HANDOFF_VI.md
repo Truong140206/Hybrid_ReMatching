@@ -3,7 +3,7 @@
 **Cập nhật:** 2026-08-15  
 **Repository:** `https://github.com/Truong140206/Hybrid_ReMatching`  
 **Nhánh:** `main`  
-**Commit mới nhất khi bàn giao:** `c02c89c` - `add CRM confidence fusion for task proposals`
+**Commit phương pháp đang chờ đánh giá:** `c02c89c` - `add CRM confidence fusion for task proposals`
 
 ## 1. Việc đang làm
 
