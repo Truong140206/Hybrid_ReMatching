@@ -3082,10 +3082,10 @@ nen khong duoc noi threshold de ep state do duoc chap nhan.
 
 CFS task-logit calibration da cho thay synthetic aggregate feature khong phai
 proxy du tin cay cho scale logit tren anh that ImageNet-R. Vi vay khong tiep tuc
-quet tham so CFS hoac noi validation gate. Doc lai HRM-PET cho thay CRM goc
-khong so sanh max-logit tho giua cac LoRA; no so sanh do tin cay GEN cua phan
-phoi du doan. Prediction-proposal hien tai lai dung max local logit, nen co mot
-sai khac cu the voi co che goc va co nguy co do logit scale/offset cua cac LoRA
+quet tham so CFS hoac noi validation gate. Doc lai HRM-PET cho thay CRM goc dung
+GEN de phat hien prediction do tin cay thap truoc rematching, roi dung energy de
+chon candidate output. Prediction-proposal hien tai lai dung max local logit,
+nen co mot sai khac cu the va nguy co do scale/offset cua cac LoRA
 duoc hoc doc lap.
 
 ### Co che moi
@@ -3166,3 +3166,30 @@ Script `compare_imagenet_r_taskwise.py` duoc mo rong de bao stagewise average
 Acc@1/Acc@5/Loss va nam o stage-task xau nhat cho tung metric. Day la audit tiep
 theo tren cung hai log; muc tieu la kiem tra suy giam bat dau khi nao theo so task
 da thay, khong phai tim tham so de cuu nhanh CRM.
+
+### Ket qua stagewise va dong hoan toan CRM fusion
+
+Stage 1 cho ket qua giong raw proposal vi chi co mot task. Ngay stage 2, khi hai
+task deu duoc danh gia day du va khong co loi candidate coverage, CRM tang Acc@1
+`+0.5128` nhung lam Acc@5 giam `-4.1282` va Loss tang `+0.6995`. Nhu vay
+sai hong probability ranking/calibration xuat hien ngay tai bai toan multi-task
+dau tien, truoc khi proposal budget dat 5 LoRA.
+
+Tu stage 2 den 10, Acc@5 luon giam tu `-3.5322` den `-5.8699` va Loss luon
+tang tu `+0.6995` den `+1.6903`. Acc@1 chi duong nhe o stage 2-4, am tu
+stage 5 va giam den `-0.8746` o stage 10. Hai o calibration xau nhat deu o
+stage 10 task 10: Acc@5 `-10.2306`, Loss `+2.5069`; task 6 cung lap lai
+Acc@5 regression lon tai stage 6-9.
+
+Doc lai implementation HRM-PET xac nhan GEN goc duoc dung de phat hien prediction
+do tin cay thap truoc rematching; sau do candidate output duoc chon bang energy.
+GEN khong duoc dinh nghia nhu task posterior da calibration. Bien GEN thanh
+soft task mass roi nhan voi local class softmax la mot mo rong khong hop le ve
+xac suat: no xoa absolute task-fit cua raw logits va co the lam LoRA sai tro nen
+tu tin trong noi task. Stage-2 full coverage la causal evidence ro nhat cho ket
+luan nay.
+
+Dong hoan toan nhanh CRM GEN fusion va phan chan doan lien quan. Khong chay them
+temperature, prior, gamma, top-M, hard/soft selector hay task-specific fix. Giu
+code va ket qua nhu negative ablation. Raw proposal budget-5 va budget-6 van la
+cac Pareto reference strict; khong co experiment CRM nao dang cho.

@@ -69,7 +69,8 @@ Checkpoint `hybrid_real_ageaware...` từng cho kết quả tốt nhưng có
 
 - TII dự đoán task/LoRA ban đầu.
 - DRM dùng lớp dự đoán từ LoRA đầu tiên để rematch trực tiếp.
-- CRM dùng độ tin cậy GEN của phân phối dự đoán để so các LoRA candidate.
+- CRM dùng GEN để phát hiện prediction độ tin cậy thấp trước rematching; bước
+  sau chọn candidate output bằng energy, không xem GEN là task posterior.
 - CTIRD dùng ảnh task hiện tại qua nhiều LoRA để học quan hệ instance xuyên
   task; không cần lưu ảnh cũ.
 
@@ -160,8 +161,9 @@ quả tốt nhưng vi phạm strict protocol, không được dùng làm claim.
 
 Commit: `c02c89c`.
 
-Lý do: HRM-PET gốc so sánh độ tin cậy bằng GEN, trong khi raw proposal so
-max-logit thô giữa các LoRA được học độc lập. Max-logit có thể lệch scale/offset.
+Lý do thử nghiệm: raw proposal so max-logit thô giữa các LoRA độc lập, có thể
+lệch scale/offset. Tuy nhiên CRM gốc chỉ dùng GEN làm low-confidence gate trước
+rematching và chọn candidate output bằng energy, không xem GEN là task posterior.
 
 Cơ chế mới:
 
@@ -297,11 +299,10 @@ OPERATIONAL_PROPOSAL_EFFICIENCY_GATE=PASS
 ```
 
 Quyết định: đóng nhánh CRM GEN soft fusion; không sweep temperature, prior,
-gamma hoặc top-M trên test seed 42. Audit taskwise đã hoàn tất và xác nhận lỗi
-xảy ra cả lúc học task lẫn retention. Bước đang chờ là audit stagewise trên
-chính hai log cũ, không train hoặc eval model.
+gamma hoặc top-M trên test seed 42. Cả audit taskwise lẫn stagewise đã hoàn tất;
+không còn run hoặc audit CRM nào đang chờ.
 
-## 15. Kết quả taskwise và audit stagewise đang chờ
+## 15. Kết quả taskwise
 
 So với raw proposal cùng budget, CRM làm initial Acc@1 trung bình task 1-9 giảm
 `0.4181`, peak giảm `0.6195`, final giảm `0.8437`, Forgetting tăng
@@ -313,7 +314,28 @@ CRM chỉ tăng final ở task 1-2, giảm bảy task cũ còn lại và giảm 
 `-1.1527`. Đây là lỗi rộng trên cả initial classification và retention, không
 phải một lỗi muộn cô lập; không tạo task-specific selector từ kết quả test.
 
-Script taskwise đã được mở rộng để in stagewise Acc@1, Acc@5, Loss và các ô
-stage-task suy giảm mạnh nhất. Chạy lại script trên đúng hai log cũ; không train
-hoặc eval model. Sau báo cáo stagewise, đóng hoàn toàn phần chẩn đoán CRM và chỉ
-giữ raw proposal budget-5/budget-6 như các Pareto reference.
+Script taskwise đã báo stagewise Acc@1, Acc@5, Loss và các ô suy giảm mạnh nhất.
+Kết quả cuối nằm ở mục 16; không chạy lại. Chẩn đoán CRM đã đóng và chỉ giữ raw
+proposal budget-5/budget-6 như các Pareto reference.
+
+## 16. Kết quả stagewise cuối và đóng CRM
+
+Stage 1 giống raw proposal. Ngay stage 2, khi cả hai task đều được đánh giá đầy
+đủ, Acc@1 tăng `0.5128` nhưng Acc@5 giảm `4.1282` và Loss tăng `0.6995`.
+Do đó lỗi calibration xuất hiện từ multi-task stage đầu tiên, không phụ thuộc
+việc proposal có bỏ sót task hay budget đã đạt 5 LoRA.
+
+Acc@5 giảm ở mọi stage 2-10; Loss tăng ở mọi stage và delta tăng đến `+1.6903`.
+Acc@1 chỉ tăng nhẹ ở stage 2-4, bắt đầu giảm từ stage 5 và đạt `-0.8746` tại
+stage 10. Tệ nhất là stage 10/task 10 với Acc@5 `-10.2306`, Loss `+2.5069`;
+task 6 cũng liên tục mất hơn 8 điểm Acc@5 tại nhiều stage.
+
+Đọc lại implementation cho thấy CRM gốc dùng GEN làm low-confidence gate, rồi
+chọn candidate output bằng energy. GEN không phải task posterior. CRM fusion đã
+xóa absolute task-fit của raw logits khi chuẩn hóa trong từng task, khiến LoRA
+sai có thể trở nên tự tin giả tạo.
+
+Quyết định cuối: giữ CRM fusion như negative ablation và không chạy thêm bất kỳ
+audit, temperature, prior, gamma, top-M, selector hay task-specific fix nào.
+Không có thí nghiệm CRM đang chờ. Raw proposal budget-5 và budget-6 là các
+Pareto reference strict hiện tại.
