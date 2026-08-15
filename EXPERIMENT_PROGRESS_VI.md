@@ -2943,3 +2943,26 @@ checkpoint strict exemplar-free.
 Tieu chi ket luan duoc giu nguyen: Acc@task, Acc@1, Acc@5 va Backward khong thap
 hon baseline; Loss va Forgetting khong cao hon baseline. Khong quet them cach
 chia wave hoac threshold dua tren test neu cau hinh nay that bai.
+## 2026-08-15 - Kết quả iterative proposal 2->2->2
+
+- Acc@task: 81.0181
+- Acc@1: 75.3193
+- Acc@5: 87.8836
+- Loss: 1.1573
+- Forgetting: 3.1319
+- Backward: -2.9634
+- Chi phí: 6 LoRA/mẫu, 3 forward calls/mẫu, 329 giây
+
+So với baseline, năm chỉ số Acc@task, Acc@1, Acc@5, Loss và Forgetting đều
+tốt hơn; Backward thấp hơn 0.0516 điểm nên all-metric gate vẫn FAIL.
+
+Chẩn đoán taskwise cho thấy final Acc@1 trung bình của các task cũ vẫn tăng
+1.1245 điểm và Forgetting giảm 0.1483 điểm. Backward giảm vì initial Acc@1 tăng
+1.1761 điểm, lớn hơn mức tăng final. Hai hồi quy thực sự còn lại là Task 6
+(-0.7169 final Acc@1) và Task 7 (-0.5386). Iterative proposal không khắc phục
+được hai task này và còn tốn thêm một forward call, vì vậy nhánh này được đóng;
+không quét thêm cách chia wave trên test set.
+
+Đáng chú ý, exhaustive cũng không đưa Task 6/7 vượt baseline. Điều này loại trừ
+thiếu candidate LoRA là nguyên nhân chính. Hướng tiếp theo phải xử lý cách hợp
+nhất/chọn đầu ra giữa các LoRA bằng cơ chế rehearsal-free, thay vì tăng số LoRA.
