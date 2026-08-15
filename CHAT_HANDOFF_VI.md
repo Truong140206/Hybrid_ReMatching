@@ -515,3 +515,24 @@ SEED=43 bash training_scripts/eval_imagenet_r_frontier_cap5_closure_audit_4090.s
 ~~~
 
 Gui dong task10, bang comparison, FRONTIER_CAP5_ALL_METRIC_GATE va wall time.
+
+## 25. Seed-43 closure reference FAIL; san sang cap-5
+
+Audit current-best seed 43: Acc@task 80.7403, Acc@1 75.6634, Acc@5 88.7109,
+Loss 1.1295, Forgetting 3.0446, Backward -3.0291, winner/exact 99.7979%,
+LoRA 5.5277, calls 2.5817, wall 414 giay. Accuracy/loss deu hon conventional,
+nhung Backward delta -0.6207 va Forgetting delta +0.4457 FAIL. Operational duoc
+skip dung quy trinh. Checkpoint, TII va conventional log seed 43 da san sang;
+khong chay lai prepare/reference pipeline.
+
+Cap-5 code/gate da khoa truoc khi doc result nay, vi vay chay nguyen trang:
+
+~~~bash
+cd ~/Documents/truongnguyen/Hybrid_ReMatching
+git pull --ff-only
+SEED=43 bash training_scripts/eval_imagenet_r_frontier_cap5_closure_audit_4090.sh \
+  ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed43
+~~~
+
+Gui dong task10, comparison, FRONTIER_CAP5_ALL_METRIC_GATE va wall time. Khong
+doi cap, top classes, threshold hay gate dua tren reference result vua thay.

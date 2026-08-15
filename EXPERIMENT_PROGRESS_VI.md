@@ -3384,3 +3384,20 @@ feature hay test label. Gate development: ca sau quality metric hon conventional
 seed 43; BudgetClosureWinnerRecall va ExactAgreement >=99.5%; LoRA/sample <=5;
 calls/sample <=4. Chi mot cau hinh duoc chay truoc khi doc diagnostic. Seed
 44/45 duoc giu lam holdout neu nhanh development dat.
+
+## 2026-08-16 - Seed-43 current-best reference FAIL
+
+Closure + TII tail seed 43 hoan tat audit trong 414 giay: Acc@task 80.7403,
+Acc@1 75.6634, Acc@5 88.7109, Loss 1.1295, Forgetting 3.0446, Backward
+-3.0291, winner/exact 99.7979%, LoRA 5.5277 va calls 2.5817. So voi
+conventional seed 43, Acc@task +3.4759, Acc@1 +1.2557, Acc@5 +2.1932 va
+Loss -0.0918 PASS; nhung Backward -0.6207 va Forgetting +0.4457 FAIL.
+CLOSURE_TII_TAIL_ALL_METRIC_GATE=FAIL; pipeline dung truoc operational.
+
+Fidelity va cost van on dinh so voi seed 42, nen day khong phai closure bo sot
+exhaustive winner. Rematching gan exhaustive tren seed 43 dang over-match mot so
+old-task sample va lam retention kem conventional. Frontier cap-5 da duoc khoa
+va commit truoc khi ket qua seed 43 duoc cung cap; khong sua thuat toan/gate sau
+khi doc result nay. Chay nguyen cau hinh cap-5 nhu mot blind branch check. Hard
+cap co the vua giam LoRA vua regularize cac nhanh over-match, nhung van phai dat
+ca sau quality gate moi duoc chap nhan.
