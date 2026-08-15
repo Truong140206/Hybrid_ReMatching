@@ -1,9 +1,9 @@
 # BÀN GIAO CHO CHAT MỚI: HRM-PET + PMI-CFS TRÊN IMAGENET-R
 
-**Cập nhật:** 2026-08-15  
+**Cập nhật:** 2026-08-16
 **Repository:** `https://github.com/Truong140206/Hybrid_ReMatching`  
 **Nhánh:** `main`  
-**Commit phương pháp đang chờ đánh giá:** `c02c89c` - `add CRM confidence fusion for task proposals`
+**CRM đã đánh giá:** `c02c89c`; bản sửa unit test `f35bac7`
 
 ## 1. Việc đang làm
 
@@ -195,9 +195,9 @@ EXPERIMENT_PROGRESS_VI.md
 Đã pass `py_compile`, `bash -n`, `git diff --check`. Máy Windows local không có
 PyTorch; script 4090 tự chạy unit test trước và tự dừng nếu test fail.
 
-## 9. Việc đang chờ chạy ngay
+## 9. Cấu hình CRM đã chạy, không chạy lại
 
-Chạy đúng một cấu hình khóa trước, không sweep temperature:
+Cấu hình dưới đây đã được khóa trước và đã chạy; giữ để truy vết, không chạy lại:
 
 ```bash
 cd ~/Documents/truongnguyen/Hybrid_ReMatching
@@ -230,7 +230,7 @@ LOG=~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed
 grep -E "Average accuracy till task10|wall time seconds|BASELINE_ALL_METRIC_GATE|CRM_CAUSAL_ALL_METRIC_GATE|OPERATIONAL_PROPOSAL_EFFICIENCY_GATE" "$LOG"
 ```
 
-## 10. Quy tắc quyết định sau lần chạy
+## 10. Quy tắc quyết định đã áp dụng
 
 Chỉ coi CRM fusion là cải tiến khi cả ba đều pass:
 
@@ -273,8 +273,30 @@ có, không train full theo giả định.
 
 ```text
 Đọc CHAT_HANDOFF_VI.md trong repo. Tiếp tục đúng trạng thái bàn giao, không lặp
-lại các nhánh đã fail và không vi phạm strict rehearsal-free. Thí nghiệm đang
-chờ là CRM GEN confidence fusion ở commit c02c89c. Hãy đọc kết quả tôi gửi,
-đánh giá cả baseline gate lẫn causal gate, cập nhật báo cáo rồi mới quyết định
-bước tiếp theo.
+lại các nhánh đã fail và không vi phạm strict rehearsal-free. CRM GEN fusion đã
+fail cả baseline và causal gate; không sweep tham số. Bước đang chờ chỉ là audit
+taskwise trên log CRM và raw proposal cùng budget trước khi thiết kế ý tưởng mới.
 ```
+
+## 14. Kết quả CRM GEN confidence fusion và trạng thái mới
+
+Cấu hình khóa trước đạt Acc@task `79.5195`, Acc@1 `74.2104`, Acc@5 `81.4432`,
+Loss `2.8989`, Forgetting `3.5364` và Backward `-3.4868`, với 5 LoRA/mẫu và
+2 forward calls/mẫu.
+
+So với conventional, chỉ Acc@task (`+1.7281`) và Acc@1 (`+0.1913`) tốt hơn;
+Acc@5 giảm `5.4461`, Loss tăng `1.6684`, Forgetting tăng `0.2563` và Backward
+giảm `0.5749`. So với raw proposal cùng budget, CRM kém hơn cả sáu metric:
+Acc@task `-1.2585`, Acc@1 `-0.8746`, Acc@5 `-5.8700`, Loss `+1.6902`,
+Forgetting `+0.2242`, Backward `-0.4256`.
+
+```text
+BASELINE_ALL_METRIC_GATE=FAIL
+CRM_CAUSAL_ALL_METRIC_GATE=FAIL
+OPERATIONAL_PROPOSAL_EFFICIENCY_GATE=PASS
+```
+
+Quyết định: đóng nhánh CRM GEN soft fusion; không sweep temperature, prior,
+gamma hoặc top-M trên test seed 42. Bước tiếp theo là dùng script taskwise có
+sẵn để so CRM với raw proposal cùng budget từ hai log đã có. Không train hoặc
+eval lại và chưa thiết kế phương pháp mới trước khi đọc audit này.

@@ -3115,3 +3115,30 @@ dung calibration set va khong tang so LoRA/forward.
   budget va cung so forward; day la causal control cho rieng phep ghep CRM.
 - Khong quet confidence temperature tren test. Neu causal all-metric gate fail,
   dong nhanh nay thay vi chon tham so tot nhat hau nghiem.
+
+### Ket qua strict va quyet dinh dong nhanh
+
+Cau hinh CRM GEN da khoa dat `Acc@task=79.5195`, `Acc@1=74.2104`,
+`Acc@5=81.4432`, `Loss=2.8989`, `Forgetting=3.5364` va
+`Backward=-3.4868`, voi dung 5 LoRA/mau va 2 forward calls/mau.
+
+So voi conventional strict, Acc@task tang `+1.7281` va Acc@1 tang `+0.1913`,
+nhung Acc@5 giam `-5.4461`, Loss tang `+1.6684`, Forgetting tang `+0.2563`
+va Backward giam `-0.5749`. Vi vay `BASELINE_ALL_METRIC_GATE=FAIL`, trong khi
+`OPERATIONAL_PROPOSAL_EFFICIENCY_GATE=PASS`.
+
+Doi chung nhan qua cung budget voi raw proposal cho ket qua xau hon tren ca sau
+metric: Acc@task `-1.2585`, Acc@1 `-0.8746`, Acc@5 `-5.8700`, Loss
+`+1.6902`, Forgetting `+0.2242` va Backward `-0.4256`.
+`CRM_CAUSAL_ALL_METRIC_GATE=FAIL`.
+
+Ket qua bac bo gia thuyet GEN soft fusion cho prediction proposal. Viec chuan
+hoa tung LoRA thanh phan phoi noi task va phan bo lai task mass lam mat tin hieu
+raw-logit can thiet de xep hang lop/task, dac biet pha huy top-5 va calibration.
+Dong nhanh CRM confidence fusion; khong quet confidence temperature, prior
+weight, gamma hay top-M tren test seed 42. Day la ket qua am cua mo rong CRM,
+khong phai dong gop CFS.
+
+Buoc tiep theo chi la audit taskwise tren cac log da co, so truc tiep CRM voi
+raw proposal cung budget de xac dinh task/stage nao tao ra suy giam. Audit khong
+train, khong eval lai va khong dung nhan test de fit mot selector hay tham so.
