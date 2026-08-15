@@ -409,3 +409,17 @@ bash training_scripts/eval_imagenet_r_prediction_closure_tii_tail_operational_40
 
 Gui lai dong task10, hai bang comparison/equivalence,
 OPERATIONAL_CLOSURE_TII_TAIL_GATE va wall time. Khong chay song song GPU.
+## 20. Ket qua operational cuoi: PASS
+
+Operational closure + TII tail dat dung bang audit: Acc@task 81.1152, Acc@1
+75.4164, Acc@5 87.9218, Loss 1.1421, Forgetting 3.0898, Backward -2.8964,
+LoRA/sample 5.5593, calls/sample 2.5995, wall time 291 giay.
+OPERATIONAL_CLOSURE_TII_TAIL_GATE=PASS; moi equivalence delta bang 0.0000.
+
+So voi exhaustive, giam 44.407% LoRA va 28.68% wall time trong khi Acc@1 chi
+giam 0.0113 diem. Day la current best strict operational method. Khong sua
+i2/c5, prior 0.3, temperature 1.0 hay TII tail tren seed 42 nua.
+
+Buoc tiep theo neu tiep tuc la multi-seed reproduction. Can train strict rank-8
+baseline va co TII checkpoint cung seed truoc, sau do chay conventional va
+operational closure-tail voi cau hinh y het. Khong duoc tinh chinh theo seed moi.

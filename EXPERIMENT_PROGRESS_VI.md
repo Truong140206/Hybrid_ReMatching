@@ -3285,3 +3285,22 @@ Gate operational khai bao truoc:
 
 Khong thay i2/c5, prior 0.3, temperature 1.0 hay TII completion. Script:
 training_scripts/eval_imagenet_r_prediction_closure_tii_tail_operational_4090.sh.
+## 2026-08-16 - Operational closure + TII tail PASS
+
+Operational run hoan tat trong 291 giay va khop audit projection tuyet doi:
+Acc@task 81.1152, Acc@1 75.4164, Acc@5 87.9218, Loss 1.1421, Forgetting
+3.0898, Backward -2.8964, 5.5593 LoRA/sample va 2.5995 calls/sample. Tat ca
+quality, equivalence va efficiency check deu PASS:
+OPERATIONAL_CLOSURE_TII_TAIL_GATE=PASS.
+
+So voi conventional, delta lan luot la +3.3238 Acc@task, +1.3973 Acc@1,
++1.0325 Acc@5, -0.0884 Loss, -0.1903 Forgetting va +0.0155 Backward. So voi
+exhaustive 408 giay/10 LoRA/3 calls, operational giam 44.407% LoRA, 13.35%
+calls va 28.68% wall time; Acc@task/Acc@1 chi giam 0.0030/0.0113 diem,
+Acc@5 giam 0.9965 diem.
+
+Ket luan seed 42: day la strict rehearsal-free operational proposal dau tien
+dat ca sau metric gate va efficiency gate. Khoa vinh vien i2/c5, prior 0.3,
+temperature 1.0 va top-1-safe TII completion; khong toi uu them tren seed 42.
+Buoc nghien cuu tiep theo la reproduce nguyen cau hinh tren seed doc lap, khong
+thay tham so theo ket qua tung seed.
