@@ -295,6 +295,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--progressive_prediction_proposal_audit', action='store_true', help='audit tasks proposed by top class predictions from the initial hard LoRAs')
     subparsers.add_argument('--progressive_prediction_closure_audit', action='store_true', help='audit threshold-free expansion until evaluated LoRAs propose no unseen task')
     subparsers.add_argument('--progressive_prediction_closure_tii_tail_audit', action='store_true', help='evaluate closure top-1 with zero-LoRA TII probability completion for excluded task tails')
+    subparsers.add_argument('--prediction_closure_rematching', action='store_true', help='run operational adaptive prediction closure with top-1-safe TII tail completion')
     subparsers.add_argument('--prediction_proposal_rematching', action='store_true', help='run only TII initial LoRAs plus fixed-budget tasks proposed by their class predictions')
     subparsers.add_argument('--prediction_proposal_initial_branch_audit', action='store_true', help='audit free per-sample complementarity between proposal output and the already-computed initial TII-top1 adapter output')
     subparsers.add_argument('--prediction_proposal_cross_adapter_audit', action='store_true', help='audit full-class consensus and oracle headroom across the already-evaluated proposal adapters')

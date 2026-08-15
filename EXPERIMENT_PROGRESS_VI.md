@@ -3257,3 +3257,31 @@ Top5Coverage cua closure thuan van duoc in de truy vet nhung khong la gate cua
 output moi; Acc@5 operational duoc do truc tiep sau khi TII tail da phu moi seen
 class. Neu bat ky dieu kien nao fail, dong nhanh, khong sweep. Script:
 training_scripts/eval_imagenet_r_prediction_closure_tii_tail_4090.sh.
+## 2026-08-16 - Closure + TII tail PASS va preregister operational
+
+Audit closure + TII tail dat Acc@task 81.1152, Acc@1 75.4164, Acc@5 87.9218,
+Loss 1.1421, Forgetting 3.0898 va Backward -2.8964. Ca sau metric deu hon
+conventional: +3.3238, +1.3973, +1.0325, -0.0884 Loss, -0.1903 Forgetting va
++0.0155 Backward. Winner/exact van 99.7366%; chi phi projection van 5.5593
+LoRA/sample va 2.5995 calls/sample. CLOSURE_TII_TAIL_ALL_METRIC_GATE=PASS.
+
+So voi exhaustive, output chi kem 0.0030 Acc@task, 0.0113 Acc@1 va 0.9965
+Acc@5; Loss cao hon 0.0561, Forgetting cao hon 0.0126, con Backward tot hon
+0.0124. Day la diem strict dau tien thang conventional tren ca sau metric voi
+chi phi LoRA gan budget-5 ma khong dung historical calibration.
+
+Buoc da khoa tiep theo khong thay doi thuat toan: trien khai operational
+prediction closure. Moi wave gom duy nhat cac cap sample-task moi vao mot batch
+model; sample da dong khong duoc chay lai. Sau fixed point, task-local LoRA logits
+va TII tail duoc ghep dung nhu audit PASS.
+
+Gate operational khai bao truoc:
+
+- Ca sau metric van phai hon conventional.
+- Acc@task, Acc@1, Acc@5, Forgetting va Backward phai cach audit khong qua
+  0.01 diem; Loss khong qua 0.0002.
+- LoRA/sample va calls/sample phai khop audit trong 0.001.
+- LoRA/sample <=7 va calls/sample <=3.
+
+Khong thay i2/c5, prior 0.3, temperature 1.0 hay TII completion. Script:
+training_scripts/eval_imagenet_r_prediction_closure_tii_tail_operational_4090.sh.

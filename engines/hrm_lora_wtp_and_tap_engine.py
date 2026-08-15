@@ -34,6 +34,9 @@ from engines.prediction_proposal_rematching import (
     initial_branch_confidence_dominance,
     prediction_proposal_adapter_rematching,
 )
+from engines.prediction_closure_rematching import (
+    prediction_closure_tii_tail_rematching,
+)
 from engines.calibrated_progressive_rematching import (
     calibrated_progressive_rematching,
     get_progressive_halting_gates,
@@ -871,7 +874,8 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
             if (bool(getattr(args, 'hierarchical_rematching', False))
                     or bool(getattr(args, 'exhaustive_rematching', False))
                     or bool(getattr(args, 'vectorized_exhaustive_rematching', False))
-                    or bool(getattr(args, 'prediction_proposal_rematching', False))):
+                    or bool(getattr(args, 'prediction_proposal_rematching', False))
+                    or bool(getattr(args, 'prediction_closure_rematching', False))):
                 cost_diagnostics = None
                 if bool(getattr(args, 'hierarchical_rematching', False)):
                     logits, prompt_id = hierarchical_adapter_rematching(
@@ -881,6 +885,17 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                         class_mask=class_mask,
                         seen_task_count=task_id + 1,
                         args=args,
+                    )
+                elif bool(getattr(args, 'prediction_closure_rematching', False)):
+                    logits, prompt_id, cost_diagnostics = (
+                        prediction_closure_tii_tail_rematching(
+                            model=model,
+                            inputs=input,
+                            tii_logits=old_logits,
+                            class_mask=class_mask,
+                            seen_task_count=task_id + 1,
+                            args=args,
+                        )
                     )
                 elif bool(getattr(args, 'prediction_proposal_rematching', False)):
                     logits, prompt_id, cost_diagnostics = (
@@ -1398,6 +1413,12 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 full_scan=metric_logger.meters['ClosureFullScanRate'],
                 cost=metric_logger.meters['ClosureLoRA/sample'],
                 calls=metric_logger.meters['ClosureCalls/sample']))
+    if bool(getattr(args, 'prediction_closure_rematching', False)):
+        print(
+            '* PredictionClosureTail LoRA/sample {cost.global_avg:.3f} '
+            'ForwardCalls/sample {calls.global_avg:.3f}'
+            .format(cost=metric_logger.meters['LoRA/sample'],
+                    calls=metric_logger.meters['ForwardCalls/sample']))
     if bool(getattr(args, 'prediction_proposal_rematching', False)):
         print(
             '* PredictionProposal LoRA/sample {cost.global_avg:.3f} '
@@ -1600,7 +1621,8 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
             stat_matrix[77, i] = test_stats.get(
                 'ClosureCalls/sample', 0.0)
         if (bool(getattr(args, 'vectorized_exhaustive_rematching', False))
-                or bool(getattr(args, 'prediction_proposal_rematching', False))):
+                or bool(getattr(args, 'prediction_proposal_rematching', False))
+                or bool(getattr(args, 'prediction_closure_rematching', False))):
             stat_matrix[28, i] = test_stats.get('LoRA/sample', 0.0)
             stat_matrix[29, i] = test_stats.get('ForwardCalls/sample', 0.0)
         if bool(getattr(
@@ -1738,7 +1760,8 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
             avg_stat[72], avg_stat[73], avg_stat[74], avg_stat[75],
             avg_stat[76], avg_stat[77])
     if (bool(getattr(args, 'vectorized_exhaustive_rematching', False))
-            or bool(getattr(args, 'prediction_proposal_rematching', False))):
+            or bool(getattr(args, 'prediction_proposal_rematching', False))
+            or bool(getattr(args, 'prediction_closure_rematching', False))):
         result_str += (
             "\tLoRA/sample: {:.4f}\tForwardCalls/sample: {:.4f}"
         ).format(avg_stat[28], avg_stat[29])

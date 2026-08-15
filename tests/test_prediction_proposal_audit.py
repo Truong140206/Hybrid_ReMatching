@@ -211,6 +211,7 @@ def test_prediction_proposal_is_allowed_by_strict_exemplar_free_protocol():
         progressive_prediction_proposal_audit=True,
         progressive_prediction_closure_audit=True,
         progressive_prediction_closure_tii_tail_audit=True,
+        prediction_closure_rematching=True,
         prediction_proposal_rematching=True,
         prediction_proposal_cross_adapter_audit=True,
         prediction_proposal_tii_completion=True,
