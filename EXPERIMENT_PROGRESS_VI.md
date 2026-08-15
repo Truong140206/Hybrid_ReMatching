@@ -3022,3 +3022,12 @@ sau huan luyen bang cach doc lai anh cu. Phai train checkpoint moi tu task 1.
 - Pilot con danh gia chinh checkpoint do voi calibration tat, cung proposal budget.
   CFS causal gate yeu cau khong mot metric nao xau di va it nhat mot metric cai
   thien nghiem ngat; identity/no-effect khong duoc tinh la CFS co dong gop.
+### Sua loi pilot dau tien
+
+Lan chay `imr_rank8_cfs_logitcal_v1_pilot3_seed42` dung o pre-CRCT evaluation
+cua task 2 vi state task 1 chi co mot scale/bias, trong khi evaluation da thay
+hai task. Day la loi lifecycle cua state, khong phai ket qua thuc nghiem. Da
+sua bang cach tam tat CFS calibration rieng trong pre-CRCT diagnostic; sau CRCT,
+calibration duoc fit voi day du task roi moi bat cho final evaluation. Runtime
+van fail-closed o moi noi khac, nen checkpoint state thieu task khong bi ngam
+hieu la hop le. Lan loi khong co task-2 checkpoint va khong duoc tinh ket qua.

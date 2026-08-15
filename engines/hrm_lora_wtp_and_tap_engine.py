@@ -1928,11 +1928,21 @@ def train_and_evaluate(model: torch.nn.Module, model_without_ddp: torch.nn.Modul
 
 
         if task_id > 0 and not args.not_train_ca:
-            pre_ca_test_stats = evaluate_till_now(model=model, original_model=original_model, data_loader=data_loader,
-                                                  device=device,
-                                                  task_id=task_id, class_mask=class_mask,
-                                                  target_task_map=target_task_map,
-                                                  acc_matrix=pre_ca_acc_matrix, args=args)
+            # The previous checkpoint has no affine entry for the new task yet.
+            cfs_calibration_enabled = bool(getattr(
+                args, 'cfs_task_logit_calibration', False))
+            if cfs_calibration_enabled:
+                args.cfs_task_logit_calibration = False
+            try:
+                pre_ca_test_stats = evaluate_till_now(
+                    model=model, original_model=original_model,
+                    data_loader=data_loader, device=device,
+                    task_id=task_id, class_mask=class_mask,
+                    target_task_map=target_task_map,
+                    acc_matrix=pre_ca_acc_matrix, args=args)
+            finally:
+                if cfs_calibration_enabled:
+                    args.cfs_task_logit_calibration = True
             #train_dis(model, args, device,data_loader[task_id]['train'], class_mask,target_task_map, task_id)
             train_task_adaptive_prediction(
                 model, args, device, class_mask, task_id,
