@@ -581,3 +581,25 @@ SEED=43 bash training_scripts/eval_imagenet_r_consensus_cap5_closure_audit_4090.
 ~~~
 
 Gui task10, comparison, diagnostic, CONSENSUS_CAP5_ALL_METRIC_GATE va wall time.
+
+## 28. Consensus-cap5 FAIL; can taskwise diagnostic
+
+Consensus-cap5 dat LoRA 3.0529/calls 1.9060 va ba accuracy metric hon baseline,
+nhung Loss, Forgetting, Backward FAIL. Certified 59.1876%, winner/exact 97.7482%.
+CONSENSUS_CAP5_ALL_METRIC_GATE=FAIL; da dong nhanh.
+
+Khong chay them GPU hypothesis truoc khi tach regression theo task. Dung parser
+co san, conventional lam baseline, consensus lam proposal, full closure lam
+exhaustive-like reference:
+
+~~~bash
+cd ~/Documents/truongnguyen/Hybrid_ReMatching
+python training_scripts/compare_imagenet_r_taskwise.py \
+  --baseline ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed43_eval_conventional.log \
+  --proposal ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed43_eval_consensus_cap5_closure_i2_c5_dev.log \
+  --exhaustive ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed43_eval_prediction_closure_tii_tail_i2_c5_strict.log \
+  --output ~/Documents/truongnguyen/hrm-pet-output/imagenet_r_seed43_consensus_taskwise.md
+~~~
+
+Gui file markdown hoac it nhat: aggregate old-task, stagewise diagnosis, largest
+stage-task regressions va largest final old-task regressions.

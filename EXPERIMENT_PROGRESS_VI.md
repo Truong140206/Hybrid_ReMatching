@@ -3445,3 +3445,18 @@ Gate: ca sau quality metric hon conventional seed 43; LoRA/sample <5;
 calls/sample <=4. Winner/exact va CertifiedRate chi diagnostic. Mot cau hinh,
 khong them margin/threshold sau khi doc ket qua. Neu PASS moi operationalize va
 validate seed 44/45.
+
+## 2026-08-16 - Consensus-cap5 FAIL; chuyen sang taskwise diagnosis
+
+Consensus-cap5 seed 43: Acc@task 80.6376, Acc@1 75.5164, Acc@5 87.2832,
+Loss 1.2706, Forgetting 3.1091, Backward -3.0471, winner/exact 97.7482%,
+CertifiedRate 59.1876%, LoRA 3.0529 va calls 1.9060. Ba accuracy metric va
+hai efficiency gate PASS; nhung Backward delta -0.6387, Loss +0.0493 va
+Forgetting +0.5102 FAIL. CONSENSUS_CAP5_ALL_METRIC_GATE=FAIL; dong nhanh.
+
+So voi full closure, giam 2.4748 LoRA/sample nhung retention gan nhu khong phuc
+hoi. Dieu nay bac bo gia thuyet chi can certificate chat hon de sua seed 43.
+Truoc experiment GPU tiep theo, dung parser taskwise co san de so conventional,
+consensus va full closure theo tung stage/task, Acc@1/Acc@5/Loss. Diagnostic
+khong dung GPU, khong thay model va se xac dinh regression tap trung o task cu
+nao hay xuat hien ngay tu initial accuracy.
