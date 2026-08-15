@@ -9,6 +9,9 @@ from engines.lora_response_audit import (
     lora_response_task_scores,
 )
 from engines.progressive_rematching import _tii_task_prior
+from engines.tii_tail_completion import (
+    complete_with_tii_probability_mass,
+)
 
 
 def _finalize_partial_logits(partial_logits, excluded_margin):
@@ -129,7 +132,8 @@ def prediction_proposal_diagnostics(
 def prediction_closure_diagnostics(
         tii_ranking, full_adapter_logits, rank_logits, task_evidence,
         winner_tasks, full_predictions, class_mask, initial_count=2,
-        top_classes=5, excluded_margin=20.0):
+        top_classes=5, excluded_margin=20.0, tii_logits=None,
+        tii_tail_completion=False):
     """Expand prediction-induced tasks until the evaluated set is closed."""
     batch_size, seen_task_count, _ = full_adapter_logits.shape
     device = full_adapter_logits.device
@@ -193,10 +197,10 @@ def prediction_closure_diagnostics(
     selected_rank = candidate_evidence.argmax(dim=1)
     selected_tasks = tii_ranking.gather(
         1, selected_rank.unsqueeze(1)).squeeze(1)
-    selected_logits = rank_logits.masked_fill(
+    selected_partial_logits = rank_logits.masked_fill(
         ~selected_rank_mask.unsqueeze(2), float('-inf')).max(dim=1).values
     selected_logits = _finalize_partial_logits(
-        selected_logits, excluded_margin)
+        selected_partial_logits, excluded_margin)
 
     winner_recall = candidate_mask.gather(
         1, winner_tasks.unsqueeze(1)).squeeze(1)
@@ -216,6 +220,14 @@ def prediction_closure_diagnostics(
         1, full_top5_tasks).all(dim=1)
     lora_counts = candidate_mask.sum(dim=1).float()
 
+    output_logits = selected_logits
+    if tii_tail_completion:
+        if tii_logits is None:
+            raise ValueError(
+                'TII logits are required for closure tail completion')
+        output_logits = complete_with_tii_probability_mass(
+            selected_partial_logits, tii_logits, class_mask, candidate_mask)
+
     return {
         'prediction_closure_winner_recall': winner_recall,
         'prediction_closure_exact_agreement': exact_agreement,
@@ -224,6 +236,8 @@ def prediction_closure_diagnostics(
         'prediction_closure_forward_calls': forward_calls,
         'prediction_closure_full_scan': lora_counts.eq(
             float(seen_task_count)),
+        'prediction_closure_output_logits': output_logits,
+        'prediction_closure_output_tasks': selected_tasks,
     }
 
 
@@ -249,8 +263,11 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
     task_evidence = torch.full(
         (batch_size, seen_task_count), float('-inf'),
         dtype=tii_logits.dtype, device=device)
-    closure_audit = bool(getattr(
-        args, 'progressive_prediction_closure_audit', False))
+    closure_tail_audit = bool(getattr(
+        args, 'progressive_prediction_closure_tii_tail_audit', False))
+    closure_audit = (
+        bool(getattr(args, 'progressive_prediction_closure_audit', False))
+        or closure_tail_audit)
     full_adapter_logits = (
         torch.empty_like(rank_logits) if closure_audit else None)
     initial_count = min(
@@ -347,7 +364,7 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
             excluded_margin=excluded_margin,
         ))
     if closure_audit:
-        diagnostics.update(prediction_closure_diagnostics(
+        closure_diagnostics = prediction_closure_diagnostics(
             tii_ranking=candidate_tasks,
             full_adapter_logits=full_adapter_logits,
             rank_logits=rank_logits,
@@ -359,7 +376,10 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
             top_classes=getattr(
                 args, 'prediction_proposal_top_classes', 5),
             excluded_margin=excluded_margin,
-        ))
+            tii_logits=tii_logits,
+            tii_tail_completion=closure_tail_audit,
+        )
+        diagnostics.update(closure_diagnostics)
     if bool(getattr(args, 'progressive_arrow_audit', False)):
         arrow_scores = arrow_task_scores(model, inputs, seen_task_count)
         arrow_ranking = torch.argsort(arrow_scores, dim=1, descending=True)
@@ -371,4 +391,10 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
         response_ranking = torch.argsort(response_scores, dim=1, descending=True)
         diagnostics.update(lora_response_candidate_diagnostics(
             candidate_tasks, response_ranking, routed_tasks))
+    if closure_tail_audit:
+        return (
+            diagnostics['prediction_closure_output_logits'],
+            diagnostics['prediction_closure_output_tasks'],
+            diagnostics,
+        )
     return full_logits, routed_tasks, diagnostics

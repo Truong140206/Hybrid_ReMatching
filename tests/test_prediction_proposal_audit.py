@@ -171,12 +171,46 @@ def test_prediction_closure_tracks_rank_and_task_masks_per_sample():
     assert audit['prediction_closure_lora_counts'].tolist() == [3.0, 2.0]
     assert audit['prediction_closure_forward_calls'].tolist() == [2.0, 1.0]
 
+
+def test_prediction_closure_tii_tail_is_top1_safe_and_cost_free():
+    full_adapter_logits = torch.full((1, 4, 4), -10.0)
+    full_adapter_logits[0, 0, 0] = 9.0
+    full_adapter_logits[0, 1, 1] = 8.0
+    rank_logits = torch.full((1, 4, 4), float('-inf'))
+    rank_logits[0, 0, 0] = 5.0
+    rank_logits[0, 1, 1] = 4.0
+    rank_logits[0, 2, 2] = 3.0
+    rank_logits[0, 3, 3] = 2.0
+
+    audit = prediction_closure_diagnostics(
+        tii_ranking=torch.tensor([[0, 1, 2, 3]]),
+        full_adapter_logits=full_adapter_logits,
+        rank_logits=rank_logits,
+        task_evidence=torch.tensor([[5.0, 4.0, 3.0, 2.0]]),
+        winner_tasks=torch.tensor([0]),
+        full_predictions=torch.tensor([0]),
+        class_mask=[[0], [1], [2], [3]],
+        initial_count=2,
+        top_classes=1,
+        tii_logits=torch.tensor([[1.0, 0.5, 4.0, 3.0]]),
+        tii_tail_completion=True,
+    )
+
+    output = audit['prediction_closure_output_logits']
+    assert output.argmax(dim=1).tolist() == [0]
+    assert torch.isfinite(output).all()
+    assert torch.allclose(output.exp().sum(dim=1), torch.ones(1), atol=1e-6)
+    assert audit['prediction_closure_lora_counts'].tolist() == [2.0]
+    assert audit['prediction_closure_forward_calls'].tolist() == [1.0]
+
+
 def test_prediction_proposal_is_allowed_by_strict_exemplar_free_protocol():
     validate_exemplar_free_protocol(SimpleNamespace(
         strict_exemplar_free=True,
         progressive_oracle_audit=True,
         progressive_prediction_proposal_audit=True,
         progressive_prediction_closure_audit=True,
+        progressive_prediction_closure_tii_tail_audit=True,
         prediction_proposal_rematching=True,
         prediction_proposal_cross_adapter_audit=True,
         prediction_proposal_tii_completion=True,

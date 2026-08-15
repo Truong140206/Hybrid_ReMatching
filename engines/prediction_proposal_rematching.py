@@ -6,6 +6,9 @@ from engines.progressive_oracle_audit import (
     prediction_proposal_candidates,
 )
 from engines.progressive_rematching import _tii_task_prior
+from engines.tii_tail_completion import (
+    complete_with_tii_probability_mass,
+)
 
 
 def _evaluate_candidate_tasks(model, inputs, candidate_tasks):
@@ -173,45 +176,15 @@ def _complete_with_tii_probability_mass(
         candidate_logits, tii_logits, class_mask, candidate_tasks,
         seen_task_count):
     """Give excluded seen classes TII mass without changing candidate top-1."""
-    batch_size, class_count = candidate_logits.shape
-    device = candidate_logits.device
-    included_mask = torch.zeros(
-        (batch_size, class_count), dtype=torch.bool, device=device)
+    included_task_mask = torch.zeros(
+        (candidate_logits.shape[0], seen_task_count),
+        dtype=torch.bool, device=candidate_logits.device)
     for candidate_slot in range(candidate_tasks.shape[1]):
-        active_tasks = candidate_tasks[:, candidate_slot]
-        for task_index in active_tasks.unique().tolist():
-            rows = torch.nonzero(active_tasks == task_index).flatten()
-            class_index = torch.as_tensor(
-                class_mask[task_index], dtype=torch.long, device=device)
-            included_mask[
-                rows.unsqueeze(1), class_index.unsqueeze(0)
-            ] = True
-
-    seen_class_mask = torch.zeros(
-        class_count, dtype=torch.bool, device=device)
-    for task_classes in class_mask[:seen_task_count]:
-        seen_class_mask[torch.as_tensor(
-            task_classes, dtype=torch.long, device=device)] = True
-    outside_mask = seen_class_mask.unsqueeze(0) & ~included_mask
-
-    candidate_probabilities = torch.softmax(candidate_logits, dim=1)
-    masked_tii_logits = tii_logits.masked_fill(
-        ~seen_class_mask.unsqueeze(0), float('-inf'))
-    tii_probabilities = torch.softmax(masked_tii_logits, dim=1)
-    outside_probabilities = tii_probabilities.masked_fill(~outside_mask, 0.0)
-    outside_mass = outside_probabilities.sum(dim=1, keepdim=True)
-    outside_conditional = outside_probabilities / outside_mass.clamp_min(1e-12)
-
-    candidate_peak = candidate_probabilities.max(dim=1, keepdim=True).values
-    outside_peak = outside_conditional.max(dim=1, keepdim=True).values
-    top1_safe_mass = 0.99 * candidate_peak / (
-        candidate_peak + outside_peak).clamp_min(1e-12)
-    completion_mass = torch.minimum(outside_mass, top1_safe_mass)
-    completed_probabilities = (
-        (1.0 - completion_mass) * candidate_probabilities
-        + completion_mass * outside_conditional
+        included_task_mask.scatter_(
+            1, candidate_tasks[:, candidate_slot: candidate_slot + 1], True)
+    return complete_with_tii_probability_mass(
+        candidate_logits, tii_logits, class_mask, included_task_mask
     )
-    return completed_probabilities.clamp_min(1e-12).log()
 
 
 def task_mass_preserving_candidate_fusion(

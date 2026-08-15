@@ -3226,3 +3226,34 @@ Gate chap nhan dong thoi:
 
 Neu mot dieu kien fail, dong nhanh prediction-closure. Script audit:
 training_scripts/eval_imagenet_r_prediction_closure_audit_4090.sh.
+## 2026-08-16 - Ket qua prediction-closure va preregister TII tail
+
+Prediction-closure oracle strict rank-8 seed 42 chay 408 giay. Cac metric
+closure: winner recall 99.7366%, exact agreement 99.7366%, top-5 task coverage
+85.3245%, full-scan 0.8615%, 5.5593 LoRA/sample va 2.5995 calls/sample. Bon
+metric accuracy/loss tren dong nay la exhaustive reference do day la oracle
+audit, khong phai operational closure output.
+
+Nam dieu kien pass, nhung Top5Coverage <99%, vi vay
+PREDICTION_CLOSURE_GATE=FAIL. Dong closure thuan theo dung preregistration;
+khong sweep initial count, top-class count, threshold hoac budget tren seed 42.
+Chan doan: closure tim gan nhu chinh xac adapter winner/top-1, nhung bo sot task
+so huu cac class phu trong exhaustive top-5.
+
+Nhanh moi duoc khoa rieng: closure + TII tail completion. Tap candidate, dieu
+kien diem co dinh va chi phi closure giu nguyen. Logit cua class trong task da
+evaluate den tu LoRA; class cua task chua evaluate nhan probability mass tu TII
+da co. Completion duoc gioi han de khong thay doi candidate top-1, khong them
+LoRA/forward, khong learned gate hay tham so moi.
+
+Mot run duy nhat, van i2/c5, prior 0.3, temperature 1.0. Gate moi:
+
+- Acc@task, Acc@1, Acc@5 va Backward phai cao hon conventional strict.
+- Loss va Forgetting phai thap hon conventional strict.
+- ClosureWinnerRecall va ClosureExactAgreement >=99.5%.
+- ClosureLoRA/sample <=7 va ClosureCalls/sample <=3.
+
+Top5Coverage cua closure thuan van duoc in de truy vet nhung khong la gate cua
+output moi; Acc@5 operational duoc do truc tiep sau khi TII tail da phu moi seen
+class. Neu bat ky dieu kien nao fail, dong nhanh, khong sweep. Script:
+training_scripts/eval_imagenet_r_prediction_closure_tii_tail_4090.sh.

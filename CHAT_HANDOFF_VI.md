@@ -363,3 +363,27 @@ bash training_scripts/eval_imagenet_r_prediction_closure_audit_4090.sh \
 
 Khong chay song song voi job GPU khac. Gui lai dong task10,
 PREDICTION_CLOSURE_GATE va wall time.
+## 18. Closure da fail; dang cho closure + TII tail
+
+Ket qua prediction-closure: winner/exact 99.7366%, top-5 coverage 85.3245%,
+full-scan 0.8615%, LoRA/sample 5.5593, calls/sample 2.5995, wall time 408 giay.
+PREDICTION_CLOSURE_GATE=FAIL duy nhat vi top-5 coverage. Closure thuan da dong;
+khong sweep.
+
+Nhanh moi da preregister: giu nguyen closure i2/c5 va dung TII probability de
+dien tail cho class thuoc task chua evaluate. Phep nay top-1 safe, khong them
+LoRA/call va khong co hyperparameter moi. Gate: ca sau quality metric phai hon
+conventional strict; winner/exact >=99.5%; LoRA <=7; calls <=3. Acc@5 output
+duoc do truc tiep, khong dung closure Top5Coverage lam gate cho nhanh moi.
+
+Lenh RTX 4090:
+
+~~~bash
+cd ~/Documents/truongnguyen/Hybrid_ReMatching
+git pull --ff-only
+bash training_scripts/eval_imagenet_r_prediction_closure_tii_tail_4090.sh \
+  ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed42
+~~~
+
+Gui lai dong task10, bang comparison, CLOSURE_TII_TAIL_ALL_METRIC_GATE va wall
+time. Khong chay song song voi job GPU khac.
