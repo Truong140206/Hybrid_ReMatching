@@ -768,6 +768,30 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                         audit[
                             'prediction_beam_closure_forward_calls'
                         ].mean().item(), n=input.shape[0])
+                if bool(getattr(
+                        args, 'progressive_prediction_budget_closure_audit',
+                        False)):
+                    budget_percent_metrics = {
+                        'BudgetClosureWinnerRecall':
+                            'prediction_budget_closure_winner_recall',
+                        'BudgetClosureExactAgreement':
+                            'prediction_budget_closure_exact_agreement',
+                        'BudgetClosureBudgetHitRate':
+                            'prediction_budget_closure_budget_hit',
+                    }
+                    for metric_name, audit_name in (
+                            budget_percent_metrics.items()):
+                        metric_logger.meters[metric_name].update(
+                            audit[audit_name].float().mean().mul(100.0).item(),
+                            n=input.shape[0])
+                    metric_logger.meters['BudgetClosureLoRA/sample'].update(
+                        audit[
+                            'prediction_budget_closure_lora_counts'
+                        ].mean().item(), n=input.shape[0])
+                    metric_logger.meters['BudgetClosureCalls/sample'].update(
+                        audit[
+                            'prediction_budget_closure_forward_calls'
+                        ].mean().item(), n=input.shape[0])
                 continue
 
             if bool(getattr(args, 'progressive_rematching', False)):
@@ -1452,6 +1476,22 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 full_scan=metric_logger.meters['BeamClosureFullScanRate'],
                 cost=metric_logger.meters['BeamClosureLoRA/sample'],
                 calls=metric_logger.meters['BeamClosureCalls/sample']))
+    if bool(getattr(
+            args, 'progressive_prediction_budget_closure_audit', False)):
+        print(
+            '* PredictionBudgetClosureAudit WinnerRecall '
+            '{recall.global_avg:.3f} ExactAgreement '
+            '{agreement.global_avg:.3f} BudgetHitRate '
+            '{budget_hit.global_avg:.3f} LoRA/sample '
+            '{cost.global_avg:.3f} ForwardCalls/sample '
+            '{calls.global_avg:.3f}'
+            .format(
+                recall=metric_logger.meters['BudgetClosureWinnerRecall'],
+                agreement=metric_logger.meters['BudgetClosureExactAgreement'],
+                budget_hit=metric_logger.meters[
+                    'BudgetClosureBudgetHitRate'],
+                cost=metric_logger.meters['BudgetClosureLoRA/sample'],
+                calls=metric_logger.meters['BudgetClosureCalls/sample']))
     if bool(getattr(args, 'prediction_closure_rematching', False)):
         print(
             '* PredictionClosureTail LoRA/sample {cost.global_avg:.3f} '
@@ -1602,7 +1642,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((83, args.num_tasks))
+    stat_matrix = np.zeros((88, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -1671,6 +1711,18 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                 'BeamClosureLoRA/sample', 0.0)
             stat_matrix[82, i] = test_stats.get(
                 'BeamClosureCalls/sample', 0.0)
+        if bool(getattr(
+                args, 'progressive_prediction_budget_closure_audit', False)):
+            stat_matrix[83, i] = test_stats.get(
+                'BudgetClosureWinnerRecall', 0.0)
+            stat_matrix[84, i] = test_stats.get(
+                'BudgetClosureExactAgreement', 0.0)
+            stat_matrix[85, i] = test_stats.get(
+                'BudgetClosureBudgetHitRate', 0.0)
+            stat_matrix[86, i] = test_stats.get(
+                'BudgetClosureLoRA/sample', 0.0)
+            stat_matrix[87, i] = test_stats.get(
+                'BudgetClosureCalls/sample', 0.0)
         if (bool(getattr(args, 'vectorized_exhaustive_rematching', False))
                 or bool(getattr(args, 'prediction_proposal_rematching', False))
                 or bool(getattr(args, 'prediction_closure_rematching', False))):
@@ -1821,6 +1873,17 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         ).format(
             avg_stat[78], avg_stat[79], avg_stat[80], avg_stat[81],
             avg_stat[82])
+    if bool(getattr(
+            args, 'progressive_prediction_budget_closure_audit', False)):
+        result_str += (
+            "\tBudgetClosureWinnerRecall: {:.4f}"
+            "\tBudgetClosureExactAgreement: {:.4f}"
+            "\tBudgetClosureBudgetHitRate: {:.4f}"
+            "\tBudgetClosureLoRA/sample: {:.4f}"
+            "\tBudgetClosureCalls/sample: {:.4f}"
+        ).format(
+            avg_stat[83], avg_stat[84], avg_stat[85], avg_stat[86],
+            avg_stat[87])
     if (bool(getattr(args, 'vectorized_exhaustive_rematching', False))
             or bool(getattr(args, 'prediction_proposal_rematching', False))
             or bool(getattr(args, 'prediction_closure_rematching', False))):

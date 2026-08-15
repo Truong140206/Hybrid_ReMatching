@@ -8,12 +8,17 @@ if [[ "${MODE}" != "check" && "${MODE}" != "run" ]]; then
   exit 64
 fi
 if [[ "${SEED}" == "42" ]]; then
-  echo "Seed 42 is the development seed; choose an independent seed (default: 43)." >&2
+  echo "Seed 42 is closed; use development seed 43 or a later holdout seed." >&2
   exit 64
 fi
 if ! [[ "${SEED}" =~ ^[0-9]+$ ]]; then
   echo "Seed must be a non-negative integer: ${SEED}" >&2
   exit 64
+fi
+if [[ "${SEED}" == "43" ]]; then
+  SEED_ROLE="development"
+else
+  SEED_ROLE="holdout"
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -67,7 +72,7 @@ stage_status() {
   fi
 }
 
-printf 'Independent seed: %s\n' "${SEED}"
+printf 'Seed: %s (%s)\n' "${SEED}" "${SEED_ROLE}"
 printf 'Locked method: closure i2/c5, prior 0.3, temperature 1.0, top-1-safe TII tail\n'
 printf 'Run directory: %s\n' "${RUN_DIR}"
 if checkpoints_complete "${TII_DIR}"; then
@@ -91,7 +96,7 @@ if [[ "${MODE}" == "check" ]]; then
 fi
 
 cd "${REPO_ROOT}"
-echo "Reproduction protocol is locked before observing seed ${SEED}; no hyperparameter may be changed from seed 42."
+echo "Current-best reference is frozen; routing development is allowed only when SEED_ROLE=development."
 
 if ! checkpoints_complete "${TII_DIR}"; then
   echo "Stage 1/5: training TII for seed ${SEED}."
@@ -127,7 +132,7 @@ else
 fi
 
 if ! grep -q '^CLOSURE_TII_TAIL_ALL_METRIC_GATE=PASS$' "${AUDIT_LOG}"; then
-  echo "INDEPENDENT_SEED_CLOSURE_GATE=FAIL"
+  echo "SEED_CLOSURE_REFERENCE_GATE=FAIL"
   echo "The locked method did not pass on seed ${SEED}; operational confirmation is not run." >&2
   exit 10
 fi
@@ -142,13 +147,13 @@ else
 fi
 
 if ! grep -q '^OPERATIONAL_CLOSURE_TII_TAIL_GATE=PASS$' "${OPERATIONAL_LOG}"; then
-  echo "INDEPENDENT_SEED_CLOSURE_GATE=FAIL"
+  echo "SEED_CLOSURE_REFERENCE_GATE=FAIL"
   echo "Operational closure did not pass on seed ${SEED}." >&2
   exit 11
 fi
 
-echo "Final independent-seed conventional metrics:"
+echo "Final seed conventional metrics:"
 grep 'Average accuracy till task10' "${CONVENTIONAL_LOG}" | tail -n 1
-echo "Final independent-seed operational metrics:"
+echo "Final seed operational metrics:"
 grep 'Average accuracy till task10' "${OPERATIONAL_LOG}" | tail -n 1
-echo "INDEPENDENT_SEED_CLOSURE_GATE=PASS"
+echo "SEED_CLOSURE_REFERENCE_GATE=PASS"

@@ -3351,18 +3351,35 @@ Dong nhanh dung preregistration. Khong ha gate fidelity, khong thu beam width,
 successor count, top-class count hoac threshold khac tren seed 42. Current best
 van la operational closure + TII tail 5.5593 LoRA/sample da PASS ca sau metric.
 
-## 2026-08-16 - Khoa independent-seed reproduction
+## 2026-08-16 - Seed-43 reference pipeline; reclassify development before results
 
-Sau khi dong nhanh beam-2, buoc tiep theo la reproduction current-best tren seed
-chua dung de phat trien. Seed dau tien la 43; toan bo closure i2/c5, TII prior
-0.3, temperature 1.0, top-1-safe TII tail, LoRA rank 8 va training schedule giu
-nguyen tu seed 42. Seed 42 bi pipeline tu choi de ngan tuning hau nghiem.
+Pipeline current-best duoc giu de tao reference/checkpoint. Theo yeu cau tiep tuc
+giam LoRA, seed 43 duoc reclassify thanh development truoc khi xem ket qua; seed
+44/45 duoc giu lam holdout. Closure i2/c5, TII prior 0.3, temperature 1.0,
+top-1-safe TII tail, LoRA rank 8 va training schedule reference van giu nguyen
+tu seed 42. Seed 42 bi pipeline tu choi de ngan tuning hau nghiem.
 
 Pipeline gom nam stage tuan tu: train/kiem tra TII, train/kiem tra rank-8
 conventional baseline, conventional eval, closure-tail oracle audit, va
 operational confirmation. Moi stage bo qua artifact da hoan tat va khong ghi de.
-Neu audit khong dat CLOSURE_TII_TAIL_ALL_METRIC_GATE tren seed doc lap, pipeline
-ghi INDEPENDENT_SEED_CLOSURE_GATE=FAIL, dung truoc operational va khong sua
-hyperparameter. Neu dat, operational phai tiep tuc dat gate cu thi independent
-seed moi PASS. Script:
+Neu current-best audit khong dat CLOSURE_TII_TAIL_ALL_METRIC_GATE, pipeline
+ghi SEED_CLOSURE_REFERENCE_GATE=FAIL, dung truoc operational va khong sua
+hyperparameter reference. Neu dat, operational xac nhan lai output/cost; ket qua
+seed 43 chi la development reference, khong phai holdout validation. Script:
 training_scripts/reproduce_imagenet_r_closure_seed_4090.sh.
+
+## 2026-08-16 - Preregister frontier-priority closure cap-5
+
+Nhanh budget <5 tiep tuc tren development seed 43, khong dung seed 42. Bat dau
+TII top-2. Moi adapter moi evaluate de xuat mot strongest unseen task tu raw
+top-5 class; successor cua tat ca frontier adapter trong cung wave duoc gop va
+xep theo raw class evidence. Moi sample giu toi da 5 task. Task moi them duoc
+evaluate o wave tiep theo va co the mo successor, vi vay day van la iterative
+closure chu khong phai fixed proposal-5. Output dung lai TII tail top-1-safe.
+
+Cau hinh khoa: initial=2, top classes=5, max candidates=5, prior=0.3,
+temperature=1.0. Khong threshold, learned/calibrated gate, old sample, stored
+feature hay test label. Gate development: ca sau quality metric hon conventional
+seed 43; BudgetClosureWinnerRecall va ExactAgreement >=99.5%; LoRA/sample <=5;
+calls/sample <=4. Chi mot cau hinh duoc chay truoc khi doc diagnostic. Seed
+44/45 duoc giu lam holdout neu nhanh development dat.

@@ -340,6 +340,133 @@ def prediction_beam_closure_diagnostics(
     }
 
 
+def prediction_budget_closure_diagnostics(
+        tii_ranking, full_adapter_logits, rank_logits, task_evidence,
+        winner_tasks, full_predictions, tii_logits, class_mask,
+        initial_count=2, top_classes=5, max_candidates=5,
+        excluded_margin=20.0):
+    """Follow one successor per new frontier under a fixed task cap."""
+    batch_size, seen_task_count, _ = full_adapter_logits.shape
+    device = full_adapter_logits.device
+    initial_count = min(max(1, int(initial_count)), seen_task_count)
+    max_candidates = min(
+        max(initial_count, int(max_candidates)), seen_task_count)
+
+    seen_classes = [
+        int(class_id)
+        for task_index in range(seen_task_count)
+        for class_id in class_mask[task_index]
+    ]
+    seen_class_index = torch.as_tensor(
+        seen_classes, dtype=torch.long, device=device)
+    class_to_task = torch.full(
+        (full_adapter_logits.shape[-1],), -1,
+        dtype=torch.long, device=device)
+    for task_index in range(seen_task_count):
+        class_index = torch.as_tensor(
+            class_mask[task_index], dtype=torch.long, device=device)
+        class_to_task[class_index] = task_index
+    top_classes = min(max(1, int(top_classes)), len(seen_classes))
+
+    candidate_mask = torch.zeros(
+        (batch_size, seen_task_count), dtype=torch.bool, device=device)
+    candidate_mask.scatter_(1, tii_ranking[:, :initial_count], True)
+    processed_rank_mask = torch.zeros_like(candidate_mask)
+    forward_calls = torch.ones(
+        batch_size, dtype=torch.float32, device=device)
+    max_additions = max_candidates - initial_count
+
+    for _ in range(seen_task_count + 1):
+        selected_rank_mask = candidate_mask.gather(1, tii_ranking)
+        new_rank_mask = selected_rank_mask & ~processed_rank_mask
+        if not new_rank_mask.any() or max_additions == 0:
+            break
+        processed_rank_mask |= new_rank_mask
+
+        proposal_scores = torch.full(
+            (batch_size, seen_task_count), float('-inf'),
+            dtype=full_adapter_logits.dtype, device=device)
+        for rank in range(seen_task_count):
+            rows = torch.nonzero(new_rank_mask[:, rank]).flatten()
+            if rows.numel() == 0:
+                continue
+            seen_logits = full_adapter_logits[
+                rows, rank].index_select(1, seen_class_index)
+            top_values, top_positions = torch.topk(
+                seen_logits, k=top_classes, dim=1)
+            proposed_tasks = class_to_task[seen_class_index[top_positions]]
+            row_candidate_mask = candidate_mask.index_select(0, rows)
+            unseen = ~row_candidate_mask.gather(1, proposed_tasks)
+            has_successor = unseen.any(dim=1)
+            first_unseen = unseen.float().argmax(dim=1)
+            successor_tasks = proposed_tasks.gather(
+                1, first_unseen.unsqueeze(1)).squeeze(1)
+            successor_values = top_values.gather(
+                1, first_unseen.unsqueeze(1)).squeeze(1)
+            active = torch.nonzero(has_successor).flatten()
+            if active.numel() > 0:
+                active_rows = rows[active]
+                row_scores = proposal_scores.index_select(0, active_rows)
+                row_scores.scatter_reduce_(
+                    1, successor_tasks[active].unsqueeze(1),
+                    successor_values[active].unsqueeze(1),
+                    reduce='amax', include_self=True)
+                proposal_scores[active_rows] = row_scores
+
+        proposal_scores = proposal_scores.masked_fill(
+            candidate_mask, float('-inf'))
+        proposal_values, proposal_tasks = torch.topk(
+            proposal_scores, k=max_additions, dim=1)
+        remaining = max_candidates - candidate_mask.sum(dim=1)
+        additions = torch.zeros_like(candidate_mask)
+        for slot in range(max_additions):
+            valid = remaining.gt(slot) & torch.isfinite(
+                proposal_values[:, slot])
+            rows = torch.nonzero(valid).flatten()
+            if rows.numel() > 0:
+                additions[rows, proposal_tasks[rows, slot]] = True
+
+        expanding = additions.any(dim=1)
+        if not expanding.any():
+            break
+        candidate_mask |= additions
+        forward_calls[expanding] += 1.0
+        if candidate_mask.sum(dim=1).ge(max_candidates).all():
+            break
+
+    selected_rank_mask = candidate_mask.gather(1, tii_ranking)
+    candidate_evidence = task_evidence.masked_fill(
+        ~selected_rank_mask, float('-inf'))
+    selected_rank = candidate_evidence.argmax(dim=1)
+    selected_tasks = tii_ranking.gather(
+        1, selected_rank.unsqueeze(1)).squeeze(1)
+    selected_partial_logits = rank_logits.masked_fill(
+        ~selected_rank_mask.unsqueeze(2), float('-inf')).max(dim=1).values
+    selected_logits = _finalize_partial_logits(
+        selected_partial_logits, excluded_margin)
+
+    winner_recall = candidate_mask.gather(
+        1, winner_tasks.unsqueeze(1)).squeeze(1)
+    exact_agreement = (
+        selected_tasks.eq(winner_tasks)
+        & selected_logits.argmax(dim=1).eq(full_predictions)
+    )
+    lora_counts = candidate_mask.sum(dim=1).float()
+    output_logits = complete_with_tii_probability_mass(
+        selected_partial_logits, tii_logits, class_mask, candidate_mask)
+
+    return {
+        'prediction_budget_closure_winner_recall': winner_recall,
+        'prediction_budget_closure_exact_agreement': exact_agreement,
+        'prediction_budget_closure_lora_counts': lora_counts,
+        'prediction_budget_closure_forward_calls': forward_calls,
+        'prediction_budget_closure_budget_hit': lora_counts.eq(
+            float(max_candidates)),
+        'prediction_budget_closure_output_logits': output_logits,
+        'prediction_budget_closure_output_tasks': selected_tasks,
+    }
+
+
 @torch.no_grad()
 def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
                              seen_task_count, args):
@@ -369,9 +496,12 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
         or closure_tail_audit)
     beam_closure_audit = bool(getattr(
         args, 'progressive_prediction_beam_closure_audit', False))
+    budget_closure_audit = bool(getattr(
+        args, 'progressive_prediction_budget_closure_audit', False))
     full_adapter_logits = (
         torch.empty_like(rank_logits)
-        if closure_audit or beam_closure_audit else None)
+        if closure_audit or beam_closure_audit or budget_closure_audit
+        else None)
     initial_count = min(
         max(1, int(getattr(args, 'prediction_proposal_initial_count', 2))),
         seen_task_count)
@@ -498,6 +628,22 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
             beam_width=2,
             excluded_margin=excluded_margin,
         ))
+    if budget_closure_audit:
+        diagnostics.update(prediction_budget_closure_diagnostics(
+            tii_ranking=candidate_tasks,
+            full_adapter_logits=full_adapter_logits,
+            rank_logits=rank_logits,
+            task_evidence=task_evidence,
+            winner_tasks=routed_tasks,
+            full_predictions=full_predictions,
+            tii_logits=tii_logits,
+            class_mask=class_mask,
+            initial_count=initial_count,
+            top_classes=getattr(
+                args, 'prediction_proposal_top_classes', 5),
+            max_candidates=5,
+            excluded_margin=excluded_margin,
+        ))
     if bool(getattr(args, 'progressive_arrow_audit', False)):
         arrow_scores = arrow_task_scores(model, inputs, seen_task_count)
         arrow_ranking = torch.argsort(arrow_scores, dim=1, descending=True)
@@ -519,6 +665,12 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
         return (
             diagnostics['prediction_beam_closure_output_logits'],
             diagnostics['prediction_beam_closure_output_tasks'],
+            diagnostics,
+        )
+    if budget_closure_audit:
+        return (
+            diagnostics['prediction_budget_closure_output_logits'],
+            diagnostics['prediction_budget_closure_output_tasks'],
             diagnostics,
         )
     return full_logits, routed_tasks, diagnostics

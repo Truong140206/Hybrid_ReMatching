@@ -16,6 +16,7 @@ from engines.prediction_proposal_rematching import (
 )
 from engines.progressive_oracle_audit import (
     prediction_beam_closure_diagnostics,
+    prediction_budget_closure_diagnostics,
     prediction_closure_diagnostics,
     prediction_proposal_diagnostics,
 )
@@ -246,6 +247,44 @@ def test_prediction_beam_closure_follows_only_current_leaders():
     assert torch.allclose(output.exp().sum(dim=1), torch.ones(1), atol=1e-6)
 
 
+def test_prediction_budget_closure_keeps_strongest_frontier_under_cap():
+    tii_ranking = torch.tensor([[0, 1, 2, 3, 4, 5]])
+    full_adapter_logits = torch.full((1, 6, 6), -10.0)
+    full_adapter_logits[0, 0, 2] = 8.0
+    full_adapter_logits[0, 1, 3] = 7.0
+    full_adapter_logits[0, 2, 4] = 8.0
+    full_adapter_logits[0, 3, 5] = 9.0
+    full_adapter_logits[0, 4, 4] = 9.0
+    full_adapter_logits[0, 5, 5] = 10.0
+    rank_logits = torch.full((1, 6, 6), float('-inf'))
+    for rank, evidence in enumerate((2.0, 1.0, 4.0, 3.0, 5.0, 6.0)):
+        rank_logits[0, rank, rank] = evidence
+
+    audit = prediction_budget_closure_diagnostics(
+        tii_ranking=tii_ranking,
+        full_adapter_logits=full_adapter_logits,
+        rank_logits=rank_logits,
+        task_evidence=torch.tensor([[2.0, 1.0, 4.0, 3.0, 5.0, 6.0]]),
+        winner_tasks=torch.tensor([5]),
+        full_predictions=torch.tensor([5]),
+        tii_logits=torch.tensor([[6.0, 5.0, 4.0, 3.0, 2.0, 1.0]]),
+        class_mask=[[0], [1], [2], [3], [4], [5]],
+        initial_count=2,
+        top_classes=1,
+        max_candidates=5,
+    )
+
+    output = audit['prediction_budget_closure_output_logits']
+    assert audit['prediction_budget_closure_winner_recall'].tolist() == [True]
+    assert audit['prediction_budget_closure_exact_agreement'].tolist() == [True]
+    assert audit['prediction_budget_closure_lora_counts'].tolist() == [5.0]
+    assert audit['prediction_budget_closure_forward_calls'].tolist() == [3.0]
+    assert audit['prediction_budget_closure_budget_hit'].tolist() == [True]
+    assert audit['prediction_budget_closure_output_tasks'].tolist() == [5]
+    assert output.argmax(dim=1).tolist() == [5]
+    assert torch.isfinite(output).all()
+    assert torch.allclose(output.exp().sum(dim=1), torch.ones(1), atol=1e-6)
+
 def test_prediction_proposal_is_allowed_by_strict_exemplar_free_protocol():
     validate_exemplar_free_protocol(SimpleNamespace(
         strict_exemplar_free=True,
@@ -254,6 +293,7 @@ def test_prediction_proposal_is_allowed_by_strict_exemplar_free_protocol():
         progressive_prediction_closure_audit=True,
         progressive_prediction_closure_tii_tail_audit=True,
         progressive_prediction_beam_closure_audit=True,
+        progressive_prediction_budget_closure_audit=True,
         prediction_closure_rematching=True,
         prediction_proposal_rematching=True,
         prediction_proposal_cross_adapter_audit=True,

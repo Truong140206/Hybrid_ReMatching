@@ -459,9 +459,10 @@ Current best van la operational closure + TII tail: 5.5593 LoRA/sample,
 reproduction cua current best; neu can nghien cuu budget <5, phai dung development
 seed/validation protocol rieng thay vi tiep tuc toi uu tren seed 42.
 
-## 23. Independent-seed reproduction seed 43
+## 23. Seed-43 reference pipeline (reclassified before results)
 
-Da them pipeline mot lenh cho current-best tren seed doc lap. No tu train cac
+Da them pipeline mot lenh cho current-best. Theo yeu cau tiep tuc giam LoRA,
+seed 43 duoc reclassify thanh development truoc khi xem ket qua. Pipeline tu train cac
 TII/rank-8 checkpoint con thieu, chay conventional, audit closure-tail, va chi
 chay operational khi audit PASS. Cau hinh khoa y het seed 42; khong cho chay
 seed 42 va khong overwrite artifact cu.
@@ -481,5 +482,30 @@ bash training_scripts/reproduce_imagenet_r_closure_seed_4090.sh run 43
 ~~~
 
 Khong chay song song voi job GPU khac. Gui lai stage cuoi cung, hai dong metric
-conventional/operational va INDEPENDENT_SEED_CLOSURE_GATE. Neu dung o audit,
+conventional/operational va SEED_CLOSURE_REFERENCE_GATE. Neu dung o audit,
 gui dong task10 va CLOSURE_TII_TAIL_ALL_METRIC_GATE; khong doi tham so.
+
+## 24. Frontier-priority hard-cap 5 development audit
+
+Muc tieu giam LoRA van tiep tuc, nhung khong dung seed 42 nua. Seed 43 la
+development; seed 44/45 duoc giu lam holdout. Gia thuyet moi: bat dau TII top-2;
+moi adapter moi evaluate de xuat dung mot strongest unseen task trong raw top-5.
+Tat ca successor cung wave duoc xep theo raw class evidence, gop trung, va moi
+sample bi hard cap tong cong 5 task. Sau cung van dung top-1-safe TII tail.
+
+Khac beam-2, moi frontier adapter deu co quyen de xuat, nen khong bo mat nhanh
+non-leader. Khac proposal-5, task moi evaluate co the tiep tuc mo successor o
+wave sau. Khong confidence threshold, learned gate, calibration, old sample,
+stored feature hay label. Cau hinh duy nhat: i2/c5/cap5, prior 0.3,
+temperature 1.0.
+
+Gate development khoa truoc: ca sau metric hon conventional seed 43;
+winner/exact >=99.5%; LoRA <=5; calls <=4. Lenh sau khi seed-43 baseline,
+TII va conventional log da san sang:
+
+~~~bash
+SEED=43 bash training_scripts/eval_imagenet_r_frontier_cap5_closure_audit_4090.sh \
+  ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed43
+~~~
+
+Gui dong task10, bang comparison, FRONTIER_CAP5_ALL_METRIC_GATE va wall time.
