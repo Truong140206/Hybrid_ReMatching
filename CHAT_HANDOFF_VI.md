@@ -603,3 +603,19 @@ python3 training_scripts/compare_imagenet_r_taskwise.py \
 
 Gui file markdown hoac it nhat: aggregate old-task, stagewise diagnosis, largest
 stage-task regressions va largest final old-task regressions.
+## 29. Da co taskwise seed 43; dung routing sweep
+
+Consensus co final Acc@1 cao hon conventional tren ca task 1-9, trung binh
++0.9116. Nhung initial gain +1.5503 va peak gain +1.4219 bi co con +0.9116 o
+final, nen Forgetting delta +0.5103 va Backward delta -0.6387. Task 6-8 lam mat
+gain nhieu nhat; loss regression muon tap trung task 1-2. Vi full closure
+5.5277 LoRA va consensus 3.0529 LoRA cho retention delta gan nhu nhau, van de
+khong phai candidate coverage/fidelity.
+
+Khong chay them cap, threshold, majority hay consensus variant tren seed 43.
+Nhanh inference-only hien tai da dat muc LoRA rat thap va final accuracy tot,
+nhung khong the PASS all-six bang routing-only. Buoc nghien cuu tiep theo can
+mot co che stage-consistent/training-side de giu initial/peak gain cua task 6-8
+va calibration loss task 1-2. Truoc khi viet/chay GPU, kiem tra cac nhanh
+training/calibration cu de khong lap lai strict task-mass fusion, conditional
+fusion, CRM confidence fusion hay CFS calibration pilot.

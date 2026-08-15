@@ -3460,3 +3460,24 @@ Truoc experiment GPU tiep theo, dung parser taskwise co san de so conventional,
 consensus va full closure theo tung stage/task, Acc@1/Acc@5/Loss. Diagnostic
 khong dung GPU, khong thay model va se xac dinh regression tap trung o task cu
 nao hay xuat hien ngay tu initial accuracy.
+## 2026-08-16 - Chan doan taskwise seed 43: loi the ban dau bi co lai
+
+Consensus-cap5 co final Acc@1 cao hon conventional tren ca 9 task cu; trung
+binh final tang +0.9116. Tuy nhien initial tang +1.5503 va peak tang +1.4219,
+nen muc tang final khong giu duoc het. Vi forgetting va backward duoc tinh tu
+peak/initial den final, ket qua la Forgetting delta +0.5103 va Backward delta
+-0.6387 du cho final accuracy tuyet doi cua moi old task deu cao hon baseline.
+
+Muc co loi the noi bat nam o task 6, 7, 8: forgetting delta lan luot +1.9714,
++1.0773, +1.5730. Task 1 va 2 lai co forgetting tot hon baseline, nhung loss
+regression cuoi pipeline tap trung vao hai task nay (task 1 stage 8-10 khoang
++0.15; task 2 stage 8-9 khoang +0.12). Stage 2 la stage duy nhat Acc@1 tong
+the giam (-0.3795); tu stage 3 den 10 Acc@1 tong the deu cao hon baseline.
+
+Ket luan: day khong con la loi candidate coverage hay closure fidelity. Full
+closure 5.5277 LoRA va consensus 3.0529 LoRA co retention delta gan nhau, trong
+khi consensus van cai thien final Acc@1 tren moi old task. Khong tiep tuc sweep
+cap/threshold/certificate tren seed 43. De PASS all-six tren nhieu seed, nhanh
+tiep theo phai tang tinh on dinh theo stage (giu lai gain ban dau/peak, dac biet
+task 6-8) va sua calibration loss muon o task 1-2; day la bai toan training hay
+stage-consistent scoring, khong phai chi giam them so adapter luc inference.
