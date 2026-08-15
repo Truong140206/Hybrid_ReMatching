@@ -14,7 +14,10 @@ from engines.prediction_proposal_rematching import (
     prediction_proposal_adapter_rematching,
     task_mass_preserving_candidate_fusion,
 )
-from engines.progressive_oracle_audit import prediction_proposal_diagnostics
+from engines.progressive_oracle_audit import (
+    prediction_closure_diagnostics,
+    prediction_proposal_diagnostics,
+)
 
 
 def _audit(initial_logits):
@@ -70,11 +73,110 @@ def test_prediction_proposal_falls_back_to_tii_when_no_new_task_is_predicted():
     assert audit['prediction_proposal_new_winner'].tolist() == [False]
 
 
+def _closure_audit(full_adapter_logits, rank_logits, task_evidence,
+                   winner_task, full_prediction):
+    return prediction_closure_diagnostics(
+        tii_ranking=torch.tensor([[0, 1, 2, 3]]),
+        full_adapter_logits=full_adapter_logits,
+        rank_logits=rank_logits,
+        task_evidence=task_evidence,
+        winner_tasks=torch.tensor([winner_task]),
+        full_predictions=torch.tensor([full_prediction]),
+        class_mask=[[0], [1], [2], [3]],
+        initial_count=2,
+        top_classes=1,
+    )
+
+
+def test_prediction_closure_expands_until_prediction_fixed_point():
+    full_adapter_logits = torch.full((1, 4, 4), -10.0)
+    full_adapter_logits[0, 0, 2] = 9.0
+    full_adapter_logits[0, 1, 1] = 8.0
+    full_adapter_logits[0, 2, 3] = 9.0
+    full_adapter_logits[0, 3, 3] = 10.0
+    rank_logits = torch.full((1, 4, 4), float('-inf'))
+    rank_logits[0, 0, 0] = 2.0
+    rank_logits[0, 1, 1] = 1.0
+    rank_logits[0, 2, 2] = 3.0
+    rank_logits[0, 3, 3] = 5.0
+
+    audit = _closure_audit(
+        full_adapter_logits, rank_logits,
+        task_evidence=torch.tensor([[2.0, 1.0, 3.0, 5.0]]),
+        winner_task=3, full_prediction=3)
+
+    assert audit['prediction_closure_winner_recall'].tolist() == [True]
+    assert audit['prediction_closure_exact_agreement'].tolist() == [True]
+    assert audit['prediction_closure_top5_coverage'].tolist() == [True]
+    assert audit['prediction_closure_lora_counts'].tolist() == [4.0]
+    assert audit['prediction_closure_forward_calls'].tolist() == [3.0]
+    assert audit['prediction_closure_full_scan'].tolist() == [True]
+
+
+def test_prediction_closure_stops_without_new_task_or_threshold():
+    full_adapter_logits = torch.full((1, 4, 4), -10.0)
+    full_adapter_logits[0, 0, 0] = 9.0
+    full_adapter_logits[0, 1, 1] = 8.0
+    rank_logits = torch.full((1, 4, 4), float('-inf'))
+    rank_logits[0, 0, 0] = 5.0
+    rank_logits[0, 1, 1] = 4.0
+    rank_logits[0, 2, 2] = 3.0
+    rank_logits[0, 3, 3] = 2.0
+
+    audit = _closure_audit(
+        full_adapter_logits, rank_logits,
+        task_evidence=torch.tensor([[5.0, 4.0, 3.0, 2.0]]),
+        winner_task=0, full_prediction=0)
+
+    assert audit['prediction_closure_winner_recall'].tolist() == [True]
+    assert audit['prediction_closure_exact_agreement'].tolist() == [True]
+    assert audit['prediction_closure_top5_coverage'].tolist() == [False]
+    assert audit['prediction_closure_lora_counts'].tolist() == [2.0]
+    assert audit['prediction_closure_forward_calls'].tolist() == [1.0]
+    assert audit['prediction_closure_full_scan'].tolist() == [False]
+
+def test_prediction_closure_tracks_rank_and_task_masks_per_sample():
+    tii_ranking = torch.tensor([[2, 0, 1], [1, 2, 0]])
+    full_adapter_logits = torch.full((2, 3, 3), -10.0)
+    full_adapter_logits[0, 0, 1] = 9.0
+    full_adapter_logits[0, 1, 0] = 8.0
+    full_adapter_logits[0, 2, 1] = 10.0
+    full_adapter_logits[1, 0, 1] = 9.0
+    full_adapter_logits[1, 1, 2] = 8.0
+    full_adapter_logits[1, 2, 0] = 7.0
+    rank_logits = torch.full((2, 3, 3), float('-inf'))
+    rank_logits[0, 0, 2] = 2.0
+    rank_logits[0, 1, 0] = 1.0
+    rank_logits[0, 2, 1] = 5.0
+    rank_logits[1, 0, 1] = 2.0
+    rank_logits[1, 1, 2] = 4.0
+    rank_logits[1, 2, 0] = 1.0
+
+    audit = prediction_closure_diagnostics(
+        tii_ranking=tii_ranking,
+        full_adapter_logits=full_adapter_logits,
+        rank_logits=rank_logits,
+        task_evidence=torch.tensor([[2.0, 1.0, 5.0],
+                                    [2.0, 4.0, 1.0]]),
+        winner_tasks=torch.tensor([1, 2]),
+        full_predictions=torch.tensor([1, 2]),
+        class_mask=[[0], [1], [2]],
+        initial_count=2,
+        top_classes=1,
+    )
+
+    assert audit['prediction_closure_winner_recall'].tolist() == [True, True]
+    assert audit['prediction_closure_exact_agreement'].tolist() == [True, True]
+    assert audit['prediction_closure_top5_coverage'].tolist() == [True, False]
+    assert audit['prediction_closure_lora_counts'].tolist() == [3.0, 2.0]
+    assert audit['prediction_closure_forward_calls'].tolist() == [2.0, 1.0]
+
 def test_prediction_proposal_is_allowed_by_strict_exemplar_free_protocol():
     validate_exemplar_free_protocol(SimpleNamespace(
         strict_exemplar_free=True,
         progressive_oracle_audit=True,
         progressive_prediction_proposal_audit=True,
+        progressive_prediction_closure_audit=True,
         prediction_proposal_rematching=True,
         prediction_proposal_cross_adapter_audit=True,
         prediction_proposal_tii_completion=True,

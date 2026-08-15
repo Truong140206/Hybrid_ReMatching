@@ -3193,3 +3193,36 @@ Dong hoan toan nhanh CRM GEN fusion va phan chan doan lien quan. Khong chay them
 temperature, prior, gamma, top-M, hard/soft selector hay task-specific fix. Giu
 code va ket qua nhu negative ablation. Raw proposal budget-5 va budget-6 van la
 cac Pareto reference strict; khong co experiment CRM nao dang cho.
+## 2026-08-16 - Preregister prediction-closure rematching
+
+Sau khi dong CRM fusion, huong moi tap trung vao loi ich da duoc oracle audit xac
+nhan: top-5 class prediction cua cac LoRA ban dau thuong de xuat dung task ma
+exhaustive se chon. Thay vi budget co dinh 2->2->2, prediction-closure tao tap
+ung vien theo diem co dinh:
+
+1. Khoi tao bang TII top-2.
+2. Chay mot wave vectorized cho cac LoRA moi duoc them.
+3. Lay top-5 class prediction cua tung LoRA vua chay, anh xa class ve task, va
+   them tat ca task chua co vao tap ung vien.
+4. Lap lai den khi khong con task moi duoc de xuat.
+
+Day la routing threshold-free, khong learned gate, khong old image, khong
+per-example old feature, khong historical calibration va khong dung label de
+routing. Audit exhaustive chi duoc dung de do agreement/winner recall; operational
+router chua duoc trien khai.
+
+Mot cau hinh duy nhat duoc khoa truoc tren strict rank-8 seed 42:
+initial_count=2, top_classes=5, TII prior 0.3, logit temperature 1.0.
+Khong sweep top-k, threshold hoac budget sau khi xem ket qua.
+
+Gate chap nhan dong thoi:
+
+- ClosureWinnerRecall >= 99.5%
+- ClosureExactAgreement >= 99.5%
+- ClosureTop5Coverage >= 99.0%
+- ClosureLoRA/sample <= 7
+- ClosureCalls/sample <= 3
+- ClosureFullScanRate <= 20%
+
+Neu mot dieu kien fail, dong nhanh prediction-closure. Script audit:
+training_scripts/eval_imagenet_r_prediction_closure_audit_4090.sh.

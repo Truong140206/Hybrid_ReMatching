@@ -339,3 +339,27 @@ Quyết định cuối: giữ CRM fusion như negative ablation và không chạ
 audit, temperature, prior, gamma, top-M, selector hay task-specific fix nào.
 Không có thí nghiệm CRM đang chờ. Raw proposal budget-5 và budget-6 là các
 Pareto reference strict hiện tại.
+## 17. Huong dang cho: prediction-closure audit
+
+CRM da dong hoan toan. Huong moi da preregister nhung chua co ket qua GPU:
+prediction-closure bat dau TII top-2, sau moi wave them tat ca task so huu top-5
+class predictions cua cac LoRA moi, va dung khi tap ung vien khong doi. No khac
+iterative 2->2->2 da fail o cho khong co budget/wave co dinh va dung bang dieu
+kien diem co dinh roi rac.
+
+Cau hinh khoa: strict rank-8 seed 42, initial 2, top-class 5, prior 0.3,
+temperature 1.0. Gate: winner recall va exact agreement >=99.5%, top-5 coverage
+>=99%, LoRA/sample <=7, calls/sample <=3, full-scan rate <=20%. Khong sweep neu
+fail. Chua trien khai operational router truoc khi gate audit pass.
+
+Lenh can chay tren RTX 4090 sau khi pull:
+
+~~~bash
+cd ~/Documents/truongnguyen/Hybrid_ReMatching
+git pull --ff-only
+bash training_scripts/eval_imagenet_r_prediction_closure_audit_4090.sh \
+  ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed42
+~~~
+
+Khong chay song song voi job GPU khac. Gui lai dong task10,
+PREDICTION_CLOSURE_GATE va wall time.
