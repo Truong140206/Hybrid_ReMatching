@@ -2877,3 +2877,69 @@ Cấu hình TII top-2 + 4 prediction proposals đạt `Acc@task=81.0030`, `Acc@1
 So với exhaustive strict, budget-6 chỉ thấp hơn `0.1152` Acc@task, `0.1395` Acc@1 và `0.8469` Acc@5; giảm 40% số LoRA, giảm wall time từ 409 xuống 333 giây (`18.6%`) và vẫn giữ 2 vectorized calls. Đây là Pareto point strict tốt nhất hiện tại, nhưng không được báo là all-metric improvement.
 
 Không tăng tiếp fixed budget dựa trên test. Bước bắt buộc là taskwise diagnosis để xác định chênh Backward `-0.0469` đến từ initial accuracy tăng mạnh hay final old-task accuracy giảm ở task cụ thể. Chỉ thiết kế thay đổi mới nếu chẩn đoán chỉ ra lỗi final retention/routing có cấu trúc.
+
+## 2026-08-15 - Chan doan budget-6 va preregister iterative proposal 2->2->2
+
+### Ket qua raw prediction-proposal budget 6
+
+Cau hinh da chay: TII top-2 + 4 task proposal duoc sinh mot lan tu hai
+LoRA dau, raw logits, TII prior weight 0.3, temperature 1.0, TII completion.
+
+- Acc@task: 81.0030
+- Acc@1: 75.2882
+- Acc@5: 88.0714
+- Loss: 1.1622
+- Forgetting: 3.1699
+- Backward: -2.9588
+- LoRA/sample: 6
+- ForwardCalls/sample: 2
+- Wall time: 333 giay
+
+So voi baseline strict seed 42, nam chi so Acc@task, Acc@1, Acc@5, Loss va
+Forgetting deu tot hon. Backward kem 0.0469 diem nen all-metric gate van FAIL.
+
+### Chan doan taskwise
+
+Trung binh tren task cu 1-9:
+
+- Initial Acc@1 tang 1.1688 diem.
+- Final Acc@1 tang 1.1219 diem.
+- Forgetting giam 0.1102 diem.
+- Backward giam 0.0469 diem vi muc initial tang nhieu hon muc final, khong phai
+  vi final accuracy trung binh cua task cu giam.
+
+Hai loi cu the con lai:
+
+- Task 6: final Acc@1 giam 0.8961 diem; forgetting tang 1.9713 diem.
+- Task 7: final Acc@1 giam 0.3591 diem; forgetting tang 0.5386 diem.
+
+### Thi nghiem duoc khoa truoc: iterative prediction proposal
+
+Chi chay mot cau hinh:
+
+1. Danh gia TII top-2 LoRA.
+2. Tu du doan cua hai LoRA nay, de xuat va danh gia 2 LoRA moi.
+3. Tu toan bo bon LoRA da danh gia, de xuat va danh gia 2 LoRA cuoi.
+4. Gop raw logits nhu cau hinh budget-6 tot nhat.
+
+Thong so bi khoa:
+
+- initial_count=2
+- proposal_count=4
+- first_wave_count=2
+- top_classes=5
+- progressive_tii_prior_weight=0.3
+- progressive_logit_temperature=1.0
+- TII completion bat
+- task-mass/conditional fusion tat
+- khong hoc gate, khong calibration, khong dung nhan test
+- toi da 6 LoRA/sample va 3 vectorized forward calls/sample
+
+Muc dich: hai proposal cuoi duoc cap nhat bang thong tin cua cac LoRA vong mot,
+thay vi ca bon proposal deu bi quyet dinh chi tu hai LoRA dau. Day la sua doi
+routing tai inference, khong luu anh cu, khong luu feature tung mau va van dung
+checkpoint strict exemplar-free.
+
+Tieu chi ket luan duoc giu nguyen: Acc@task, Acc@1, Acc@5 va Backward khong thap
+hon baseline; Loss va Forgetting khong cao hon baseline. Khong quet them cach
+chia wave hoac threshold dua tren test neu cau hinh nay that bai.

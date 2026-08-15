@@ -290,6 +290,8 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--prediction_proposal_initial_count', default=2, type=int)
     subparsers.add_argument('--prediction_proposal_count', default=2, type=int)
     subparsers.add_argument('--prediction_proposal_top_classes', default=5, type=int)
+    subparsers.add_argument('--prediction_proposal_iterative', action='store_true', help='propose later task candidates from all LoRAs evaluated in earlier fixed-budget waves')
+    subparsers.add_argument('--prediction_proposal_first_wave_count', default=2, type=int)
     subparsers.add_argument('--calibrated_progressive_rematching', action='store_true', help='train conservative 2-to-4-to-all halting gates on train images before evaluation')
     subparsers.add_argument('--progressive_gate_samples_per_class', default=12, type=int)
     subparsers.add_argument('--progressive_gate_validation_ratio', default=0.25, type=float)

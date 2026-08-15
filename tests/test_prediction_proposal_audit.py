@@ -143,6 +143,63 @@ def test_operational_prediction_proposal_runs_only_four_loras_in_two_calls():
     assert model.batch_sizes == [2, 2]
 
 
+class IterativeProposalTaskModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.batch_sizes = []
+
+    def forward(self, inputs, task_id):
+        self.batch_sizes.append(inputs.shape[0])
+        logits = torch.zeros((inputs.shape[0], 12), device=inputs.device)
+        for row, selected_task in enumerate(task_id.tolist()):
+            if selected_task == 0:
+                logits[row, 4] = 8.0
+            elif selected_task == 1:
+                logits[row, 6] = 7.0
+            elif selected_task == 2:
+                logits[row, 8] = 9.0
+            elif selected_task == 3:
+                logits[row, 10] = 8.5
+            elif selected_task == 4:
+                logits[row, 8] = 6.0
+            else:
+                logits[row, 10] = 10.0
+        return {'logits': logits}
+
+
+def test_iterative_prediction_proposal_discovers_second_wave_tasks():
+    model = IterativeProposalTaskModel()
+    args = SimpleNamespace(
+        progressive_logit_temperature=1.0,
+        progressive_tii_prior_weight=0.0,
+        progressive_excluded_logit_margin=20.0,
+        prediction_proposal_initial_count=2,
+        prediction_proposal_count=4,
+        prediction_proposal_top_classes=1,
+        prediction_proposal_iterative=True,
+        prediction_proposal_first_wave_count=2,
+    )
+
+    logits, routed, diagnostics = prediction_proposal_adapter_rematching(
+        model=model,
+        inputs=torch.tensor([[1.0]]),
+        tii_logits=torch.arange(12, 0, -1).float().unsqueeze(0),
+        class_mask=[
+            [0, 1], [2, 3], [4, 5],
+            [6, 7], [8, 9], [10, 11],
+        ],
+        seen_task_count=6,
+        args=args,
+    )
+
+    assert diagnostics['candidate_tasks'].tolist() == [[0, 1, 2, 3, 4, 5]]
+    assert diagnostics['lora_counts'].tolist() == [6.0]
+    assert diagnostics['forward_calls'].tolist() == [3.0]
+    assert model.batch_sizes == [2, 2, 2]
+    assert routed.tolist() == [5]
+    assert logits.argmax(dim=1).tolist() == [10]
+
+
 def test_tii_completion_preserves_top1_and_assigns_finite_outside_mass():
     candidate_logits = torch.tensor([[
         5.0, 4.0, 3.0, 2.0, float('-inf'), float('-inf'),

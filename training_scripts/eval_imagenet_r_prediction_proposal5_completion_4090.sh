@@ -13,13 +13,23 @@ AUDIT_INITIAL_BRANCH="${AUDIT_INITIAL_BRANCH:-0}"
 AUDIT_CROSS_ADAPTER="${AUDIT_CROSS_ADAPTER:-0}"
 TASK_MASS_FUSION="${TASK_MASS_FUSION:-0}"
 CONDITIONAL_FUSION="${CONDITIONAL_FUSION:-0}"
+ITERATIVE_PROPOSAL="${ITERATIVE_PROPOSAL:-0}"
+FIRST_WAVE_COUNT="${FIRST_WAVE_COUNT:-2}"
 PROPOSAL_COUNT="${PROPOSAL_COUNT:-3}"
 INITIAL_COUNT=2
 if ! [[ "${PROPOSAL_COUNT}" =~ ^[0-8]$ ]]; then
   echo "PROPOSAL_COUNT must be an integer from 0 to 8" >&2
   exit 64
 fi
+if ! [[ "${FIRST_WAVE_COUNT}" =~ ^[1-8]$ ]]; then
+  echo "FIRST_WAVE_COUNT must be an integer from 1 to 8" >&2
+  exit 64
+fi
 EXPECTED_LORA_BUDGET=$((INITIAL_COUNT + PROPOSAL_COUNT))
+EXPECTED_FORWARD_CALLS=2
+if [[ "${ITERATIVE_PROPOSAL}" == "1" && "${PROPOSAL_COUNT}" -gt "${FIRST_WAVE_COUNT}" ]]; then
+  EXPECTED_FORWARD_CALLS=3
+fi
 
 if [[ "${TASK_MASS_FUSION}" == "1" && "${CONDITIONAL_FUSION}" == "1" ]]; then
   echo "TASK_MASS_FUSION and CONDITIONAL_FUSION are mutually exclusive" >&2
@@ -143,6 +153,13 @@ if [[ "${CONDITIONAL_FUSION}" == "1" ]]; then
   AUDIT_SUFFIX="${AUDIT_SUFFIX}_conditional"
   AUDIT_ARGS+=(--prediction_proposal_conditional_fusion)
 fi
+if [[ "${ITERATIVE_PROPOSAL}" == "1" ]]; then
+  AUDIT_SUFFIX="${AUDIT_SUFFIX}_iterative_w${FIRST_WAVE_COUNT}"
+  AUDIT_ARGS+=(
+    --prediction_proposal_iterative
+    --prediction_proposal_first_wave_count "${FIRST_WAVE_COUNT}"
+  )
+fi
 LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_prediction_proposal_i${INITIAL_COUNT}_p${PROPOSAL_COUNT}_c5_tiicomplete_strict${AUDIT_SUFFIX}.log"
 if [[ -s "${LOG_PATH}" ]]; then
   echo "Refusing to overwrite existing evaluation log: ${LOG_PATH}" >&2
@@ -156,12 +173,15 @@ fi
 
 echo "Operational prediction-induced task proposal rematching"
 echo "TII top-${INITIAL_COUNT} + ${PROPOSAL_COUNT} post-LoRA task proposals with TII probability completion"
+if [[ "${ITERATIVE_PROPOSAL}" == "1" ]]; then
+  echo "Proposal schedule: ${INITIAL_COUNT} initial -> ${FIRST_WAVE_COUNT} first-wave -> remaining second-wave LoRAs"
+fi
 if [[ "${TASK_MASS_FUSION}" == "1" ]]; then
   echo "Fusion: P_TII(task|x) * P_LoRA(class|task,x); no learned calibration"
 elif [[ "${CONDITIONAL_FUSION}" == "1" ]]; then
   echo "Fusion: conditional LoRA log-probability + fixed standardized TII prior"
 fi
-echo "Fixed deployment budget: at most ${EXPECTED_LORA_BUDGET} LoRAs/sample in 2 vectorized model calls"
+echo "Fixed deployment budget: at most ${EXPECTED_LORA_BUDGET} LoRAs/sample in ${EXPECTED_FORWARD_CALLS} vectorized model calls"
 echo "Run=${RUN_DIR}; seed=${SEED}; rank=${LORA_RANK}"
 echo "Protocol source log: ${TRAIN_LOG}"
 echo "Baseline reference: ${BASELINE_LOG}"
@@ -220,7 +240,7 @@ if [[ "${AUDIT_CROSS_ADAPTER}" == "1" ]]; then
   grep "CrossBordaAudit" "${LOG_PATH}" | tail -n 10 | nl -w1 -s': '
 fi
 
-"${PYTHON_BIN}" - "${LOG_PATH}" "${BASELINE_LOG}" "${EXHAUSTIVE_LOG}" "${EXPECTED_LORA_BUDGET}" <<'PY'
+"${PYTHON_BIN}" - "${LOG_PATH}" "${BASELINE_LOG}" "${EXHAUSTIVE_LOG}" "${EXPECTED_LORA_BUDGET}" "${EXPECTED_FORWARD_CALLS}" <<'PY'
 import re
 import sys
 
@@ -267,10 +287,13 @@ for name in METRICS:
     print(f'  {name} delta={delta:+.4f}')
 
 expected_lora_budget = float(sys.argv[4])
+expected_forward_calls = float(sys.argv[5])
 cost_ok = metric(candidate, 'LoRA/sample') <= expected_lora_budget + 0.0001
-call_ok = metric(candidate, 'ForwardCalls/sample') <= 2.0001
+call_ok = (
+    metric(candidate, 'ForwardCalls/sample')
+    <= expected_forward_calls + 0.0001)
 print(f'  LoRA/sample <= {expected_lora_budget:g}: {"PASS" if cost_ok else "FAIL"}')
-print(f'  ForwardCalls/sample <= 2: {"PASS" if call_ok else "FAIL"}')
+print(f'  ForwardCalls/sample <= {expected_forward_calls:g}: {"PASS" if call_ok else "FAIL"}')
 print('BASELINE_ALL_METRIC_GATE=' + (
     'PASS' if all(checks.values()) else 'FAIL'))
 print('OPERATIONAL_PROPOSAL_EFFICIENCY_GATE=' + (

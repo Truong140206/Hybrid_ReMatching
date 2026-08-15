@@ -19,6 +19,71 @@ def _evaluate_candidate_tasks(model, inputs, candidate_tasks):
     )['logits'].reshape(batch_size, candidate_count, -1)
 
 
+def _propose_unseen_tasks(
+        tii_ranking, evaluated_tasks, evaluated_logits, class_mask,
+        proposal_count, top_classes):
+    """Propose unseen tasks from every adapter evaluated so far."""
+    batch_size, seen_task_count = tii_ranking.shape
+    device = tii_ranking.device
+    proposal_count = min(
+        max(0, int(proposal_count)),
+        seen_task_count - evaluated_tasks.shape[1])
+    if proposal_count == 0:
+        return evaluated_tasks.new_empty((batch_size, 0))
+
+    seen_classes = [
+        int(class_id)
+        for task_index in range(seen_task_count)
+        for class_id in class_mask[task_index]
+    ]
+    seen_class_index = torch.as_tensor(
+        seen_classes, dtype=torch.long, device=device)
+    class_to_task = torch.full(
+        (evaluated_logits.shape[-1],), -1,
+        dtype=torch.long, device=device)
+    for task_index in range(seen_task_count):
+        class_index = torch.as_tensor(
+            class_mask[task_index], dtype=torch.long, device=device)
+        class_to_task[class_index] = task_index
+
+    proposal_scores = torch.full(
+        (batch_size, seen_task_count), float('-inf'),
+        dtype=evaluated_logits.dtype, device=device)
+    top_classes = min(max(1, int(top_classes)), len(seen_classes))
+    for adapter_slot in range(evaluated_tasks.shape[1]):
+        seen_logits = evaluated_logits[:, adapter_slot].index_select(
+            1, seen_class_index)
+        top_values, top_positions = torch.topk(
+            seen_logits, k=top_classes, dim=1)
+        proposed_tasks = class_to_task[seen_class_index[top_positions]]
+        proposal_scores.scatter_reduce_(
+            1, proposed_tasks, top_values,
+            reduce='amax', include_self=True)
+
+    candidate_mask = torch.zeros(
+        (batch_size, seen_task_count), dtype=torch.bool, device=device)
+    candidate_mask.scatter_(1, evaluated_tasks, True)
+    proposal_scores.masked_fill_(candidate_mask, float('-inf'))
+    selected_parts = []
+    for _ in range(proposal_count):
+        proposed_task = proposal_scores.argmax(dim=1)
+        proposed_score = proposal_scores.gather(
+            1, proposed_task.unsqueeze(1)).squeeze(1)
+        has_proposal = torch.isfinite(proposed_score)
+
+        fallback_mask = candidate_mask.gather(1, tii_ranking)
+        fallback_rank = (~fallback_mask).float().argmax(dim=1)
+        fallback_task = tii_ranking.gather(
+            1, fallback_rank.unsqueeze(1)).squeeze(1)
+        selected_task = torch.where(
+            has_proposal, proposed_task, fallback_task)
+        selected_parts.append(selected_task.unsqueeze(1))
+        candidate_mask.scatter_(1, selected_task.unsqueeze(1), True)
+        proposal_scores.scatter_(
+            1, selected_task.unsqueeze(1), float('-inf'))
+    return torch.cat(selected_parts, dim=1)
+
+
 def initial_branch_confidence_dominance(initial_logits, proposal_logits):
     """Select initial output only when it Pareto-dominates proposal confidence."""
     initial_probabilities = torch.softmax(initial_logits, dim=1)
@@ -245,24 +310,55 @@ def prediction_proposal_adapter_rematching(
     initial_tasks = tii_ranking[:, :initial_count]
     initial_logits = _evaluate_candidate_tasks(
         model, inputs, initial_tasks)
-    candidate_tasks, _ = prediction_proposal_candidates(
-        tii_ranking,
-        initial_logits,
-        class_mask,
-        initial_count=initial_count,
-        proposal_count=proposal_count,
-        top_classes=top_classes,
-    )
-
+    iterative_proposal = bool(getattr(
+        args, 'prediction_proposal_iterative', False))
     candidate_logits = initial_logits
+    candidate_tasks = initial_tasks
     forward_calls = 1
     if proposal_count > 0:
-        proposal_tasks = candidate_tasks[:, initial_count:]
-        proposal_logits = _evaluate_candidate_tasks(
-            model, inputs, proposal_tasks)
-        candidate_logits = torch.cat(
-            [candidate_logits, proposal_logits], dim=1)
-        forward_calls += 1
+        if iterative_proposal:
+            first_wave_count = min(
+                max(1, int(getattr(
+                    args, 'prediction_proposal_first_wave_count', 2))),
+                proposal_count)
+            first_wave_tasks = _propose_unseen_tasks(
+                tii_ranking, candidate_tasks, candidate_logits, class_mask,
+                first_wave_count, top_classes)
+            first_wave_logits = _evaluate_candidate_tasks(
+                model, inputs, first_wave_tasks)
+            candidate_tasks = torch.cat(
+                [candidate_tasks, first_wave_tasks], dim=1)
+            candidate_logits = torch.cat(
+                [candidate_logits, first_wave_logits], dim=1)
+            forward_calls += 1
+
+            remaining_count = proposal_count - first_wave_count
+            if remaining_count > 0:
+                later_tasks = _propose_unseen_tasks(
+                    tii_ranking, candidate_tasks, candidate_logits,
+                    class_mask, remaining_count, top_classes)
+                later_logits = _evaluate_candidate_tasks(
+                    model, inputs, later_tasks)
+                candidate_tasks = torch.cat(
+                    [candidate_tasks, later_tasks], dim=1)
+                candidate_logits = torch.cat(
+                    [candidate_logits, later_logits], dim=1)
+                forward_calls += 1
+        else:
+            candidate_tasks, _ = prediction_proposal_candidates(
+                tii_ranking,
+                initial_logits,
+                class_mask,
+                initial_count=initial_count,
+                proposal_count=proposal_count,
+                top_classes=top_classes,
+            )
+            proposal_tasks = candidate_tasks[:, initial_count:]
+            proposal_logits = _evaluate_candidate_tasks(
+                model, inputs, proposal_tasks)
+            candidate_logits = torch.cat(
+                [candidate_logits, proposal_logits], dim=1)
+            forward_calls += 1
 
     candidate_count = candidate_tasks.shape[1]
     if bool(getattr(args, 'prediction_proposal_task_mass_fusion', False)):
