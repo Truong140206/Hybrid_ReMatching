@@ -3,8 +3,8 @@ set -euo pipefail
 
 MODE="${1:-check}"
 SEED="${2:-${SEED:-43}}"
-if [[ "${MODE}" != "check" && "${MODE}" != "run" ]]; then
-  echo "Usage: $0 [check|run] [independent-seed]" >&2
+if [[ "${MODE}" != "check" && "${MODE}" != "prepare" && "${MODE}" != "run" ]]; then
+  echo "Usage: $0 [check|prepare|run] [seed]" >&2
   exit 64
 fi
 if [[ "${SEED}" == "42" ]]; then
@@ -120,6 +120,11 @@ if [[ ! -s "${CONVENTIONAL_LOG}" ]]; then
     bash training_scripts/eval_imagenet_r_conventional_4090.sh "${RUN_DIR}"
 else
   echo "Stage 3/5: conventional evaluation already complete; skipping."
+fi
+
+if [[ "${MODE}" == "prepare" ]]; then
+  echo "DEVELOPMENT_ASSETS_READY"
+  exit 0
 fi
 
 if [[ ! -s "${AUDIT_LOG}" ]]; then

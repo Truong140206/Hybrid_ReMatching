@@ -3366,7 +3366,8 @@ Neu current-best audit khong dat CLOSURE_TII_TAIL_ALL_METRIC_GATE, pipeline
 ghi SEED_CLOSURE_REFERENCE_GATE=FAIL, dung truoc operational va khong sua
 hyperparameter reference. Neu dat, operational xac nhan lai output/cost; ket qua
 seed 43 chi la development reference, khong phai holdout validation. Script:
-training_scripts/reproduce_imagenet_r_closure_seed_4090.sh.
+training_scripts/reproduce_imagenet_r_closure_seed_4090.sh. Che do prepare dung
+sau conventional eval de cap-5 audit khong phai cho reference closure/operational.
 
 ## 2026-08-16 - Preregister frontier-priority closure cap-5
 

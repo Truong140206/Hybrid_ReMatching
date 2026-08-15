@@ -500,8 +500,14 @@ stored feature hay label. Cau hinh duy nhat: i2/c5/cap5, prior 0.3,
 temperature 1.0.
 
 Gate development khoa truoc: ca sau metric hon conventional seed 43;
-winner/exact >=99.5%; LoRA <=5; calls <=4. Lenh sau khi seed-43 baseline,
-TII va conventional log da san sang:
+winner/exact >=99.5%; LoRA <=5; calls <=4. Dau tien chuan bi seed-43 baseline,
+TII va conventional log, dung truoc cac reference audit khong can thiet:
+
+~~~bash
+bash training_scripts/reproduce_imagenet_r_closure_seed_4090.sh prepare 43
+~~~
+
+Sau khi DEVELOPMENT_ASSETS_READY:
 
 ~~~bash
 SEED=43 bash training_scripts/eval_imagenet_r_frontier_cap5_closure_audit_4090.sh \
