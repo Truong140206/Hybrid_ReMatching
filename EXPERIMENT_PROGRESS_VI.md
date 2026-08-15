@@ -3424,3 +3424,24 @@ conventional seed 43; Loss va Forgetting thap hon; LoRA/sample <5; calls/sample
 <=4. WinnerRecall, ExactAgreement va CertifiedRate chi diagnostic, khong la gate.
 Khong sweep nguong; chi chay certificate 50% da khoa. Neu PASS development moi
 trien khai operational va validate seed 44/45.
+
+## 2026-08-16 - Majority-cap5 FAIL; preregister top-2 consensus
+
+Majority-cap5 seed 43: Acc@task 74.2990, Acc@1 69.3937, Acc@5 82.4446,
+Loss 1.5858, Forgetting 5.0669, Backward -4.9987, winner/exact 85.5085%,
+CertifiedRate 72.0635%, LoRA 2.0097 va calls 1.6259. Efficiency PASS nhung
+ca sau quality metric deu FAIL; MAJORITY_CAP5_ALL_METRIC_GATE=FAIL. Certificate
+50% qua rong va TII probability mass khong duoc calibrate cho stopping; dong
+nhanh, khong sweep nguong probability.
+
+Nhanh development tiep theo khong dung probability threshold. Sau khi evaluate
+TII top-2 adapters, chi certificate top1 task neu: (1) top1 adapter co local task
+evidence >= top2, va (2) raw full-class top-1 prediction cua ca hai adapters deu
+thuoc TII-top1 task. Certified sample dung sau 2 LoRA/1 call; sample bat dong dung
+one-successor cap-5 fallback. Day la dual-endorsement certificate threshold-free,
+label-free, khong them call.
+
+Gate: ca sau quality metric hon conventional seed 43; LoRA/sample <5;
+calls/sample <=4. Winner/exact va CertifiedRate chi diagnostic. Mot cau hinh,
+khong them margin/threshold sau khi doc ket qua. Neu PASS moi operationalize va
+validate seed 44/45.

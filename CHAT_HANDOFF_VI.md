@@ -561,3 +561,23 @@ SEED=43 bash training_scripts/eval_imagenet_r_majority_cap5_closure_audit_4090.s
 
 Gui dong task10, comparison, diagnostic, MAJORITY_CAP5_ALL_METRIC_GATE va wall
 time. Khong sweep nguong majority dua tren ket qua.
+
+## 27. Majority-cap5 FAIL; cho consensus-cap5
+
+Majority-cap5 dat LoRA 2.0097/calls 1.6259 nhung ca sau quality metric deu
+FAIL; certified 72.0635% trong khi winner/exact chi 85.5085%. Dong nhanh va
+khong sweep nguong probability.
+
+Nhanh moi chi dung top-2 consensus: TII-top1 adapter phai thang local evidence,
+va raw top-1 class cua ca hai initial adapters phai cung tro ve TII-top1 task.
+Neu dat thi dung o 2 LoRA; neu khong chay cap-5. Gate van la ca sau metric hon
+conventional, LoRA <5, calls <=4.
+
+~~~bash
+cd ~/Documents/truongnguyen/Hybrid_ReMatching
+git pull --ff-only
+SEED=43 bash training_scripts/eval_imagenet_r_consensus_cap5_closure_audit_4090.sh \
+  ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed43
+~~~
+
+Gui task10, comparison, diagnostic, CONSENSUS_CAP5_ALL_METRIC_GATE va wall time.

@@ -816,6 +816,30 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                         audit[
                             'prediction_majority_closure_forward_calls'
                         ].mean().item(), n=input.shape[0])
+                if bool(getattr(
+                        args, 'progressive_prediction_consensus_closure_audit',
+                        False)):
+                    consensus_percent_metrics = {
+                        'ConsensusClosureWinnerRecall':
+                            'prediction_consensus_closure_winner_recall',
+                        'ConsensusClosureExactAgreement':
+                            'prediction_consensus_closure_exact_agreement',
+                        'ConsensusClosureCertifiedRate':
+                            'prediction_consensus_closure_certified_rate',
+                    }
+                    for metric_name, audit_name in (
+                            consensus_percent_metrics.items()):
+                        metric_logger.meters[metric_name].update(
+                            audit[audit_name].float().mean().mul(100.0).item(),
+                            n=input.shape[0])
+                    metric_logger.meters['ConsensusClosureLoRA/sample'].update(
+                        audit[
+                            'prediction_consensus_closure_lora_counts'
+                        ].mean().item(), n=input.shape[0])
+                    metric_logger.meters['ConsensusClosureCalls/sample'].update(
+                        audit[
+                            'prediction_consensus_closure_forward_calls'
+                        ].mean().item(), n=input.shape[0])
                 continue
 
             if bool(getattr(args, 'progressive_rematching', False)):
@@ -1533,6 +1557,23 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     'MajorityClosureCertifiedRate'],
                 cost=metric_logger.meters['MajorityClosureLoRA/sample'],
                 calls=metric_logger.meters['MajorityClosureCalls/sample']))
+    if bool(getattr(
+            args, 'progressive_prediction_consensus_closure_audit', False)):
+        print(
+            '* PredictionConsensusClosureAudit WinnerRecall '
+            '{recall.global_avg:.3f} ExactAgreement '
+            '{agreement.global_avg:.3f} CertifiedRate '
+            '{certified.global_avg:.3f} LoRA/sample '
+            '{cost.global_avg:.3f} ForwardCalls/sample '
+            '{calls.global_avg:.3f}'
+            .format(
+                recall=metric_logger.meters['ConsensusClosureWinnerRecall'],
+                agreement=metric_logger.meters[
+                    'ConsensusClosureExactAgreement'],
+                certified=metric_logger.meters[
+                    'ConsensusClosureCertifiedRate'],
+                cost=metric_logger.meters['ConsensusClosureLoRA/sample'],
+                calls=metric_logger.meters['ConsensusClosureCalls/sample']))
     if bool(getattr(args, 'prediction_closure_rematching', False)):
         print(
             '* PredictionClosureTail LoRA/sample {cost.global_avg:.3f} '
@@ -1683,7 +1724,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((93, args.num_tasks))
+    stat_matrix = np.zeros((98, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -1776,6 +1817,18 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                 'MajorityClosureLoRA/sample', 0.0)
             stat_matrix[92, i] = test_stats.get(
                 'MajorityClosureCalls/sample', 0.0)
+        if bool(getattr(
+                args, 'progressive_prediction_consensus_closure_audit', False)):
+            stat_matrix[93, i] = test_stats.get(
+                'ConsensusClosureWinnerRecall', 0.0)
+            stat_matrix[94, i] = test_stats.get(
+                'ConsensusClosureExactAgreement', 0.0)
+            stat_matrix[95, i] = test_stats.get(
+                'ConsensusClosureCertifiedRate', 0.0)
+            stat_matrix[96, i] = test_stats.get(
+                'ConsensusClosureLoRA/sample', 0.0)
+            stat_matrix[97, i] = test_stats.get(
+                'ConsensusClosureCalls/sample', 0.0)
         if (bool(getattr(args, 'vectorized_exhaustive_rematching', False))
                 or bool(getattr(args, 'prediction_proposal_rematching', False))
                 or bool(getattr(args, 'prediction_closure_rematching', False))):
@@ -1948,6 +2001,17 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         ).format(
             avg_stat[88], avg_stat[89], avg_stat[90], avg_stat[91],
             avg_stat[92])
+    if bool(getattr(
+            args, 'progressive_prediction_consensus_closure_audit', False)):
+        result_str += (
+            "\tConsensusClosureWinnerRecall: {:.4f}"
+            "\tConsensusClosureExactAgreement: {:.4f}"
+            "\tConsensusClosureCertifiedRate: {:.4f}"
+            "\tConsensusClosureLoRA/sample: {:.4f}"
+            "\tConsensusClosureCalls/sample: {:.4f}"
+        ).format(
+            avg_stat[93], avg_stat[94], avg_stat[95], avg_stat[96],
+            avg_stat[97])
     if (bool(getattr(args, 'vectorized_exhaustive_rematching', False))
             or bool(getattr(args, 'prediction_proposal_rematching', False))
             or bool(getattr(args, 'prediction_closure_rematching', False))):
