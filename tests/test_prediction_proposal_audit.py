@@ -6,6 +6,7 @@ from torch import nn
 from protocols import validate_exemplar_free_protocol
 from engines.prediction_proposal_rematching import (
     _complete_with_tii_probability_mass,
+    conditional_candidate_fusion,
     cross_adapter_borda_consensus,
     cross_adapter_global_consensus,
     initial_branch_confidence_dominance,
@@ -77,6 +78,7 @@ def test_prediction_proposal_is_allowed_by_strict_exemplar_free_protocol():
         prediction_proposal_cross_adapter_audit=True,
         prediction_proposal_tii_completion=True,
         prediction_proposal_task_mass_fusion=True,
+        prediction_proposal_conditional_fusion=True,
     ))
 
 
@@ -179,6 +181,25 @@ def test_task_mass_fusion_is_normalized_and_adapter_shift_invariant():
         seen_task_count=2)
 
     assert torch.allclose(fused.exp().sum(dim=1), torch.ones(1), atol=1e-6)
+    assert torch.allclose(fused, shifted_fused, atol=1e-6)
+    assert torch.allclose(evidence, shifted_evidence, atol=1e-6)
+
+
+def test_conditional_fusion_is_adapter_shift_invariant():
+    candidate_logits = torch.tensor([[[4.0, 2.0, 9.0, 8.0],
+                                      [7.0, 6.0, 3.0, 1.0]]])
+    tii_prior = torch.tensor([[0.5, -0.5]])
+    candidate_tasks = torch.tensor([[0, 1]])
+    class_mask = [[0, 1], [2, 3]]
+
+    fused, evidence = conditional_candidate_fusion(
+        candidate_logits, tii_prior, class_mask, candidate_tasks,
+        prior_weight=0.3)
+    shifted = candidate_logits + torch.tensor([[[100.0], [-50.0]]])
+    shifted_fused, shifted_evidence = conditional_candidate_fusion(
+        shifted, tii_prior, class_mask, candidate_tasks,
+        prior_weight=0.3)
+
     assert torch.allclose(fused, shifted_fused, atol=1e-6)
     assert torch.allclose(evidence, shifted_evidence, atol=1e-6)
 

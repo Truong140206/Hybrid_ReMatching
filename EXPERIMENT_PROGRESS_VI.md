@@ -2849,3 +2849,13 @@ Sau khi confidence dominance, plurality vote và Borda đều thất bại, khô
 Phép thử kế tiếp được khóa trước khi chạy: giữ nguyên candidate TII top-2 + ba task được đề xuất, 5 LoRA/mẫu, 2 vectorized calls và TII completion; chỉ thay phép hợp nhất bằng `P(class, task|x) = P_TII(task|x) * P_LoRA(class|task,x)`. TII cấp tổng probability mass cho task, còn LoRA phân phối mass đó giữa các lớp trong task bằng conditional softmax. Không có hệ số mới, dữ liệu calibration, ảnh cũ, feature từng mẫu, semantic hay CFS; checkpoint vẫn phải qua strict training-log và `real_feature_memory` audit.
 
 Giả thuyết được chấp nhận chỉ khi `BASELINE_ALL_METRIC_GATE=PASS` trên strict rank-8 checkpoint và efficiency vẫn là 5 LoRA/mẫu, 2 calls/mẫu. Nếu fail, đóng task-mass fusion; không quét temperature hoặc pha trộn với raw-logit fusion trên test.
+
+### Kết quả strict task-mass fusion và quyết định dừng
+
+Task-mass fusion thất bại trên toàn bộ sáu metric: `Acc@task=69.0115`, `Acc@1=63.7507`, `Acc@5=81.5513`, `Loss=1.6541`, `Forgetting=8.8896`, `Backward=-8.8896`. Efficiency vẫn đúng 5 LoRA/mẫu và 2 calls/mẫu, nhưng `BASELINE_ALL_METRIC_GATE=FAIL`. Kết quả bác bỏ giả thuyết rằng TII probability mass có thể đóng vai trò task posterior đã hiệu chỉnh; TII phù hợp để xếp hạng candidate nhưng không được dùng để khóa xác suất tuyệt đối của task. Đóng task-mass fusion và không tune temperature hay pha hệ số theo test.
+
+### Preregistered strict conditional fusion
+
+Phép thử kế tiếp giữ nguyên proposal, candidate budget, completion, temperature `1.0` và standardized TII prior weight `0.3` đã có trước task-mass. Thay đổi duy nhất là chuẩn hóa logits của từng LoRA bằng log-softmax trong 20 lớp của task trước khi cộng fixed TII prior. Cách này loại offset giữa adapter nhưng không ép LoRA tuân theo absolute TII task mass. Hai mode task-mass và conditional bị khóa loại trừ nhau trong script.
+
+Không có ảnh/feature cũ, calibration data, router học thêm hoặc tham số mới. Chỉ chấp nhận nếu strict checkpoint audit, `BASELINE_ALL_METRIC_GATE` và efficiency gate cùng PASS. Nếu fail, đóng toàn bộ nhánh normalization-based fusion; không quét prior/temperature trên test.

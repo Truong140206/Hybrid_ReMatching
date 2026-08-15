@@ -185,6 +185,40 @@ def task_mass_preserving_candidate_fusion(
     return merged_logits, task_evidence
 
 
+def conditional_candidate_fusion(
+        candidate_logits, tii_prior, class_mask, candidate_tasks,
+        temperature=1.0, prior_weight=0.3):
+    """Compare task-conditional LoRA probabilities with the fixed TII prior."""
+    batch_size, candidate_count, _ = candidate_logits.shape
+    device = candidate_logits.device
+    temperature = max(float(temperature), 1e-6)
+    prior_weight = max(float(prior_weight), 0.0)
+    merged_logits = candidate_logits.new_full(
+        (batch_size, candidate_logits.shape[-1]), float('-inf'))
+    task_evidence = torch.full(
+        (batch_size, candidate_count), float('-inf'),
+        dtype=candidate_logits.dtype, device=device)
+    for candidate_slot in range(candidate_count):
+        active_tasks = candidate_tasks[:, candidate_slot]
+        adapter_logits = candidate_logits[:, candidate_slot]
+        for task_index in active_tasks.unique().tolist():
+            rows = torch.nonzero(active_tasks == task_index).flatten()
+            class_index = torch.as_tensor(
+                class_mask[task_index], dtype=torch.long, device=device)
+            conditional_logits = F.log_softmax(
+                adapter_logits.index_select(0, rows).index_select(
+                    1, class_index) / temperature,
+                dim=1)
+            calibrated_logits = conditional_logits + prior_weight * tii_prior[
+                rows, task_index].unsqueeze(1)
+            merged_logits[
+                rows.unsqueeze(1), class_index.unsqueeze(0)
+            ] = calibrated_logits
+            task_evidence[rows, candidate_slot] = calibrated_logits.max(
+                dim=1).values
+    return merged_logits, task_evidence
+
+
 @torch.no_grad()
 def prediction_proposal_adapter_rematching(
         model, inputs, tii_logits, class_mask, seen_task_count, args):
@@ -239,6 +273,16 @@ def prediction_proposal_adapter_rematching(
             candidate_tasks=candidate_tasks,
             seen_task_count=seen_task_count,
             temperature=temperature,
+        )
+    elif bool(getattr(
+            args, 'prediction_proposal_conditional_fusion', False)):
+        merged_logits, task_evidence = conditional_candidate_fusion(
+            candidate_logits=candidate_logits,
+            tii_prior=tii_prior,
+            class_mask=class_mask,
+            candidate_tasks=candidate_tasks,
+            temperature=temperature,
+            prior_weight=prior_weight,
         )
     else:
         merged_logits = torch.full_like(tii_logits, float('-inf'))

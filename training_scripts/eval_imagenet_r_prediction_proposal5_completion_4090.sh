@@ -12,7 +12,12 @@ LORA_RANK="${LORA_RANK:-}"
 AUDIT_INITIAL_BRANCH="${AUDIT_INITIAL_BRANCH:-0}"
 AUDIT_CROSS_ADAPTER="${AUDIT_CROSS_ADAPTER:-0}"
 TASK_MASS_FUSION="${TASK_MASS_FUSION:-0}"
+CONDITIONAL_FUSION="${CONDITIONAL_FUSION:-0}"
 
+if [[ "${TASK_MASS_FUSION}" == "1" && "${CONDITIONAL_FUSION}" == "1" ]]; then
+  echo "TASK_MASS_FUSION and CONDITIONAL_FUSION are mutually exclusive" >&2
+  exit 64
+fi
 if [[ -z "${RUN_DIR}" ]]; then
   echo "Usage: $0 RUN_DIR" >&2
   exit 64
@@ -127,6 +132,10 @@ if [[ "${TASK_MASS_FUSION}" == "1" ]]; then
   AUDIT_SUFFIX="${AUDIT_SUFFIX}_taskmass"
   AUDIT_ARGS+=(--prediction_proposal_task_mass_fusion)
 fi
+if [[ "${CONDITIONAL_FUSION}" == "1" ]]; then
+  AUDIT_SUFFIX="${AUDIT_SUFFIX}_conditional"
+  AUDIT_ARGS+=(--prediction_proposal_conditional_fusion)
+fi
 LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_prediction_proposal_i2_p3_c5_tiicomplete_strict${AUDIT_SUFFIX}.log"
 if [[ -s "${LOG_PATH}" ]]; then
   echo "Refusing to overwrite existing evaluation log: ${LOG_PATH}" >&2
@@ -142,6 +151,8 @@ echo "Operational prediction-induced task proposal rematching"
 echo "TII top-2 + three post-LoRA class-prediction proposals with TII probability completion"
 if [[ "${TASK_MASS_FUSION}" == "1" ]]; then
   echo "Fusion: P_TII(task|x) * P_LoRA(class|task,x); no learned calibration"
+elif [[ "${CONDITIONAL_FUSION}" == "1" ]]; then
+  echo "Fusion: conditional LoRA log-probability + fixed standardized TII prior"
 fi
 echo "Fixed deployment budget: at most 5 LoRAs/sample in 2 vectorized model calls"
 echo "Run=${RUN_DIR}; seed=${SEED}; rank=${LORA_RANK}"
