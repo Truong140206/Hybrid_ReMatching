@@ -423,3 +423,24 @@ i2/c5, prior 0.3, temperature 1.0 hay TII tail tren seed 42 nua.
 Buoc tiep theo neu tiep tuc la multi-seed reproduction. Can train strict rank-8
 baseline va co TII checkpoint cung seed truoc, sau do chay conventional va
 operational closure-tail voi cau hinh y het. Khong duoc tinh chinh theo seed moi.
+
+## 21. Dang cho leader-closed beam-2 audit
+
+Theo yeu cau ha LoRA them truoc multi-seed, da preregister mot cau hinh duy nhat:
+TII top-2, moi wave chi hai adapter co evidence manh nhat de xuat moi adapter
+mot unseen task tu raw top-5, dung khi hai leader dong; output van dung TII tail
+top-1-safe. Gate: ca sau metric hon conventional, winner/exact >=99%, LoRA <=5
+va thap hon 5.5593, calls <=4. Neu fail thi dong nhanh, khong sweep seed 42.
+
+Lenh RTX 4090:
+
+~~~bash
+cd ~/Documents/truongnguyen/Hybrid_ReMatching
+git pull --ff-only
+bash training_scripts/eval_imagenet_r_prediction_beam_closure_audit_4090.sh \
+  ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed42
+~~~
+
+Gui lai dong task10, bang comparison, BEAM_CLOSURE_ALL_METRIC_GATE va wall
+time. Script tu choi chay neu operational closure reference chua PASS; khong
+chay song song voi job GPU khac.

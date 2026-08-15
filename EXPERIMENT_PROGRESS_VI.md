@@ -3304,3 +3304,32 @@ dat ca sau metric gate va efficiency gate. Khoa vinh vien i2/c5, prior 0.3,
 temperature 1.0 va top-1-safe TII completion; khong toi uu them tren seed 42.
 Buoc nghien cuu tiep theo la reproduce nguyen cau hinh tren seed doc lap, khong
 thay tham so theo ket qua tung seed.
+
+## 2026-08-16 - Preregister leader-closed beam-2 de ha LoRA
+
+Truoc khi reproduce multi-seed, khoa mot gia thuyet efficiency cuoi cung tren
+seed 42: leader-closed beam-2. Bat dau tu TII top-2. O moi wave, chi hai adapter
+da evaluate co task evidence cao nhat duoc lam leader; moi leader de xuat dung
+mot task unseen manh nhat trong raw top-5 class prediction. Cac task trung nhau
+duoc gop lai. Dung khi ca hai leader khong con de xuat unseen task, sau do dung
+lai top-1-safe TII tail completion da PASS.
+
+Day khong phai fixed proposal 2->2->2: so wave la adaptive den leader fixed
+point, nhung frontier cua adapter khong nam trong top-2 leader khong duoc mo
+rong. Khong co confidence threshold, learned gate, calibration, old sample,
+stored feature hay test label. Beam width=2, successor/leader=1, initial=2,
+top classes=5, prior=0.3 va temperature=1.0 deu khoa truoc; khong sweep tren
+seed 42.
+
+Gate khai bao truoc:
+
+- Acc@task, Acc@1, Acc@5 va Backward phai cao hon conventional strict; Loss va
+  Forgetting phai thap hon.
+- BeamClosureWinnerRecall va BeamClosureExactAgreement >=99%.
+- BeamClosureLoRA/sample <=5.0 va phai thap hon current operational closure
+  5.5593.
+- BeamClosureCalls/sample <=4.
+
+Neu fail bat ky dieu kien nao thi dong nhanh, khong thu beam width hoac successor
+count khac tren seed 42. Script oracle audit mot cau hinh:
+training_scripts/eval_imagenet_r_prediction_beam_closure_audit_4090.sh.
