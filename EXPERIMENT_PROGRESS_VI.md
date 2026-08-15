@@ -2869,3 +2869,11 @@ Conditional fusion cũng thất bại cả sáu metric: `Acc@task=73.6806`, `Acc
 Giữ nguyên raw-logit proposal strict tốt nhất, TII standardized prior `0.3`, temperature `1.0`, top-5 class proposal và TII completion. Chỉ tăng candidate budget từ TII top-2 + 3 proposal lên top-2 + 4 proposal, tức 6 LoRA/mẫu nhưng vẫn 2 vectorized calls. Đây là một điểm cost-quality được báo cáo độc lập, không phải quét tham số; mục tiêu là tăng coverage theo hướng exhaustive 10 LoRA trong khi vẫn giảm 40% số LoRA.
 
 Chỉ chấp nhận nếu checkpoint audit strict, `BASELINE_ALL_METRIC_GATE=PASS`, `OPERATIONAL_PROPOSAL_EFFICIENCY_GATE=PASS` và không vượt 6 LoRA/mẫu/2 calls. Nếu fail, không tiếp tục p5/p6 dựa trên test; quay về phân tích training-time strict hoặc báo cáo proposal-5 như trade-off thay vì tuyên bố cải thiện toàn diện.
+
+### Kết quả strict raw proposal budget-6
+
+Cấu hình TII top-2 + 4 prediction proposals đạt `Acc@task=81.0030`, `Acc@1=75.2882`, `Acc@5=88.0714`, `Loss=1.1622`, `Forgetting=3.1699`, `Backward=-2.9588`, với 6 LoRA/mẫu, 2 calls/mẫu và 333 giây. So với conventional strict: Acc@task `+3.2116`, Acc@1 `+1.2691`, Acc@5 `+1.1821`, Loss `-0.0683` và Forgetting `-0.1102` đều tốt hơn; Backward thấp hơn `0.0469`, nên `BASELINE_ALL_METRIC_GATE=FAIL` còn efficiency gate PASS.
+
+So với exhaustive strict, budget-6 chỉ thấp hơn `0.1152` Acc@task, `0.1395` Acc@1 và `0.8469` Acc@5; giảm 40% số LoRA, giảm wall time từ 409 xuống 333 giây (`18.6%`) và vẫn giữ 2 vectorized calls. Đây là Pareto point strict tốt nhất hiện tại, nhưng không được báo là all-metric improvement.
+
+Không tăng tiếp fixed budget dựa trên test. Bước bắt buộc là taskwise diagnosis để xác định chênh Backward `-0.0469` đến từ initial accuracy tăng mạnh hay final old-task accuracy giảm ở task cụ thể. Chỉ thiết kế thay đổi mới nếu chẩn đoán chỉ ra lỗi final retention/routing có cấu trúc.
