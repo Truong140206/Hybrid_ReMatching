@@ -458,3 +458,28 @@ Current best van la operational closure + TII tail: 5.5593 LoRA/sample,
 2.5995 calls/sample va PASS du ca sau metric. Buoc hop le tiep theo la multi-seed
 reproduction cua current best; neu can nghien cuu budget <5, phai dung development
 seed/validation protocol rieng thay vi tiep tuc toi uu tren seed 42.
+
+## 23. Independent-seed reproduction seed 43
+
+Da them pipeline mot lenh cho current-best tren seed doc lap. No tu train cac
+TII/rank-8 checkpoint con thieu, chay conventional, audit closure-tail, va chi
+chay operational khi audit PASS. Cau hinh khoa y het seed 42; khong cho chay
+seed 42 va khong overwrite artifact cu.
+
+Lenh kiem tra nhanh:
+
+~~~bash
+cd ~/Documents/truongnguyen/Hybrid_ReMatching
+git pull --ff-only
+bash training_scripts/reproduce_imagenet_r_closure_seed_4090.sh check 43
+~~~
+
+Lenh chay day du (co the mat nhieu gio neu chua co checkpoint seed 43):
+
+~~~bash
+bash training_scripts/reproduce_imagenet_r_closure_seed_4090.sh run 43
+~~~
+
+Khong chay song song voi job GPU khac. Gui lai stage cuoi cung, hai dong metric
+conventional/operational va INDEPENDENT_SEED_CLOSURE_GATE. Neu dung o audit,
+gui dong task10 va CLOSURE_TII_TAIL_ALL_METRIC_GATE; khong doi tham so.

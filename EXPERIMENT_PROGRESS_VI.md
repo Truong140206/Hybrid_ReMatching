@@ -3350,3 +3350,19 @@ nam duoi budget 4. Tuy nhien BEAM_CLOSURE_ALL_METRIC_GATE=FAIL.
 Dong nhanh dung preregistration. Khong ha gate fidelity, khong thu beam width,
 successor count, top-class count hoac threshold khac tren seed 42. Current best
 van la operational closure + TII tail 5.5593 LoRA/sample da PASS ca sau metric.
+
+## 2026-08-16 - Khoa independent-seed reproduction
+
+Sau khi dong nhanh beam-2, buoc tiep theo la reproduction current-best tren seed
+chua dung de phat trien. Seed dau tien la 43; toan bo closure i2/c5, TII prior
+0.3, temperature 1.0, top-1-safe TII tail, LoRA rank 8 va training schedule giu
+nguyen tu seed 42. Seed 42 bi pipeline tu choi de ngan tuning hau nghiem.
+
+Pipeline gom nam stage tuan tu: train/kiem tra TII, train/kiem tra rank-8
+conventional baseline, conventional eval, closure-tail oracle audit, va
+operational confirmation. Moi stage bo qua artifact da hoan tat va khong ghi de.
+Neu audit khong dat CLOSURE_TII_TAIL_ALL_METRIC_GATE tren seed doc lap, pipeline
+ghi INDEPENDENT_SEED_CLOSURE_GATE=FAIL, dung truoc operational va khong sua
+hyperparameter. Neu dat, operational phai tiep tuc dat gate cu thi independent
+seed moi PASS. Script:
+training_scripts/reproduce_imagenet_r_closure_seed_4090.sh.
