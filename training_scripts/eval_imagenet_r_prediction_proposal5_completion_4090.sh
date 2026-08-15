@@ -13,6 +13,13 @@ AUDIT_INITIAL_BRANCH="${AUDIT_INITIAL_BRANCH:-0}"
 AUDIT_CROSS_ADAPTER="${AUDIT_CROSS_ADAPTER:-0}"
 TASK_MASS_FUSION="${TASK_MASS_FUSION:-0}"
 CONDITIONAL_FUSION="${CONDITIONAL_FUSION:-0}"
+PROPOSAL_COUNT="${PROPOSAL_COUNT:-3}"
+INITIAL_COUNT=2
+if ! [[ "${PROPOSAL_COUNT}" =~ ^[0-8]$ ]]; then
+  echo "PROPOSAL_COUNT must be an integer from 0 to 8" >&2
+  exit 64
+fi
+EXPECTED_LORA_BUDGET=$((INITIAL_COUNT + PROPOSAL_COUNT))
 
 if [[ "${TASK_MASS_FUSION}" == "1" && "${CONDITIONAL_FUSION}" == "1" ]]; then
   echo "TASK_MASS_FUSION and CONDITIONAL_FUSION are mutually exclusive" >&2
@@ -136,7 +143,7 @@ if [[ "${CONDITIONAL_FUSION}" == "1" ]]; then
   AUDIT_SUFFIX="${AUDIT_SUFFIX}_conditional"
   AUDIT_ARGS+=(--prediction_proposal_conditional_fusion)
 fi
-LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_prediction_proposal_i2_p3_c5_tiicomplete_strict${AUDIT_SUFFIX}.log"
+LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_prediction_proposal_i${INITIAL_COUNT}_p${PROPOSAL_COUNT}_c5_tiicomplete_strict${AUDIT_SUFFIX}.log"
 if [[ -s "${LOG_PATH}" ]]; then
   echo "Refusing to overwrite existing evaluation log: ${LOG_PATH}" >&2
   exit 3
@@ -148,13 +155,13 @@ fi
   tests/test_exemplar_free_protocol.py
 
 echo "Operational prediction-induced task proposal rematching"
-echo "TII top-2 + three post-LoRA class-prediction proposals with TII probability completion"
+echo "TII top-${INITIAL_COUNT} + ${PROPOSAL_COUNT} post-LoRA task proposals with TII probability completion"
 if [[ "${TASK_MASS_FUSION}" == "1" ]]; then
   echo "Fusion: P_TII(task|x) * P_LoRA(class|task,x); no learned calibration"
 elif [[ "${CONDITIONAL_FUSION}" == "1" ]]; then
   echo "Fusion: conditional LoRA log-probability + fixed standardized TII prior"
 fi
-echo "Fixed deployment budget: at most 5 LoRAs/sample in 2 vectorized model calls"
+echo "Fixed deployment budget: at most ${EXPECTED_LORA_BUDGET} LoRAs/sample in 2 vectorized model calls"
 echo "Run=${RUN_DIR}; seed=${SEED}; rank=${LORA_RANK}"
 echo "Protocol source log: ${TRAIN_LOG}"
 echo "Baseline reference: ${BASELINE_LOG}"
@@ -185,8 +192,8 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --trained_original_model "${TII_DIR}" \
   --num_tasks 10 \
   --prediction_proposal_rematching \
-  --prediction_proposal_initial_count 2 \
-  --prediction_proposal_count 3 \
+  --prediction_proposal_initial_count "${INITIAL_COUNT}" \
+  --prediction_proposal_count "${PROPOSAL_COUNT}" \
   --prediction_proposal_top_classes 5 \
   --prediction_proposal_tii_completion \
   "${AUDIT_ARGS[@]}" \
@@ -213,7 +220,7 @@ if [[ "${AUDIT_CROSS_ADAPTER}" == "1" ]]; then
   grep "CrossBordaAudit" "${LOG_PATH}" | tail -n 10 | nl -w1 -s': '
 fi
 
-"${PYTHON_BIN}" - "${LOG_PATH}" "${BASELINE_LOG}" "${EXHAUSTIVE_LOG}" <<'PY'
+"${PYTHON_BIN}" - "${LOG_PATH}" "${BASELINE_LOG}" "${EXHAUSTIVE_LOG}" "${EXPECTED_LORA_BUDGET}" <<'PY'
 import re
 import sys
 
@@ -259,9 +266,10 @@ for name in METRICS:
     delta = metric(candidate, name) - metric(exhaustive, name)
     print(f'  {name} delta={delta:+.4f}')
 
-cost_ok = metric(candidate, 'LoRA/sample') <= 5.0001
+expected_lora_budget = float(sys.argv[4])
+cost_ok = metric(candidate, 'LoRA/sample') <= expected_lora_budget + 0.0001
 call_ok = metric(candidate, 'ForwardCalls/sample') <= 2.0001
-print(f'  LoRA/sample <= 5: {"PASS" if cost_ok else "FAIL"}')
+print(f'  LoRA/sample <= {expected_lora_budget:g}: {"PASS" if cost_ok else "FAIL"}')
 print(f'  ForwardCalls/sample <= 2: {"PASS" if call_ok else "FAIL"}')
 print('BASELINE_ALL_METRIC_GATE=' + (
     'PASS' if all(checks.values()) else 'FAIL'))

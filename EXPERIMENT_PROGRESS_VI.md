@@ -2859,3 +2859,13 @@ Task-mass fusion thất bại trên toàn bộ sáu metric: `Acc@task=69.0115`, 
 Phép thử kế tiếp giữ nguyên proposal, candidate budget, completion, temperature `1.0` và standardized TII prior weight `0.3` đã có trước task-mass. Thay đổi duy nhất là chuẩn hóa logits của từng LoRA bằng log-softmax trong 20 lớp của task trước khi cộng fixed TII prior. Cách này loại offset giữa adapter nhưng không ép LoRA tuân theo absolute TII task mass. Hai mode task-mass và conditional bị khóa loại trừ nhau trong script.
 
 Không có ảnh/feature cũ, calibration data, router học thêm hoặc tham số mới. Chỉ chấp nhận nếu strict checkpoint audit, `BASELINE_ALL_METRIC_GATE` và efficiency gate cùng PASS. Nếu fail, đóng toàn bộ nhánh normalization-based fusion; không quét prior/temperature trên test.
+
+### Kết quả strict conditional fusion và đóng normalization fusion
+
+Conditional fusion cũng thất bại cả sáu metric: `Acc@task=73.6806`, `Acc@1=69.0305`, `Acc@5=85.6411`, `Loss=2.0318`, `Forgetting=6.8683`, `Backward=-6.7469`. Kết quả cho thấy raw logit magnitude giữa các LoRA mang tín hiệu task-fit hữu ích; log-softmax trong từng task xóa tín hiệu này và làm LoRA sai trở nên giả-tự-tin. Đóng cả task-mass và conditional fusion. Không tune prior, temperature hoặc pha logits trên test.
+
+### Preregistered raw proposal budget-6 Pareto point
+
+Giữ nguyên raw-logit proposal strict tốt nhất, TII standardized prior `0.3`, temperature `1.0`, top-5 class proposal và TII completion. Chỉ tăng candidate budget từ TII top-2 + 3 proposal lên top-2 + 4 proposal, tức 6 LoRA/mẫu nhưng vẫn 2 vectorized calls. Đây là một điểm cost-quality được báo cáo độc lập, không phải quét tham số; mục tiêu là tăng coverage theo hướng exhaustive 10 LoRA trong khi vẫn giảm 40% số LoRA.
+
+Chỉ chấp nhận nếu checkpoint audit strict, `BASELINE_ALL_METRIC_GATE=PASS`, `OPERATIONAL_PROPOSAL_EFFICIENCY_GATE=PASS` và không vượt 6 LoRA/mẫu/2 calls. Nếu fail, không tiếp tục p5/p6 dựa trên test; quay về phân tích training-time strict hoặc báo cáo proposal-5 như trade-off thay vì tuyên bố cải thiện toàn diện.
