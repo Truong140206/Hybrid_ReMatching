@@ -906,8 +906,8 @@ def sample_semantic_projected_features(target_cls, target_mean, num_samples, arg
     return projected[:num_samples]
 
 
-def train_cfs_model(features, args, device):
-    if not use_cfs_sampling(args) or features.shape[0] < 2:
+def train_cfs_model(features, args, device, force_cfs=False):
+    if (not force_cfs and not use_cfs_sampling(args)) or features.shape[0] < 2:
         return None
 
     with torch.enable_grad():
@@ -1065,9 +1065,12 @@ def _sample_cfs_features_paper_style(distribution, mean, cov, num_samples, args,
 
 
 @torch.no_grad()
-def sample_cfs_features(mean, cov, num_samples, args, device, cfs_model=None):
+def sample_cfs_features(
+        mean, cov, num_samples, args, device, cfs_model=None,
+        force_cfs=False):
     distribution = torch.distributions.MultivariateNormal(mean.float(), cov.float())
-    if not use_cfs_sampling(args) or cfs_model is None or num_samples <= 1:
+    if ((not force_cfs and not use_cfs_sampling(args))
+            or cfs_model is None or num_samples <= 1):
         return distribution.sample(sample_shape=(num_samples,))
 
     cfs_model = cfs_model.to(device)

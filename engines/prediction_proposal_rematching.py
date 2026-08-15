@@ -19,6 +19,24 @@ def _evaluate_candidate_tasks(model, inputs, candidate_tasks):
     )['logits'].reshape(batch_size, candidate_count, -1)
 
 
+def _apply_cfs_task_logit_calibration(
+        local_logits, task_index, args):
+    if not bool(getattr(args, 'cfs_task_logit_calibration', False)):
+        return local_logits
+    state = getattr(args, 'cfs_task_logit_calibration_state', None)
+    if state is None:
+        raise RuntimeError(
+            'CFS task-logit calibration is enabled but no checkpoint state '
+            'was loaded')
+    scale = state.get('scale')
+    bias = state.get('bias')
+    if scale is None or bias is None or task_index >= len(scale):
+        raise RuntimeError('Malformed CFS task-logit calibration state')
+    task_scale = local_logits.new_tensor(float(scale[task_index]))
+    task_bias = local_logits.new_tensor(float(bias[task_index]))
+    return local_logits * task_scale + task_bias
+
+
 def _propose_unseen_tasks(
         tii_ranking, evaluated_tasks, evaluated_logits, class_mask,
         proposal_count, top_classes):
@@ -361,6 +379,15 @@ def prediction_proposal_adapter_rematching(
             forward_calls += 1
 
     candidate_count = candidate_tasks.shape[1]
+    if (bool(getattr(args, 'cfs_task_logit_calibration', False))
+            and (
+                bool(getattr(
+                    args, 'prediction_proposal_task_mass_fusion', False))
+                or bool(getattr(
+                    args, 'prediction_proposal_conditional_fusion', False)))):
+        raise ValueError(
+            'CFS task-logit calibration is defined only for raw-logit '
+            'prediction-proposal fusion')
     if bool(getattr(args, 'prediction_proposal_task_mass_fusion', False)):
         merged_logits, task_evidence = task_mass_preserving_candidate_fusion(
             candidate_logits=candidate_logits,
@@ -393,9 +420,14 @@ def prediction_proposal_adapter_rematching(
                 class_index = torch.as_tensor(
                     class_mask[task_index], dtype=torch.long, device=device)
                 local_logits = adapter_logits.index_select(
-                    0, rows).index_select(1, class_index) / temperature
-                calibrated_logits = local_logits + prior_weight * tii_prior[
+                    0, rows).index_select(1, class_index)
+                local_logits = _apply_cfs_task_logit_calibration(
+                    local_logits, task_index, args)
+                calibrated_logits = (
+                    local_logits / temperature
+                    + prior_weight * tii_prior[
                     rows, task_index].unsqueeze(1)
+                )
                 merged_logits[
                     rows.unsqueeze(1), class_index.unsqueeze(0)
                 ] = calibrated_logits

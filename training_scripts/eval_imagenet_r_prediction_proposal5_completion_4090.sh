@@ -13,6 +13,7 @@ AUDIT_INITIAL_BRANCH="${AUDIT_INITIAL_BRANCH:-0}"
 AUDIT_CROSS_ADAPTER="${AUDIT_CROSS_ADAPTER:-0}"
 TASK_MASS_FUSION="${TASK_MASS_FUSION:-0}"
 CONDITIONAL_FUSION="${CONDITIONAL_FUSION:-0}"
+CFS_TASK_CALIBRATION="${CFS_TASK_CALIBRATION:-0}"
 ITERATIVE_PROPOSAL="${ITERATIVE_PROPOSAL:-0}"
 FIRST_WAVE_COUNT="${FIRST_WAVE_COUNT:-2}"
 PROPOSAL_COUNT="${PROPOSAL_COUNT:-3}"
@@ -33,6 +34,11 @@ fi
 
 if [[ "${TASK_MASS_FUSION}" == "1" && "${CONDITIONAL_FUSION}" == "1" ]]; then
   echo "TASK_MASS_FUSION and CONDITIONAL_FUSION are mutually exclusive" >&2
+  exit 64
+fi
+if [[ "${CFS_TASK_CALIBRATION}" == "1" && ( \
+      "${TASK_MASS_FUSION}" == "1" || "${CONDITIONAL_FUSION}" == "1" ) ]]; then
+  echo "CFS_TASK_CALIBRATION requires raw-logit fusion" >&2
   exit 64
 fi
 if [[ -z "${RUN_DIR}" ]]; then
@@ -160,6 +166,10 @@ if [[ "${ITERATIVE_PROPOSAL}" == "1" ]]; then
     --prediction_proposal_first_wave_count "${FIRST_WAVE_COUNT}"
   )
 fi
+if [[ "${CFS_TASK_CALIBRATION}" == "1" ]]; then
+  AUDIT_SUFFIX="${AUDIT_SUFFIX}_cfscal"
+  AUDIT_ARGS+=(--cfs_task_logit_calibration)
+fi
 LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_prediction_proposal_i${INITIAL_COUNT}_p${PROPOSAL_COUNT}_c5_tiicomplete_strict${AUDIT_SUFFIX}.log"
 if [[ -s "${LOG_PATH}" ]]; then
   echo "Refusing to overwrite existing evaluation log: ${LOG_PATH}" >&2
@@ -168,6 +178,7 @@ fi
 
 "${PYTHON_BIN}" -m pytest -q \
   tests/test_prediction_proposal_audit.py \
+  tests/test_cfs_task_logit_calibration.py \
   tests/test_progressive_oracle_audit.py \
   tests/test_exemplar_free_protocol.py
 
@@ -180,6 +191,8 @@ if [[ "${TASK_MASS_FUSION}" == "1" ]]; then
   echo "Fusion: P_TII(task|x) * P_LoRA(class|task,x); no learned calibration"
 elif [[ "${CONDITIONAL_FUSION}" == "1" ]]; then
   echo "Fusion: conditional LoRA log-probability + fixed standardized TII prior"
+elif [[ "${CFS_TASK_CALIBRATION}" == "1" ]]; then
+  echo "Fusion: raw LoRA logits with checkpointed CFS task-wise scale/bias"
 fi
 echo "Fixed deployment budget: at most ${EXPECTED_LORA_BUDGET} LoRAs/sample in ${EXPECTED_FORWARD_CALLS} vectorized model calls"
 echo "Run=${RUN_DIR}; seed=${SEED}; rank=${LORA_RANK}"

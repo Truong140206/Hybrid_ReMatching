@@ -15,6 +15,7 @@ def test_strict_protocol_accepts_cfs_statistics_and_synthetic_replay():
         cfs_sampling=True,
         replay_anchor_ctird=True,
         crct_validation_current_real=True,
+        cfs_task_logit_calibration=True,
     )
     validate_exemplar_free_protocol(args)
 

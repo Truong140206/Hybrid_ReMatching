@@ -2966,3 +2966,59 @@ không quét thêm cách chia wave trên test set.
 Đáng chú ý, exhaustive cũng không đưa Task 6/7 vượt baseline. Điều này loại trừ
 thiếu candidate LoRA là nguyên nhân chính. Hướng tiếp theo phải xử lý cách hợp
 nhất/chọn đầu ra giữa các LoRA bằng cơ chế rehearsal-free, thay vì tăng số LoRA.
+## 2026-08-15 - Preregister CFS task-logit calibration
+
+### Chan doan va muc tieu
+
+Exhaustive va raw prediction-proposal cho thay raw maximum logit cua cac LoRA
+mang tin hieu task-fit huu ich, nhung scale/offset cua cac LoRA duoc hoc doc lap
+khong hoan toan dong nhat. Task-mass va conditional normalization da that bai vi
+xoa mat magnitude nay. Thi nghiem moi khong chuan hoa logits thanh probability;
+no chi hoc mot affine nho cho moi task: `z'_t = scale_t * z_t + bias_t`.
+
+### CFS duoc ap dung vao dau
+
+CFS khong duoc dung de thay CRCT va khong sua classifier head. Sau khi task hien
+tai duoc hoc xong, pipeline dung mean/covariance theo lop ma HRM-PET da tinh,
+cung CFS MLP duoc hoc khi anh cua task do con hop le, de sinh hai tap feature
+tam thoi doc lap:
+
+1. Fit split dung de hoc scale/bias theo task.
+2. Report split dung de quyet dinh chap nhan hay tra ve identity.
+
+Gate chi chap nhan khi report accuracy tong va old-task khong giam, khong mot
+lop cu nao giam accuracy, va report cross-entropy khong tang. Neu fail, state
+luu scale=1 va bias=0. Calibration chi duoc ap vao raw-logit fusion cua
+prediction-proposal; task-mass va conditional fusion bi chan khi bat co nay.
+
+### Bao dam strict rehearsal-free
+
+- Khong luu anh task cu.
+- Khong luu feature tung mau, ke ca feature synthetic.
+- Khong doc lai historical train loader.
+- Checkpoint chi luu scalar scale/bias va aggregate report metrics.
+- State co schema dong; payload la, tensor hoac field ngoai danh sach se bi audit
+  tu choi.
+- CFS feature chi ton tai tam thoi trong RAM luc task hien tai ket thuc.
+- CFS calibration tach khoi `--cfs_sampling`, vi vay CRCT van dung Gaussian cua
+  baseline; thi nghiem khong vo tinh lap lai bien the CFS-CRCT da that bai.
+
+Checkpoint rank-8 cu khong co state aggregate nay, nen khong duoc gan calibration
+sau huan luyen bang cach doc lai anh cu. Phai train checkpoint moi tu task 1.
+
+### Cau hinh khoa truoc
+
+- ImageNet-R, ViT-B/16, seed 42, LoRA rank 8.
+- LoRA 50 epoch, CRCT 30 epoch, cac tham so baseline giu nguyen.
+- CFS 50 epoch/lop; paper-style selection va moment matching.
+- Moi split sinh 48 feature/lop; fit va report dung hai lan random doc lap.
+- Calibration 200 step, lr 0.05, max scale 1.25, max bias 0.5.
+- Regularization 0.05, old-margin weight 0.5.
+- Prediction proposal: TII top-2 + toi da 4 proposal, raw fusion, TII prior 0.3,
+  temperature 1.0, TII completion; toi da 6 LoRA/mau va 2 forward calls.
+- Chay pilot 3 task truoc. Chi chay full 10 task neu Acc@task, Acc@1, Acc@5,
+  Backward khong giam va Loss, Forgetting khong tang so voi baseline task 3.
+- Khong quet tham so theo ket qua test neu pilot fail.
+- Pilot con danh gia chinh checkpoint do voi calibration tat, cung proposal budget.
+  CFS causal gate yeu cau khong mot metric nao xau di va it nhat mot metric cai
+  thien nghiem ngat; identity/no-effect khong duoc tinh la CFS co dong gop.

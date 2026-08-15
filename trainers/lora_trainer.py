@@ -22,6 +22,9 @@ import vits.hrm_lora_vision_transformer as hide_lora_vision_transformer
 import torch.nn as nn
 import torch.nn.init as init
 from engines.cfs_pmi_diagnostic import run_cfs_pmi_diagnostic
+from engines.cfs_task_logit_calibration import (
+    validate_cfs_task_logit_calibration_state,
+)
 
 
         
@@ -74,6 +77,8 @@ def train(args):
         )
         shared_router_enabled = bool(getattr(args, 'shared_prototype_router', False))
         calibration_enabled = bool(getattr(args, 'replay_logit_calibration', False))
+        cfs_task_calibration_enabled = bool(getattr(
+            args, 'cfs_task_logit_calibration', False))
         learned_router_enabled = bool(getattr(args, 'replay_task_router', False))
         distilled_router_enabled = bool(
             getattr(args, 'distilled_router_rematching', False))
@@ -103,6 +108,24 @@ def train(args):
                 print('Loading checkpoint from:', checkpoint_path)
                 checkpoint = utils.load_checkpoint(checkpoint_path, map_location=device)
                 model.load_state_dict(checkpoint['model'])
+                if cfs_task_calibration_enabled:
+                    calibration_state = checkpoint.get(
+                        'cfs_task_logit_calibration')
+                    if calibration_state is None:
+                        raise RuntimeError(
+                            'Checkpoint has no CFS task-logit calibration: '
+                            + checkpoint_path)
+                    validate_cfs_task_logit_calibration_state(
+                        calibration_state, task_id + 1)
+                    args.cfs_task_logit_calibration_state = (
+                        calibration_state)
+                    print(
+                        'Loaded CFS task-logit calibration:',
+                        'accepted=', calibration_state['accepted'],
+                        'reason=', calibration_state['reason'],
+                        'scale=', calibration_state['scale'],
+                        'bias=', calibration_state['bias'],
+                    )
             else:
                 print('No checkpoint found at:', checkpoint_path)
                 return

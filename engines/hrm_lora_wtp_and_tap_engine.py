@@ -48,6 +48,9 @@ from engines.replay_anchored_ctird import (
     generate_task_replay_cache,
     replay_anchor_relation_loss,
 )
+from engines.cfs_task_logit_calibration import (
+    fit_cfs_task_logit_calibration,
+)
 from torch.distributions.multivariate_normal import MultivariateNormal
 
 
@@ -1777,6 +1780,7 @@ def train_and_evaluate(model: torch.nn.Module, model_without_ddp: torch.nn.Modul
     norm_blend_enabled = bool(getattr(args, 'continual_norm_blend', False))
     norm_update_ratio = min(
         1.0, max(0.0, float(getattr(args, 'continual_norm_update_ratio', 0.25))))
+    task_logit_calibration_state = None
 
     task_count = args.num_tasks
     max_train_tasks = int(getattr(args, 'max_train_tasks', 0))
@@ -1933,7 +1937,40 @@ def train_and_evaluate(model: torch.nn.Module, model_without_ddp: torch.nn.Modul
             train_task_adaptive_prediction(
                 model, args, device, class_mask, task_id,
                 data_loader_per_cls=data_loader_per_cls)
-            
+
+        if bool(getattr(args, 'cfs_task_logit_calibration', False)):
+            task_logit_calibration_state = fit_cfs_task_logit_calibration(
+                model=model,
+                cls_mean=cls_mean,
+                cls_cov=cls_cov,
+                cls_cfs_model=cls_cfs_model,
+                class_mask=class_mask,
+                seen_task_count=task_id + 1,
+                args=args,
+                device=device,
+            )
+            args.cfs_task_logit_calibration_state = (
+                task_logit_calibration_state)
+            if utils.is_main_process():
+                print(
+                    'CFS task-logit calibration:',
+                    'accepted=', task_logit_calibration_state['accepted'],
+                    'reason=', task_logit_calibration_state['reason'],
+                    'fit/report=',
+                    task_logit_calibration_state['fit_samples'],
+                    task_logit_calibration_state['report_samples'],
+                    'before=', task_logit_calibration_state['before'],
+                    'after=', task_logit_calibration_state['after'],
+                    'loss_before/after=',
+                    task_logit_calibration_state['before_loss'],
+                    task_logit_calibration_state['after_loss'],
+                    'worst_old_class_drop=',
+                    task_logit_calibration_state[
+                        'worst_old_class_drop'],
+                    'scale=', task_logit_calibration_state['scale'],
+                    'bias=', task_logit_calibration_state['bias'],
+                )
+
         if (bool(getattr(args, 'replay_anchor_ctird', False))
                 and task_id + 1 < task_count):
             generate_task_replay_cache(
@@ -1955,15 +1992,30 @@ def train_and_evaluate(model: torch.nn.Module, model_without_ddp: torch.nn.Modul
             Path(os.path.join(args.output_dir, 'checkpoint')).mkdir(parents=True, exist_ok=True)
 
             checkpoint_path = os.path.join(args.output_dir, 'checkpoint/task{}_checkpoint.pth'.format(task_id + 1))
+            checkpoint_args = args
+            if bool(getattr(args, 'cfs_task_logit_calibration', False)):
+                checkpoint_args = copy.copy(args)
+                if hasattr(
+                        checkpoint_args,
+                        'cfs_task_logit_calibration_state'):
+                    delattr(
+                        checkpoint_args,
+                        'cfs_task_logit_calibration_state')
             state_dict = {
                 'model': model_without_ddp.state_dict(),
                 'optimizer': optimizer.state_dict(),
-                'args': args,
+                'args': checkpoint_args,
             }
             if bool(getattr(args, 'crct_real_feature_replay', False)):
                 state_dict['real_feature_memory'] = {
                     int(class_id): memory.cpu()
                     for class_id, memory in cls_real_features.items()}
+            if bool(getattr(args, 'cfs_task_logit_calibration', False)):
+                if task_logit_calibration_state is None:
+                    raise RuntimeError(
+                        'CFS task-logit calibration state was not fitted')
+                state_dict['cfs_task_logit_calibration'] = copy.deepcopy(
+                    task_logit_calibration_state)
             if bool(getattr(args, 'replay_anchor_ctird', False)):
                 state_dict['replay_anchor_cache'] = {
                     'version': 1,
@@ -2180,8 +2232,29 @@ def _compute_mean(model: torch.nn.Module, data_loader: Iterable, device: torch.d
         if bool(getattr(args, 'crct_real_feature_replay', False)):
             cls_real_features[int(cls_id)] = _select_real_feature_memory(
                 gathered_features_per_cls, args)
-        if utils.use_cfs_sampling(args):
-            cls_cfs_model[cls_id] = utils.train_cfs_model(gathered_features_per_cls, args, device)
+        cfs_calibration_enabled = bool(getattr(
+            args, 'cfs_task_logit_calibration', False))
+        if utils.use_cfs_sampling(args) or cfs_calibration_enabled:
+            preserve_rng = (
+                cfs_calibration_enabled and not utils.use_cfs_sampling(args))
+            cpu_rng_state = None
+            cuda_rng_state = None
+            if preserve_rng:
+                cpu_rng_state = torch.random.get_rng_state()
+                if torch.cuda.is_available():
+                    cuda_rng_state = torch.cuda.get_rng_state_all()
+            try:
+                cls_cfs_model[cls_id] = utils.train_cfs_model(
+                    gathered_features_per_cls,
+                    args,
+                    device,
+                    force_cfs=cfs_calibration_enabled,
+                )
+            finally:
+                if preserve_rng:
+                    torch.random.set_rng_state(cpu_rng_state)
+                    if cuda_rng_state is not None:
+                        torch.cuda.set_rng_state_all(cuda_rng_state)
 
         if args.ca_storage_efficient_method == 'covariance':
             features_per_cls = gathered_features_per_cls

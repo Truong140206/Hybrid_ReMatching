@@ -64,9 +64,11 @@ def _collect_memory_logits(model, feature_memory, seen_classes, device,
     return torch.cat(chunks, dim=0).detach(), targets
 
 
-def calibrate_task_logits(model, feature_memory, class_mask, seen_task_count,
-                          args, device):
-    """Fit tiny task-wise affine corrections on retained feature memory."""
+def calibrate_task_logits(
+        model, feature_memory, class_mask, seen_task_count, args, device,
+        report_feature_memory=None, apply_to_model=True,
+        max_samples_per_class=None):
+    """Fit task-wise affine corrections and gate them on separate features."""
     if seen_task_count <= 1:
         return None
 
@@ -88,13 +90,23 @@ def calibrate_task_logits(model, feature_memory, class_mask, seen_task_count,
         dtype=torch.long,
         device=device,
     )
-    max_samples = max(
-        1, int(getattr(args, 'replay_calibration_samples_per_class', 48)))
+    if max_samples_per_class is None:
+        max_samples = max(
+            1, int(getattr(
+                args, 'replay_calibration_samples_per_class', 48)))
+    else:
+        max_samples = max(1, int(max_samples_per_class))
     batch_size = max(
         1, int(getattr(args, 'replay_calibration_batch_size', 1024)))
     base_model.eval()
     base_logits, targets = _collect_memory_logits(
         base_model, feature_memory, seen_classes, device, max_samples, batch_size)
+    report_logits = base_logits
+    report_targets = targets
+    if report_feature_memory is not None:
+        report_logits, report_targets = _collect_memory_logits(
+            base_model, report_feature_memory, seen_classes, device,
+            max_samples, batch_size)
 
     steps = max(1, int(getattr(args, 'replay_calibration_steps', 200)))
     learning_rate = max(
@@ -111,6 +123,9 @@ def calibrate_task_logits(model, feature_memory, class_mask, seen_task_count,
         0.0, float(getattr(args, 'replay_calibration_old_tolerance', 0.0)))
     minimum_gain = max(
         0.0, float(getattr(args, 'replay_calibration_min_gain', 0.0)))
+    max_old_class_drop = max(
+        0.0, float(getattr(
+            args, 'replay_calibration_max_old_class_drop', float('inf'))))
 
     raw_log_scale = torch.zeros(seen_task_count, device=device, requires_grad=True)
     raw_bias = torch.zeros(seen_task_count, device=device, requires_grad=True)
@@ -126,7 +141,16 @@ def calibrate_task_logits(model, feature_memory, class_mask, seen_task_count,
         competitor_base.scatter_(1, targets.unsqueeze(1), float('-inf'))
         base_margin = target_base - competitor_base.max(dim=1).values
         before = _accuracy_by_age(
-            base_logits, targets, class_tasks, seen_task_count - 1)
+            report_logits, report_targets, class_tasks, seen_task_count - 1)
+        before_loss = float(F.cross_entropy(
+            report_logits, report_targets).item())
+        before_predictions = report_logits.argmax(dim=1)
+        before_class_accuracy = torch.stack([
+            before_predictions[report_targets == class_index].eq(
+                report_targets[report_targets == class_index]
+            ).float().mean()
+            for class_index in range(len(seen_classes))
+        ])
 
     best_loss = float('inf')
     best_parameters = None
@@ -170,17 +194,36 @@ def calibrate_task_logits(model, feature_memory, class_mask, seen_task_count,
         scale, bias, _ = _bounded_parameters(
             raw_log_scale, raw_bias, max_scale, max_bias)
         calibrated_logits = (
-            base_logits * scale.index_select(0, column_tasks).unsqueeze(0)
+            report_logits * scale.index_select(0, column_tasks).unsqueeze(0)
             + bias.index_select(0, column_tasks).unsqueeze(0)
         )
         after = _accuracy_by_age(
-            calibrated_logits, targets, class_tasks, seen_task_count - 1)
+            calibrated_logits, report_targets, class_tasks,
+            seen_task_count - 1)
+        after_loss = float(F.cross_entropy(
+            calibrated_logits, report_targets).item())
+        after_predictions = calibrated_logits.argmax(dim=1)
+        after_class_accuracy = torch.stack([
+            after_predictions[report_targets == class_index].eq(
+                report_targets[report_targets == class_index]
+            ).float().mean()
+            for class_index in range(len(seen_classes))
+        ])
+        old_class_mask = class_tasks < seen_task_count - 1
+        worst_old_class_drop = 0.0
+        if bool(old_class_mask.any()):
+            worst_old_class_drop = float((
+                before_class_accuracy[old_class_mask]
+                - after_class_accuracy[old_class_mask]
+            ).max().mul(100.0).item())
         accepted = (
             after['all'] >= before['all'] + minimum_gain
             and after['old'] + old_tolerance >= before['old']
+            and after_loss <= before_loss
+            and worst_old_class_drop <= max_old_class_drop
         )
 
-        if accepted:
+        if accepted and apply_to_model:
             for task_index in range(seen_task_count):
                 class_index = torch.as_tensor(
                     class_mask[task_index], dtype=torch.long,
@@ -204,7 +247,12 @@ def calibrate_task_logits(model, feature_memory, class_mask, seen_task_count,
         'accepted': accepted,
         'before': before,
         'after': after,
+        'before_loss': before_loss,
+        'after_loss': after_loss,
         'scale': scale.detach().cpu().tolist(),
         'bias': bias.detach().cpu().tolist(),
         'samples': int(targets.numel()),
+        'report_samples': int(report_targets.numel()),
+        'worst_old_class_drop': worst_old_class_drop,
+        'applied_to_model': bool(accepted and apply_to_model),
     }
