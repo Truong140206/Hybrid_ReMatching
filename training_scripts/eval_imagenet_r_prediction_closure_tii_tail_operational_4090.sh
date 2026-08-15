@@ -36,10 +36,6 @@ for required_path in "${TRAIN_LOG}" "${CONVENTIONAL_LOG}" "${AUDIT_LOG}"; do
     exit 2
   }
 done
-grep -q "CLOSURE_TII_TAIL_ALL_METRIC_GATE=PASS" "${AUDIT_LOG}" || {
-  echo "Closure-TII-tail audit reference did not pass its locked gate." >&2
-  exit 2
-}
 if [[ -s "${LOG_PATH}" ]]; then
   echo "Refusing to overwrite existing operational log: ${LOG_PATH}" >&2
   exit 3
@@ -54,6 +50,40 @@ else
 fi
 
 cd "${REPO_ROOT}"
+"${PYTHON_BIN}" - "${CONVENTIONAL_LOG}" "${AUDIT_LOG}" <<'PY'
+import re
+import sys
+
+def final_row(path):
+    with open(path, 'r', encoding='utf-8') as handle:
+        rows = [line.strip() for line in handle
+                if 'Average accuracy till task10' in line]
+    if not rows:
+        raise SystemExit(f'AUDIT_REFERENCE_GATE=FAIL (missing metrics in {path})')
+    return rows[-1]
+
+def metric(row, name):
+    match = re.search(rf'{re.escape(name)}:\s*(-?[0-9]+(?:\.[0-9]+)?)', row)
+    if not match:
+        raise SystemExit(f'AUDIT_REFERENCE_GATE=FAIL (missing {name})')
+    return float(match.group(1))
+
+baseline = final_row(sys.argv[1])
+audit = final_row(sys.argv[2])
+checks = [
+    *(metric(audit, name) > metric(baseline, name)
+      for name in ('Acc@task', 'Acc@1', 'Acc@5', 'Backward')),
+    *(metric(audit, name) < metric(baseline, name)
+      for name in ('Loss', 'Forgetting')),
+    metric(audit, 'ClosureWinnerRecall') >= 99.5,
+    metric(audit, 'ClosureExactAgreement') >= 99.5,
+    metric(audit, 'ClosureLoRA/sample') <= 7.0001,
+    metric(audit, 'ClosureCalls/sample') <= 3.0001,
+]
+if not all(checks):
+    raise SystemExit('AUDIT_REFERENCE_GATE=FAIL (recomputed from metrics)')
+print('AUDIT_REFERENCE_GATE=PASS (recomputed from metrics)')
+PY
 PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" "${PYTHON_BIN}" -c '
 import sys
 import torch
@@ -117,7 +147,7 @@ printf 'Operational closure-TII-tail wall time seconds: %s\n' "$((END_TIME - STA
 echo "Final operational closure-TII-tail metrics:"
 grep "Average accuracy till task10" "${LOG_PATH}" | tail -n 1 || true
 
-"${PYTHON_BIN}" - "${CONVENTIONAL_LOG}" "${AUDIT_LOG}" "${LOG_PATH}" <<'PY'
+"${PYTHON_BIN}" - "${CONVENTIONAL_LOG}" "${AUDIT_LOG}" "${LOG_PATH}" <<'PY' | tee -a "${LOG_PATH}"
 import re
 import sys
 

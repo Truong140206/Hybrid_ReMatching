@@ -115,7 +115,7 @@ printf 'Closure-TII-tail audit wall time seconds: %s\n' "$((END_TIME - START_TIM
 echo "Final closure-TII-tail metrics:"
 grep "Average accuracy till task10" "${LOG_PATH}" | tail -n 1 || true
 
-"${PYTHON_BIN}" - "${CONVENTIONAL_LOG}" "${LOG_PATH}" <<'PY'
+"${PYTHON_BIN}" - "${CONVENTIONAL_LOG}" "${LOG_PATH}" <<'PY' | tee -a "${LOG_PATH}"
 import re
 import sys
 
