@@ -7,6 +7,7 @@ from protocols import validate_exemplar_free_protocol
 from engines.prediction_proposal_rematching import (
     _complete_with_tii_probability_mass,
     conditional_candidate_fusion,
+    crm_confidence_candidate_fusion,
     cross_adapter_borda_consensus,
     cross_adapter_global_consensus,
     initial_branch_confidence_dominance,
@@ -79,6 +80,7 @@ def test_prediction_proposal_is_allowed_by_strict_exemplar_free_protocol():
         prediction_proposal_tii_completion=True,
         prediction_proposal_task_mass_fusion=True,
         prediction_proposal_conditional_fusion=True,
+        prediction_proposal_crm_confidence_fusion=True,
     ))
 
 
@@ -259,6 +261,47 @@ def test_conditional_fusion_is_adapter_shift_invariant():
 
     assert torch.allclose(fused, shifted_fused, atol=1e-6)
     assert torch.allclose(evidence, shifted_evidence, atol=1e-6)
+
+
+def test_crm_confidence_fusion_is_normalized_and_adapter_shift_invariant():
+    candidate_logits = torch.tensor([[[4.0, 1.0, 9.0, 8.0],
+                                      [7.0, 6.0, 3.0, 2.5]]])
+    tii_prior = torch.zeros((1, 2))
+    candidate_tasks = torch.tensor([[0, 1]])
+    class_mask = [[0, 1], [2, 3]]
+
+    fused, evidence = crm_confidence_candidate_fusion(
+        candidate_logits, tii_prior, class_mask, candidate_tasks,
+        confidence_temperature=0.1, prior_weight=0.0)
+    shifted = candidate_logits + torch.tensor([[[100.0], [-50.0]]])
+    shifted_fused, shifted_evidence = crm_confidence_candidate_fusion(
+        shifted, tii_prior, class_mask, candidate_tasks,
+        confidence_temperature=0.1, prior_weight=0.0)
+
+    assert torch.allclose(
+        fused.exp().sum(dim=1), torch.ones(1), atol=1e-6)
+    assert torch.allclose(fused, shifted_fused, atol=1e-6)
+    assert torch.allclose(evidence, shifted_evidence, atol=1e-6)
+    assert evidence[0, 0] > evidence[0, 1]
+
+
+def test_crm_confidence_fusion_uses_tii_prior_only_as_a_soft_tie_break():
+    candidate_logits = torch.tensor([[[3.0, 1.0, 0.0, 0.0],
+                                      [0.0, 0.0, 3.0, 1.0]]])
+    candidate_tasks = torch.tensor([[0, 1]])
+    class_mask = [[0, 1], [2, 3]]
+
+    fused, evidence = crm_confidence_candidate_fusion(
+        candidate_logits,
+        tii_prior=torch.tensor([[0.0, 2.0]]),
+        class_mask=class_mask,
+        candidate_tasks=candidate_tasks,
+        confidence_temperature=0.1,
+        prior_weight=0.3,
+    )
+
+    assert evidence[0, 1] > evidence[0, 0]
+    assert fused.argmax(dim=1).tolist() == [2]
 
 
 def test_initial_branch_selector_requires_confidence_and_margin_dominance():

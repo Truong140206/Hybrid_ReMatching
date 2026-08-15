@@ -3076,3 +3076,42 @@ khong tao ra loi ich test co the do duoc va lam BWT cuoi kem `0.0666`; dieu nay
 cho thay CFS synthetic report chua phai proxy du tin cay cho real ImageNet-R
 cross-LoRA calibration. Gate task 3 da ngan mot state co per-class regression,
 nen khong duoc noi threshold de ep state do duoc chap nhan.
+## 2026-08-15 - CRM confidence fusion cho prediction proposal
+
+### Ly do doi huong
+
+CFS task-logit calibration da cho thay synthetic aggregate feature khong phai
+proxy du tin cay cho scale logit tren anh that ImageNet-R. Vi vay khong tiep tuc
+quet tham so CFS hoac noi validation gate. Doc lai HRM-PET cho thay CRM goc
+khong so sanh max-logit tho giua cac LoRA; no so sanh do tin cay GEN cua phan
+phoi du doan. Prediction-proposal hien tai lai dung max local logit, nen co mot
+sai khac cu the voi co che goc va co nguy co do logit scale/offset cua cac LoRA
+duoc hoc doc lap.
+
+### Co che moi
+
+Voi moi LoRA candidate va moi mau test:
+
+1. Chi lay logits cua 20 lop thuoc task ung voi LoRA.
+2. Chuan hoa noi bo thanh `P(class|task,x)`.
+3. Tinh GEN confidence voi dung `gamma=0.1`, `M=20` nhu HRM-PET.
+4. Ghep GEN confidence voi TII prior co dinh de tao `P(task|x)`.
+5. Tao phan phoi chung `P(task|x) * P(class|task,x)` tren cac candidate.
+6. TII completion chi bo sung khoi luong nho cho lop ngoai candidate va khong
+   duoc doi top-1 da chon.
+
+Co che bat bien voi moi phep cong offset rieng cho logits cua tung adapter,
+khong hoc tham so, khong dung anh lich su, khong luu feature tung mau, khong
+dung calibration set va khong tang so LoRA/forward.
+
+### Cau hinh khoa truoc va doi chung nhan qua
+
+- ImageNet-R checkpoint rank-8 seed 42 hien co; chi evaluation, khong train lai.
+- TII top-2 + 3 proposal = 5 LoRA/mau, 2 forward calls.
+- LoRA class temperature 1.0, TII prior weight 0.3.
+- GEN `gamma=0.1`, `M=20`, confidence temperature 0.1.
+- Khong bat CFS calibration, task-mass fusion, conditional fusion hay iterative.
+- Script bat buoc doi chieu voi raw proposal cung checkpoint, cung candidate
+  budget va cung so forward; day la causal control cho rieng phep ghep CRM.
+- Khong quet confidence temperature tren test. Neu causal all-metric gate fail,
+  dong nhanh nay thay vi chon tham so tot nhat hau nghiem.

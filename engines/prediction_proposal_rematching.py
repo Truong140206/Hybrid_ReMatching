@@ -302,6 +302,61 @@ def conditional_candidate_fusion(
     return merged_logits, task_evidence
 
 
+def crm_confidence_candidate_fusion(
+        candidate_logits, tii_prior, class_mask, candidate_tasks,
+        class_temperature=1.0, confidence_temperature=0.1,
+        prior_weight=0.3, gamma=0.1, top_m=20):
+    """Fuse task-conditional probabilities using HRM's GEN confidence."""
+    batch_size, candidate_count, _ = candidate_logits.shape
+    device = candidate_logits.device
+    class_temperature = max(float(class_temperature), 1e-6)
+    confidence_temperature = max(float(confidence_temperature), 1e-6)
+    prior_weight = max(float(prior_weight), 0.0)
+    gamma = max(float(gamma), 1e-6)
+
+    conditional_log_probs = torch.full_like(
+        candidate_logits, float('-inf'))
+    confidence_scores = candidate_logits.new_full(
+        (batch_size, candidate_count), float('-inf'))
+    task_priors = candidate_logits.new_zeros(
+        (batch_size, candidate_count))
+    for candidate_slot in range(candidate_count):
+        active_tasks = candidate_tasks[:, candidate_slot]
+        task_priors[:, candidate_slot] = tii_prior.gather(
+            1, active_tasks.unsqueeze(1)).squeeze(1)
+        for task_index in active_tasks.unique().tolist():
+            rows = torch.nonzero(active_tasks == task_index).flatten()
+            class_index = torch.as_tensor(
+                class_mask[task_index], dtype=torch.long, device=device)
+            local_log_probs = F.log_softmax(
+                candidate_logits.index_select(0, rows).index_select(
+                    1, class_index) / class_temperature,
+                dim=1)
+            local_probs = local_log_probs.exp()
+            selected_m = min(max(1, int(top_m)), local_probs.shape[1])
+            top_probs = torch.topk(
+                local_probs, k=selected_m, dim=1).values.clamp(
+                    min=1e-12, max=1.0 - 1e-12)
+            gen_confidence = -(
+                top_probs.pow(gamma)
+                * (1.0 - top_probs).pow(gamma)
+            ).sum(dim=1)
+            conditional_log_probs[
+                rows.unsqueeze(1), candidate_slot,
+                class_index.unsqueeze(0)
+            ] = local_log_probs
+            confidence_scores[rows, candidate_slot] = gen_confidence
+
+    task_scores = (
+        confidence_scores / confidence_temperature
+        + prior_weight * task_priors)
+    task_log_probs = F.log_softmax(task_scores, dim=1)
+    joint_log_probs = conditional_log_probs + task_log_probs.unsqueeze(2)
+    merged_logits = torch.logsumexp(joint_log_probs, dim=1)
+    task_evidence = joint_log_probs.max(dim=2).values
+    return merged_logits, task_evidence
+
+
 @torch.no_grad()
 def prediction_proposal_adapter_rematching(
         model, inputs, tii_logits, class_mask, seen_task_count, args):
@@ -379,16 +434,28 @@ def prediction_proposal_adapter_rematching(
             forward_calls += 1
 
     candidate_count = candidate_tasks.shape[1]
+    task_mass_fusion = bool(getattr(
+        args, 'prediction_proposal_task_mass_fusion', False))
+    conditional_fusion = bool(getattr(
+        args, 'prediction_proposal_conditional_fusion', False))
+    crm_confidence_fusion = bool(getattr(
+        args, 'prediction_proposal_crm_confidence_fusion', False))
+    if sum([
+            task_mass_fusion,
+            conditional_fusion,
+            crm_confidence_fusion,
+    ]) > 1:
+        raise ValueError(
+            'Prediction-proposal fusion modes are mutually exclusive')
     if (bool(getattr(args, 'cfs_task_logit_calibration', False))
             and (
-                bool(getattr(
-                    args, 'prediction_proposal_task_mass_fusion', False))
-                or bool(getattr(
-                    args, 'prediction_proposal_conditional_fusion', False)))):
+                task_mass_fusion
+                or conditional_fusion
+                or crm_confidence_fusion)):
         raise ValueError(
             'CFS task-logit calibration is defined only for raw-logit '
             'prediction-proposal fusion')
-    if bool(getattr(args, 'prediction_proposal_task_mass_fusion', False)):
+    if task_mass_fusion:
         merged_logits, task_evidence = task_mass_preserving_candidate_fusion(
             candidate_logits=candidate_logits,
             tii_logits=tii_logits,
@@ -397,14 +464,26 @@ def prediction_proposal_adapter_rematching(
             seen_task_count=seen_task_count,
             temperature=temperature,
         )
-    elif bool(getattr(
-            args, 'prediction_proposal_conditional_fusion', False)):
+    elif conditional_fusion:
         merged_logits, task_evidence = conditional_candidate_fusion(
             candidate_logits=candidate_logits,
             tii_prior=tii_prior,
             class_mask=class_mask,
             candidate_tasks=candidate_tasks,
             temperature=temperature,
+            prior_weight=prior_weight,
+        )
+    elif crm_confidence_fusion:
+        merged_logits, task_evidence = crm_confidence_candidate_fusion(
+            candidate_logits=candidate_logits,
+            tii_prior=tii_prior,
+            class_mask=class_mask,
+            candidate_tasks=candidate_tasks,
+            class_temperature=temperature,
+            confidence_temperature=float(getattr(
+                args,
+                'prediction_proposal_crm_confidence_temperature',
+                0.1)),
             prior_weight=prior_weight,
         )
     else:

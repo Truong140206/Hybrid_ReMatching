@@ -13,6 +13,8 @@ AUDIT_INITIAL_BRANCH="${AUDIT_INITIAL_BRANCH:-0}"
 AUDIT_CROSS_ADAPTER="${AUDIT_CROSS_ADAPTER:-0}"
 TASK_MASS_FUSION="${TASK_MASS_FUSION:-0}"
 CONDITIONAL_FUSION="${CONDITIONAL_FUSION:-0}"
+CRM_CONFIDENCE_FUSION="${CRM_CONFIDENCE_FUSION:-0}"
+CRM_CONFIDENCE_TEMPERATURE="${CRM_CONFIDENCE_TEMPERATURE:-0.1}"
 CFS_TASK_CALIBRATION="${CFS_TASK_CALIBRATION:-0}"
 ITERATIVE_PROPOSAL="${ITERATIVE_PROPOSAL:-0}"
 FIRST_WAVE_COUNT="${FIRST_WAVE_COUNT:-2}"
@@ -32,12 +34,12 @@ if [[ "${ITERATIVE_PROPOSAL}" == "1" && "${PROPOSAL_COUNT}" -gt "${FIRST_WAVE_CO
   EXPECTED_FORWARD_CALLS=3
 fi
 
-if [[ "${TASK_MASS_FUSION}" == "1" && "${CONDITIONAL_FUSION}" == "1" ]]; then
-  echo "TASK_MASS_FUSION and CONDITIONAL_FUSION are mutually exclusive" >&2
+FUSION_MODE_COUNT=$((TASK_MASS_FUSION + CONDITIONAL_FUSION + CRM_CONFIDENCE_FUSION))
+if [[ "${FUSION_MODE_COUNT}" -gt 1 ]]; then
+  echo "TASK_MASS_FUSION, CONDITIONAL_FUSION, and CRM_CONFIDENCE_FUSION are mutually exclusive" >&2
   exit 64
 fi
-if [[ "${CFS_TASK_CALIBRATION}" == "1" && ( \
-      "${TASK_MASS_FUSION}" == "1" || "${CONDITIONAL_FUSION}" == "1" ) ]]; then
+if [[ "${CFS_TASK_CALIBRATION}" == "1" && "${FUSION_MODE_COUNT}" -gt 0 ]]; then
   echo "CFS_TASK_CALIBRATION requires raw-logit fusion" >&2
   exit 64
 fi
@@ -68,6 +70,7 @@ if [[ -z "${BASELINE_LOG}" ]]; then
   fi
 fi
 EXHAUSTIVE_LOG="${EXHAUSTIVE_LOG:-${OUTPUT_ROOT}/${RUN_BASENAME}_eval_vectorized_exhaustive_c4_p0p3_t1p0.log}"
+RAW_PROPOSAL_LOG="${RAW_PROPOSAL_LOG:-${OUTPUT_ROOT}/${RUN_BASENAME}_eval_prediction_proposal_i${INITIAL_COUNT}_p${PROPOSAL_COUNT}_c5_tiicomplete_strict.log}"
 
 if [[ -n "${DATA_PATH:-}" ]]; then
   IMR_DATA_PATH="${DATA_PATH}"
@@ -159,6 +162,14 @@ if [[ "${CONDITIONAL_FUSION}" == "1" ]]; then
   AUDIT_SUFFIX="${AUDIT_SUFFIX}_conditional"
   AUDIT_ARGS+=(--prediction_proposal_conditional_fusion)
 fi
+if [[ "${CRM_CONFIDENCE_FUSION}" == "1" ]]; then
+  CRM_CONFIDENCE_TAG="${CRM_CONFIDENCE_TEMPERATURE//./p}"
+  AUDIT_SUFFIX="${AUDIT_SUFFIX}_crmgen_t${CRM_CONFIDENCE_TAG}"
+  AUDIT_ARGS+=(
+    --prediction_proposal_crm_confidence_fusion
+    --prediction_proposal_crm_confidence_temperature "${CRM_CONFIDENCE_TEMPERATURE}"
+  )
+fi
 if [[ "${ITERATIVE_PROPOSAL}" == "1" ]]; then
   AUDIT_SUFFIX="${AUDIT_SUFFIX}_iterative_w${FIRST_WAVE_COUNT}"
   AUDIT_ARGS+=(
@@ -191,6 +202,8 @@ if [[ "${TASK_MASS_FUSION}" == "1" ]]; then
   echo "Fusion: P_TII(task|x) * P_LoRA(class|task,x); no learned calibration"
 elif [[ "${CONDITIONAL_FUSION}" == "1" ]]; then
   echo "Fusion: conditional LoRA log-probability + fixed standardized TII prior"
+elif [[ "${CRM_CONFIDENCE_FUSION}" == "1" ]]; then
+  echo "Fusion: HRM GEN task confidence * per-task LoRA class probability; confidence temperature=${CRM_CONFIDENCE_TEMPERATURE}"
 elif [[ "${CFS_TASK_CALIBRATION}" == "1" ]]; then
   echo "Fusion: raw LoRA logits with checkpointed CFS task-wise scale/bias"
 fi
@@ -199,6 +212,13 @@ echo "Run=${RUN_DIR}; seed=${SEED}; rank=${LORA_RANK}"
 echo "Protocol source log: ${TRAIN_LOG}"
 echo "Baseline reference: ${BASELINE_LOG}"
 echo "Exhaustive reference: ${EXHAUSTIVE_LOG}"
+if [[ "${CRM_CONFIDENCE_FUSION}" == "1" ]]; then
+  if [[ ! -s "${RAW_PROPOSAL_LOG}" ]]; then
+    echo "Raw proposal causal reference required: ${RAW_PROPOSAL_LOG}" >&2
+    exit 2
+  fi
+  echo "Same-budget raw proposal reference: ${RAW_PROPOSAL_LOG}"
+fi
 
 START_TIME="$(date +%s)"
 PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
@@ -253,7 +273,8 @@ if [[ "${AUDIT_CROSS_ADAPTER}" == "1" ]]; then
   grep "CrossBordaAudit" "${LOG_PATH}" | tail -n 10 | nl -w1 -s': '
 fi
 
-"${PYTHON_BIN}" - "${LOG_PATH}" "${BASELINE_LOG}" "${EXHAUSTIVE_LOG}" "${EXPECTED_LORA_BUDGET}" "${EXPECTED_FORWARD_CALLS}" <<'PY'
+"${PYTHON_BIN}" - "${LOG_PATH}" "${BASELINE_LOG}" "${EXHAUSTIVE_LOG}" "${EXPECTED_LORA_BUDGET}" "${EXPECTED_FORWARD_CALLS}" "${RAW_PROPOSAL_LOG}" "${CRM_CONFIDENCE_FUSION}" <<'PY'
+import os
 import re
 import sys
 
@@ -311,6 +332,27 @@ print('BASELINE_ALL_METRIC_GATE=' + (
     'PASS' if all(checks.values()) else 'FAIL'))
 print('OPERATIONAL_PROPOSAL_EFFICIENCY_GATE=' + (
     'PASS' if cost_ok and call_ok else 'FAIL'))
+
+if sys.argv[7] == '1':
+    raw_path = sys.argv[6]
+    if not os.path.isfile(raw_path):
+        raise SystemExit(f'Missing raw proposal causal reference: {raw_path}')
+    raw = final_row(raw_path)
+    causal_checks = {}
+    print('Causal comparison with same-budget raw proposal:')
+    for name in HIGHER:
+        delta = metric(candidate, name) - metric(raw, name)
+        causal_checks[name] = delta >= 0.0
+        print(f'  {name} delta={delta:+.4f}: '
+              f'{"PASS" if causal_checks[name] else "FAIL"}')
+    for name in LOWER:
+        delta = metric(candidate, name) - metric(raw, name)
+        causal_checks[name] = delta <= 0.0
+        print(f'  {name} delta={delta:+.4f}: '
+              f'{"PASS" if causal_checks[name] else "FAIL"}')
+    print('CRM_CAUSAL_ALL_METRIC_GATE=' + (
+        'PASS' if all(causal_checks.values()) else 'FAIL'))
+
 if 'InitialProposalOracleAcc@1:' in candidate:
     initial = metric(candidate, 'InitialBranchAcc@1')
     proposal = metric(candidate, 'ProposalAuditAcc@1')
