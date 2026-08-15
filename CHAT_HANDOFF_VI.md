@@ -594,7 +594,7 @@ exhaustive-like reference:
 
 ~~~bash
 cd ~/Documents/truongnguyen/Hybrid_ReMatching
-python training_scripts/compare_imagenet_r_taskwise.py \
+python3 training_scripts/compare_imagenet_r_taskwise.py \
   --baseline ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed43_eval_conventional.log \
   --proposal ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed43_eval_consensus_cap5_closure_i2_c5_dev.log \
   --exhaustive ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed43_eval_prediction_closure_tii_tail_i2_c5_strict.log \
