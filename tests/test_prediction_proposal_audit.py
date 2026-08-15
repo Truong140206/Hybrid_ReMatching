@@ -18,6 +18,7 @@ from engines.progressive_oracle_audit import (
     prediction_beam_closure_diagnostics,
     prediction_budget_closure_diagnostics,
     prediction_closure_diagnostics,
+    prediction_majority_budget_closure_diagnostics,
     prediction_proposal_diagnostics,
 )
 
@@ -285,6 +286,50 @@ def test_prediction_budget_closure_keeps_strongest_frontier_under_cap():
     assert torch.isfinite(output).all()
     assert torch.allclose(output.exp().sum(dim=1), torch.ones(1), atol=1e-6)
 
+def test_prediction_majority_closure_anchors_only_certified_rows():
+    tii_ranking = torch.tensor([[0, 1, 2], [0, 1, 2]])
+    full_adapter_logits = torch.full((2, 3, 3), -10.0)
+    full_adapter_logits[:, 0, 2] = 9.0
+    full_adapter_logits[:, 1, 1] = 8.0
+    full_adapter_logits[:, 2, 2] = 10.0
+    rank_logits = torch.full((2, 3, 3), float('-inf'))
+    rank_logits[:, 0, 0] = 4.0
+    rank_logits[:, 1, 1] = 2.0
+    rank_logits[:, 2, 2] = 5.0
+
+    audit = prediction_majority_budget_closure_diagnostics(
+        tii_ranking=tii_ranking,
+        full_adapter_logits=full_adapter_logits,
+        rank_logits=rank_logits,
+        task_evidence=torch.tensor([[4.0, 2.0, 5.0],
+                                    [4.0, 2.0, 5.0]]),
+        winner_tasks=torch.tensor([2, 2]),
+        full_predictions=torch.tensor([2, 2]),
+        tii_logits=torch.tensor([[4.0, 0.0, 0.0],
+                                 [0.0, 0.0, 0.0]]),
+        class_mask=[[0], [1], [2]],
+        initial_count=2,
+        top_classes=1,
+        max_candidates=3,
+    )
+
+    output = audit['prediction_majority_closure_output_logits']
+    assert audit['prediction_majority_closure_majority_rate'].tolist() == [
+        True, False]
+    assert audit['prediction_majority_closure_lora_counts'].tolist() == [
+        1.0, 3.0]
+    assert audit['prediction_majority_closure_forward_calls'].tolist() == [
+        1.0, 2.0]
+    assert audit['prediction_majority_closure_output_tasks'].tolist() == [0, 2]
+    assert audit['prediction_majority_closure_winner_recall'].tolist() == [
+        False, True]
+    assert audit['prediction_majority_closure_exact_agreement'].tolist() == [
+        False, True]
+    assert output.argmax(dim=1).tolist() == [0, 2]
+    assert torch.isfinite(output).all()
+    assert torch.allclose(
+        output.exp().sum(dim=1), torch.ones(2), atol=1e-6)
+
 def test_prediction_proposal_is_allowed_by_strict_exemplar_free_protocol():
     validate_exemplar_free_protocol(SimpleNamespace(
         strict_exemplar_free=True,
@@ -294,6 +339,7 @@ def test_prediction_proposal_is_allowed_by_strict_exemplar_free_protocol():
         progressive_prediction_closure_tii_tail_audit=True,
         progressive_prediction_beam_closure_audit=True,
         progressive_prediction_budget_closure_audit=True,
+        progressive_prediction_majority_closure_audit=True,
         prediction_closure_rematching=True,
         prediction_proposal_rematching=True,
         prediction_proposal_cross_adapter_audit=True,

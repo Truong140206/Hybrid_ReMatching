@@ -3401,3 +3401,26 @@ va commit truoc khi ket qua seed 43 duoc cung cap; khong sua thuat toan/gate sau
 khi doc result nay. Chay nguyen cau hinh cap-5 nhu mot blind branch check. Hard
 cap co the vua giam LoRA vua regularize cac nhanh over-match, nhung van phai dat
 ca sau quality gate moi duoc chap nhan.
+
+## 2026-08-16 - Frontier cap-5 FAIL; preregister TII-majority anchor
+
+Frontier cap-5 seed 43 hoan tat trong 412 giay: Acc@task 80.5547, Acc@1
+75.4966, Acc@5 88.1419, Loss 1.1877, Forgetting 3.2232, Backward -3.1921,
+winner/exact 98.4305%, budget-hit 54.3134%, LoRA 4.3488 va calls 3.0350.
+Efficiency PASS, nhung Backward delta -0.7837, Forgetting +0.6243 va hai
+fidelity gate deu FAIL. FRONTIER_CAP5_ALL_METRIC_GATE=FAIL. So voi full closure
+seed 43, cap-5 cung xau hon moi quality metric; dong nhanh cap-5 nguyen ban.
+
+Chan doan development: exhaustive agreement khong nen la gate tren seed 43 vi
+exhaustive-like winner da lam retention xau. Nhanh moi co muc tieu co y lech khoi
+exhaustive khi TII co certificate manh: tinh softmax tren toan bo seen-class TII
+logit, cong probability mass theo task. Neu TII top task co mass >50%, dung o
+mot LoRA top-1; neu khong, chay one-successor cap-5 closure y het. Ca hai nhanh
+dung top-1-safe TII tail. 50% la majority certificate co dinh, khong fit bang
+nhan hoac calibration.
+
+Gate moi chi gom muc tieu operational: Acc@task, Acc@1, Acc@5, Backward cao hon
+conventional seed 43; Loss va Forgetting thap hon; LoRA/sample <5; calls/sample
+<=4. WinnerRecall, ExactAgreement va CertifiedRate chi diagnostic, khong la gate.
+Khong sweep nguong; chi chay certificate 50% da khoa. Neu PASS development moi
+trien khai operational va validate seed 44/45.

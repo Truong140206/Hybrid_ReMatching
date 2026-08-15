@@ -462,10 +462,96 @@ def prediction_budget_closure_diagnostics(
         'prediction_budget_closure_forward_calls': forward_calls,
         'prediction_budget_closure_budget_hit': lora_counts.eq(
             float(max_candidates)),
+        'prediction_budget_closure_candidate_mask': candidate_mask,
         'prediction_budget_closure_output_logits': output_logits,
         'prediction_budget_closure_output_tasks': selected_tasks,
     }
 
+
+def prediction_majority_budget_closure_diagnostics(
+        tii_ranking, full_adapter_logits, rank_logits, task_evidence,
+        winner_tasks, full_predictions, tii_logits, class_mask,
+        initial_count=2, top_classes=5, max_candidates=5,
+        excluded_margin=20.0):
+    """Keep a strict TII-majority anchor; use cap closure when ambiguous."""
+    budget = prediction_budget_closure_diagnostics(
+        tii_ranking=tii_ranking,
+        full_adapter_logits=full_adapter_logits,
+        rank_logits=rank_logits,
+        task_evidence=task_evidence,
+        winner_tasks=winner_tasks,
+        full_predictions=full_predictions,
+        tii_logits=tii_logits,
+        class_mask=class_mask,
+        initial_count=initial_count,
+        top_classes=top_classes,
+        max_candidates=max_candidates,
+        excluded_margin=excluded_margin,
+    )
+    batch_size, seen_task_count = tii_ranking.shape
+    device = tii_ranking.device
+
+    seen_class_mask = torch.zeros(
+        tii_logits.shape[1], dtype=torch.bool, device=device)
+    for task_index in range(seen_task_count):
+        class_index = torch.as_tensor(
+            class_mask[task_index], dtype=torch.long, device=device)
+        seen_class_mask[class_index] = True
+    seen_tii_logits = tii_logits.masked_fill(
+        ~seen_class_mask.unsqueeze(0), float('-inf'))
+    class_probabilities = torch.softmax(seen_tii_logits, dim=1)
+    task_mass = torch.zeros(
+        (batch_size, seen_task_count), dtype=tii_logits.dtype, device=device)
+    for task_index in range(seen_task_count):
+        class_index = torch.as_tensor(
+            class_mask[task_index], dtype=torch.long, device=device)
+        task_mass[:, task_index] = class_probabilities.index_select(
+            1, class_index).sum(dim=1)
+
+    top1_tasks = tii_ranking[:, 0]
+    top1_mass = task_mass.gather(1, top1_tasks.unsqueeze(1)).squeeze(1)
+    majority_certified = top1_mass.gt(0.5)
+    top1_candidate_mask = torch.zeros(
+        (batch_size, seen_task_count), dtype=torch.bool, device=device)
+    top1_candidate_mask.scatter_(1, top1_tasks.unsqueeze(1), True)
+    top1_partial_logits = rank_logits[:, 0]
+    top1_logits = complete_with_tii_probability_mass(
+        top1_partial_logits, tii_logits, class_mask, top1_candidate_mask)
+
+    output_logits = torch.where(
+        majority_certified.unsqueeze(1), top1_logits,
+        budget['prediction_budget_closure_output_logits'])
+    output_tasks = torch.where(
+        majority_certified, top1_tasks,
+        budget['prediction_budget_closure_output_tasks'])
+    output_predictions = output_logits.argmax(dim=1)
+    exact_agreement = (
+        output_tasks.eq(winner_tasks)
+        & output_predictions.eq(full_predictions)
+    )
+    top1_winner = top1_tasks.eq(winner_tasks)
+    winner_recall = torch.where(
+        majority_certified, top1_winner,
+        budget['prediction_budget_closure_winner_recall'])
+    lora_counts = torch.where(
+        majority_certified,
+        torch.ones_like(budget['prediction_budget_closure_lora_counts']),
+        budget['prediction_budget_closure_lora_counts'])
+    forward_calls = torch.where(
+        majority_certified,
+        torch.ones_like(
+            budget['prediction_budget_closure_forward_calls']),
+        budget['prediction_budget_closure_forward_calls'])
+
+    return {
+        'prediction_majority_closure_winner_recall': winner_recall,
+        'prediction_majority_closure_exact_agreement': exact_agreement,
+        'prediction_majority_closure_majority_rate': majority_certified,
+        'prediction_majority_closure_lora_counts': lora_counts,
+        'prediction_majority_closure_forward_calls': forward_calls,
+        'prediction_majority_closure_output_logits': output_logits,
+        'prediction_majority_closure_output_tasks': output_tasks,
+    }
 
 @torch.no_grad()
 def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
@@ -498,9 +584,12 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
         args, 'progressive_prediction_beam_closure_audit', False))
     budget_closure_audit = bool(getattr(
         args, 'progressive_prediction_budget_closure_audit', False))
+    majority_closure_audit = bool(getattr(
+        args, 'progressive_prediction_majority_closure_audit', False))
     full_adapter_logits = (
         torch.empty_like(rank_logits)
-        if closure_audit or beam_closure_audit or budget_closure_audit
+        if (closure_audit or beam_closure_audit or budget_closure_audit
+            or majority_closure_audit)
         else None)
     initial_count = min(
         max(1, int(getattr(args, 'prediction_proposal_initial_count', 2))),
@@ -644,6 +733,22 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
             max_candidates=5,
             excluded_margin=excluded_margin,
         ))
+    if majority_closure_audit:
+        diagnostics.update(prediction_majority_budget_closure_diagnostics(
+            tii_ranking=candidate_tasks,
+            full_adapter_logits=full_adapter_logits,
+            rank_logits=rank_logits,
+            task_evidence=task_evidence,
+            winner_tasks=routed_tasks,
+            full_predictions=full_predictions,
+            tii_logits=tii_logits,
+            class_mask=class_mask,
+            initial_count=initial_count,
+            top_classes=getattr(
+                args, 'prediction_proposal_top_classes', 5),
+            max_candidates=5,
+            excluded_margin=excluded_margin,
+        ))
     if bool(getattr(args, 'progressive_arrow_audit', False)):
         arrow_scores = arrow_task_scores(model, inputs, seen_task_count)
         arrow_ranking = torch.argsort(arrow_scores, dim=1, descending=True)
@@ -671,6 +776,12 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
         return (
             diagnostics['prediction_budget_closure_output_logits'],
             diagnostics['prediction_budget_closure_output_tasks'],
+            diagnostics,
+        )
+    if majority_closure_audit:
+        return (
+            diagnostics['prediction_majority_closure_output_logits'],
+            diagnostics['prediction_majority_closure_output_tasks'],
             diagnostics,
         )
     return full_logits, routed_tasks, diagnostics

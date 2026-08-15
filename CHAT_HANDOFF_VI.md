@@ -536,3 +536,28 @@ SEED=43 bash training_scripts/eval_imagenet_r_frontier_cap5_closure_audit_4090.s
 
 Gui dong task10, comparison, FRONTIER_CAP5_ALL_METRIC_GATE va wall time. Khong
 doi cap, top classes, threshold hay gate dua tren reference result vua thay.
+
+## 26. Cap-5 FAIL; cho majority-cap5 audit
+
+Cap-5 seed 43: Acc@task 80.5547, Acc@1 75.4966, Acc@5 88.1419, Loss 1.1877,
+Forgetting 3.2232, Backward -3.1921, winner/exact 98.4305%, LoRA 4.3488,
+calls 3.0350, wall 412 giay. Cost PASS nhung Backward, Forgetting va fidelity
+FAIL; FRONTIER_CAP5_ALL_METRIC_GATE=FAIL. Da dong cap-5 nguyen ban.
+
+Nhanh moi da khoa: neu TII top task co >50% seen-class probability mass thi dung
+o mot LoRA; sample khong co majority moi chay cap-5. Nguong 50% la majority
+certificate, khong fit nhan. Gate: ca sau quality metric hon conventional,
+LoRA <5, calls <=4; agreement voi exhaustive chi diagnostic vi exhaustive-like
+routing da fail retention tren seed 43.
+
+Lenh chay:
+
+~~~bash
+cd ~/Documents/truongnguyen/Hybrid_ReMatching
+git pull --ff-only
+SEED=43 bash training_scripts/eval_imagenet_r_majority_cap5_closure_audit_4090.sh \
+  ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed43
+~~~
+
+Gui dong task10, comparison, diagnostic, MAJORITY_CAP5_ALL_METRIC_GATE va wall
+time. Khong sweep nguong majority dua tren ket qua.
