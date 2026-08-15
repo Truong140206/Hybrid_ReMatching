@@ -3056,3 +3056,23 @@ CFS samples tren test. Gia thuyet rang CFS aggregate synthetic features co the
 hieu chinh cross-LoRA raw-logit scale bi bac bo voi cau hinh da khoa. Phan tang
 accuracy trong candidate den tu proposal routing, khong phai dong gop cua CFS
 calibration.
+#### Chan doan state calibration theo task
+
+Log xac nhan lifecycle va gate hoat dong dung:
+
+- Task 1: identity vi chi co mot task.
+- Task 2: gate chap nhan. Synthetic report Acc@1 tong tang `95.1042 -> 95.3125`,
+  old-task tang `95.3125 -> 95.7292`, new-task giu `94.8958`; CE giam
+  `0.2041 -> 0.1571`; worst old-class drop bang 0. State da dung scale
+  `[1.2313, 1.2430]` va bias `[+0.0456, -0.0456]`.
+- Task 3: aggregate synthetic accuracy va CE deu tot hon, nhung mot lop cu giam
+  `4.1667` diem tren report split. Conservative per-class gate da reject va luu
+  identity `[1,1,1]`, bias `[0,0,0]`.
+
+Vi state task 3 la identity, final Acc/Loss/Forgetting giong het uncalibrated la
+ket qua dung. Backward van khac vi metric nay dung ca cac accuracy tai thoi diem
+task 1-2, noi state task 2 da duoc ap dung. Synthetic gate pass o task 2 nhung
+khong tao ra loi ich test co the do duoc va lam BWT cuoi kem `0.0666`; dieu nay
+cho thay CFS synthetic report chua phai proxy du tin cay cho real ImageNet-R
+cross-LoRA calibration. Gate task 3 da ngan mot state co per-class regression,
+nen khong duoc noi threshold de ep state do duoc chap nhan.
