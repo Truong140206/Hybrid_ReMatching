@@ -290,6 +290,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--budgeted_disagreement_weight', default=2.0, type=float)
     subparsers.add_argument('--budgeted_classifier_weight', default=0.5, type=float)
     subparsers.add_argument('--progressive_oracle_audit', action='store_true', help='run exhaustive once and audit the theoretical 2-to-4-to-all cascade')
+    subparsers.add_argument('--stage_drift_audit', action='store_true', help='decompose old-task decay into true-adapter local drift and cross-task score competition using exhaustive logits already computed by the oracle audit')
     subparsers.add_argument('--progressive_arrow_audit', action='store_true', help='audit layerwise Arrow-style LoRA parameter routing and its fixed union with TII candidates')
     subparsers.add_argument('--progressive_lora_response_audit', action='store_true', help='audit normalized full-rank K/V LoRA response routing and its fixed union with TII candidates')
     subparsers.add_argument('--progressive_prediction_proposal_audit', action='store_true', help='audit tasks proposed by top class predictions from the initial hard LoRAs')

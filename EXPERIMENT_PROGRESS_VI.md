@@ -3481,3 +3481,29 @@ cap/threshold/certificate tren seed 43. De PASS all-six tren nhieu seed, nhanh
 tiep theo phai tang tinh on dinh theo stage (giu lai gain ban dau/peak, dac biet
 task 6-8) va sua calibration loss muon o task 1-2; day la bai toan training hay
 stage-consistent scoring, khong phai chi giam them so adapter luc inference.
+## 2026-08-16 - Preregister stage-drift decomposition seed 43
+
+Da trien khai audit de tach ba nguon lam gain bi co lai ma khong them LoRA
+forward vao oracle audit. Voi moi sample cua task i, exhaustive audit da co raw
+logits cua moi adapter; code lay dung logits adapter i va do hai che do:
+
+- OwnLocal: chi canh tranh trong 20 lop cua task that, tach drift noi bo cua
+  adapter/classifier.
+- OwnSeen: giu nguyen adapter that nhung cho canh tranh voi moi lop da thay;
+  do phan score competition do task moi.
+- Consensus: output cap-5 hien tai; khoang cach voi OwnSeen do phan
+  routing/selection.
+
+Metric moi gom OwnLocalAcc@1/Loss, OwnSeenAcc@1/Loss, OwnSeenTaskAcc va
+LocalToSeenFailure tren tung task/tung stage. Analyzer tu dong tinh local decay,
+cross-task gap growth, routing penalty, tap trung task 6-8 va xep hang tin hieu
+chi phoi. Ba dai luong la diagnostic proxy, khong duoc cong lai nhu causal
+effect va khong phai quality gate.
+
+Run khoa tren development seed 43, consensus i2/c5/cap5, prior 0.3,
+temperature 1.0. Script phai dat strict checkpoint audit, unit test va
+equivalence 1e-4 voi consensus log da co tren Acc@task, Acc@1, Acc@5, Loss,
+Forgetting, Backward va hai cost metric. Khong dung nhan de routing, anh cu,
+feature cu hay calibration. Ket qua se quyet dinh mot trong ba nhanh da khoa:
+training/CRCT stability, stage-consistent cross-task scoring, hoac candidate
+selection trong ngan sach consensus 3.0529 LoRA.

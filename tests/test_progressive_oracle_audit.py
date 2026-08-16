@@ -3,7 +3,10 @@ from types import SimpleNamespace
 import torch
 from torch import nn
 
-from engines.progressive_oracle_audit import progressive_oracle_audit
+from engines.progressive_oracle_audit import (
+    progressive_oracle_audit,
+    stage_drift_diagnostics,
+)
 
 
 class TaskAwareModel(nn.Module):
@@ -54,3 +57,37 @@ def test_oracle_audit_stops_easy_sample_at_two():
     assert audit['winner_recall_2'].tolist() == [True]
     assert audit['exact_agreement_2'].tolist() == [True]
     assert audit['oracle_lora_counts'].tolist() == [2.0]
+
+def test_stage_drift_separates_local_accuracy_from_seen_competition():
+    candidate_tasks = torch.tensor([[0, 1], [1, 0]])
+    full_adapter_logits = torch.tensor([
+        [
+            [5.0, 4.0, 6.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ],
+        [
+            [0.0, 0.0, 1.0, 0.0],
+            [4.0, 5.0, 3.0, 2.0],
+        ],
+    ])
+    diagnostics = stage_drift_diagnostics(
+        candidate_tasks=candidate_tasks,
+        full_adapter_logits=full_adapter_logits,
+        targets=torch.tensor([0, 1]),
+        true_task=0,
+        class_mask=[[0, 1], [2, 3]],
+        seen_task_count=2,
+    )
+
+    assert diagnostics['stage_drift_own_local_correct'].tolist() == [
+        True, True]
+    assert diagnostics['stage_drift_own_seen_correct'].tolist() == [
+        False, True]
+    assert diagnostics['stage_drift_own_seen_task_correct'].tolist() == [
+        False, True]
+    assert diagnostics['stage_drift_local_to_seen_failure'].tolist() == [
+        True, False]
+    assert torch.isfinite(
+        diagnostics['stage_drift_own_local_loss']).all()
+    assert torch.isfinite(
+        diagnostics['stage_drift_own_seen_loss']).all()

@@ -22,6 +22,81 @@ def _finalize_partial_logits(partial_logits, excluded_margin):
         finite_mask, partial_logits, row_min - excluded_margin)
 
 
+def stage_drift_diagnostics(
+        candidate_tasks, full_adapter_logits, targets, true_task,
+        class_mask, seen_task_count):
+    """Separate within-task drift from cross-task score competition.
+
+    The exhaustive audit has already evaluated every seen adapter. This helper
+    selects the ground-truth task adapter without another model forward, then
+    evaluates it twice: once with only its local classes and once against every
+    seen class. The local-to-seen gap measures competition introduced by other
+    task heads independently of routing coverage.
+    """
+    if targets.ndim != 1:
+        raise ValueError('Stage-drift targets must be a one-dimensional tensor')
+    if not 0 <= int(true_task) < int(seen_task_count):
+        raise ValueError('Stage-drift true task is outside the seen task range')
+    if candidate_tasks.shape[:1] != targets.shape:
+        raise ValueError('Stage-drift candidate rows must match target rows')
+    if full_adapter_logits.shape[:2] != candidate_tasks.shape:
+        raise ValueError('Stage-drift logits must follow candidate rank order')
+
+    task_matches = candidate_tasks.eq(int(true_task))
+    if not task_matches.sum(dim=1).eq(1).all():
+        raise ValueError(
+            'Stage-drift audit requires every seen task exactly once per row')
+    true_rank = task_matches.to(torch.int64).argmax(dim=1)
+    rows = torch.arange(targets.shape[0], device=targets.device)
+    own_logits = full_adapter_logits[rows, true_rank]
+
+    local_classes = torch.as_tensor(
+        class_mask[int(true_task)], dtype=torch.long, device=targets.device)
+    seen_classes = torch.as_tensor(
+        [
+            int(class_id)
+            for task_index in range(int(seen_task_count))
+            for class_id in class_mask[task_index]
+        ],
+        dtype=torch.long,
+        device=targets.device,
+    )
+    target_is_local = targets.unsqueeze(1).eq(
+        local_classes.unsqueeze(0)).any(dim=1)
+    if not target_is_local.all():
+        raise ValueError(
+            'Stage-drift targets do not belong to the requested true task')
+
+    local_masked = torch.full_like(own_logits, float('-inf'))
+    local_masked[:, local_classes] = own_logits[:, local_classes]
+    seen_masked = torch.full_like(own_logits, float('-inf'))
+    seen_masked[:, seen_classes] = own_logits[:, seen_classes]
+
+    local_prediction = local_masked.argmax(dim=1)
+    seen_prediction = seen_masked.argmax(dim=1)
+    local_correct = local_prediction.eq(targets)
+    seen_correct = seen_prediction.eq(targets)
+
+    class_to_task = torch.full(
+        (own_logits.shape[1],), -1, dtype=torch.long, device=targets.device)
+    for task_index in range(int(seen_task_count)):
+        task_classes = torch.as_tensor(
+            class_mask[task_index], dtype=torch.long, device=targets.device)
+        class_to_task[task_classes] = task_index
+    seen_task_correct = class_to_task[seen_prediction].eq(int(true_task))
+
+    return {
+        'stage_drift_own_local_correct': local_correct,
+        'stage_drift_own_seen_correct': seen_correct,
+        'stage_drift_own_seen_task_correct': seen_task_correct,
+        'stage_drift_local_to_seen_failure': local_correct & ~seen_correct,
+        'stage_drift_own_local_loss': torch.nn.functional.cross_entropy(
+            local_masked, targets, reduction='none'),
+        'stage_drift_own_seen_loss': torch.nn.functional.cross_entropy(
+            seen_masked, targets, reduction='none'),
+    }
+
+
 def prediction_proposal_candidates(
         tii_ranking, initial_adapter_logits, class_mask, initial_count=2,
         proposal_count=2, top_classes=5):
@@ -650,7 +725,8 @@ def prediction_consensus_budget_closure_diagnostics(
 
 @torch.no_grad()
 def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
-                             seen_task_count, args):
+                             seen_task_count, args, targets=None,
+                             true_task=None):
     """Run exhaustive once and measure the best possible 2->4->all cascade."""
     device = inputs.device
     batch_size = inputs.shape[0]
@@ -683,10 +759,12 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
         args, 'progressive_prediction_majority_closure_audit', False))
     consensus_closure_audit = bool(getattr(
         args, 'progressive_prediction_consensus_closure_audit', False))
+    stage_drift_audit = bool(getattr(args, 'stage_drift_audit', False))
     full_adapter_logits = (
         torch.empty_like(rank_logits)
         if (closure_audit or beam_closure_audit or budget_closure_audit
-            or majority_closure_audit or consensus_closure_audit)
+            or majority_closure_audit or consensus_closure_audit
+            or stage_drift_audit)
         else None)
     initial_count = min(
         max(1, int(getattr(args, 'prediction_proposal_initial_count', 2))),
@@ -767,6 +845,18 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
         'actual_lora_counts': torch.full_like(
             oracle_counts, float(seen_task_count)),
     }
+    if stage_drift_audit:
+        if targets is None or true_task is None:
+            raise ValueError(
+                'Stage-drift audit requires targets and the evaluated task id')
+        diagnostics.update(stage_drift_diagnostics(
+            candidate_tasks=candidate_tasks,
+            full_adapter_logits=full_adapter_logits,
+            targets=targets,
+            true_task=true_task,
+            class_mask=class_mask,
+            seen_task_count=seen_task_count,
+        ))
     if bool(getattr(args, 'progressive_prediction_proposal_audit', False)):
         diagnostics.update(prediction_proposal_diagnostics(
             candidate_tasks,

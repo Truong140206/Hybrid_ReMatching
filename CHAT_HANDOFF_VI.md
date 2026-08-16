@@ -619,3 +619,23 @@ mot co che stage-consistent/training-side de giu initial/peak gain cua task 6-8
 va calibration loss task 1-2. Truoc khi viet/chay GPU, kiem tra cac nhanh
 training/calibration cu de khong lap lai strict task-mass fusion, conditional
 fusion, CRM confidence fusion hay CFS calibration pilot.
+## 30. San sang stage-drift audit seed 43
+
+Da them audit tai su dung exhaustive logits de tach true-adapter local drift,
+cross-task class competition va routing penalty. Audit khong them adapter
+forward; output chinh van la consensus-cap5 va phai equivalence 1e-4 voi log
+consensus seed 43 da co. Bao cao tu dong tap trung task 6-8 va anh xa tin hieu
+chi phoi sang nhanh sua tiep theo.
+
+Lenh chay:
+
+~~~bash
+cd ~/Documents/truongnguyen/Hybrid_ReMatching
+git pull --ff-only
+bash training_scripts/eval_imagenet_r_stage_drift_audit_4090.sh   ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed43
+~~~
+
+Gui lai noi dung file
+~/Documents/truongnguyen/hrm-pet-output/imagenet_r_seed43_stage_drift.md,
+dong STAGE_DRIFT_EQUIVALENCE_GATE, STAGE_DRIFT_AUDIT va wall time. Khong chay
+them routing/training variant truoc khi doc decomposition nay.

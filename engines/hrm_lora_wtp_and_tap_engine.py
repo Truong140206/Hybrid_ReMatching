@@ -648,6 +648,8 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     class_mask=class_mask,
                     seen_task_count=task_id + 1,
                     args=args,
+                    targets=target,
+                    true_task=i,
                 )
                 filtered_index_tensor = torch.empty(
                     0, dtype=torch.long, device=device)
@@ -676,6 +678,28 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     audit['oracle_lora_counts'].mean().item(), n=input.shape[0])
                 metric_logger.meters['ActualLoRA/sample'].update(
                     audit['actual_lora_counts'].mean().item(), n=input.shape[0])
+                if bool(getattr(args, 'stage_drift_audit', False)):
+                    stage_percent_metrics = {
+                        'OwnLocalAcc@1':
+                            'stage_drift_own_local_correct',
+                        'OwnSeenAcc@1':
+                            'stage_drift_own_seen_correct',
+                        'OwnSeenTaskAcc':
+                            'stage_drift_own_seen_task_correct',
+                        'LocalToSeenFailure':
+                            'stage_drift_local_to_seen_failure',
+                    }
+                    for metric_name, audit_name in (
+                            stage_percent_metrics.items()):
+                        metric_logger.meters[metric_name].update(
+                            audit[audit_name].float().mean().mul(100.0).item(),
+                            n=input.shape[0])
+                    metric_logger.meters['OwnLocalLoss'].update(
+                        audit['stage_drift_own_local_loss'].mean().item(),
+                        n=input.shape[0])
+                    metric_logger.meters['OwnSeenLoss'].update(
+                        audit['stage_drift_own_seen_loss'].mean().item(),
+                        n=input.shape[0])
                 if bool(getattr(args, 'progressive_arrow_audit', False)):
                     arrow_percent_metrics = {
                         'ArrowRecall@2': 'arrow_winner_recall_2',
@@ -1456,6 +1480,21 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 agree4=metric_logger.meters['ExactAgreement@4'],
                 oracle_cost=metric_logger.meters['OracleLoRA/sample'],
                 actual_cost=metric_logger.meters['ActualLoRA/sample']))
+    if bool(getattr(args, 'stage_drift_audit', False)):
+        print(
+            '* StageDriftAudit OwnLocalAcc@1 {local_acc.global_avg:.3f} '
+            'OwnSeenAcc@1 {seen_acc.global_avg:.3f} '
+            'OwnLocalLoss {local_loss.global_avg:.4f} '
+            'OwnSeenLoss {seen_loss.global_avg:.4f} '
+            'OwnSeenTaskAcc {task_acc.global_avg:.3f} '
+            'LocalToSeenFailure {failure.global_avg:.3f}'
+            .format(
+                local_acc=metric_logger.meters['OwnLocalAcc@1'],
+                seen_acc=metric_logger.meters['OwnSeenAcc@1'],
+                local_loss=metric_logger.meters['OwnLocalLoss'],
+                seen_loss=metric_logger.meters['OwnSeenLoss'],
+                task_acc=metric_logger.meters['OwnSeenTaskAcc'],
+                failure=metric_logger.meters['LocalToSeenFailure']))
     if bool(getattr(args, 'progressive_arrow_audit', False)):
         print(
             '* ArrowAudit ArrowRecall@2 {arrow2.global_avg:.3f} '
@@ -1724,7 +1763,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((98, args.num_tasks))
+    stat_matrix = np.zeros((104, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -1756,6 +1795,14 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
             stat_matrix[14, i] = test_stats.get('ExactAgreement@4', 0.0)
             stat_matrix[15, i] = test_stats.get('OracleLoRA/sample', 0.0)
             stat_matrix[16, i] = test_stats.get('ActualLoRA/sample', 0.0)
+        if bool(getattr(args, 'stage_drift_audit', False)):
+            stat_matrix[98, i] = test_stats.get('OwnLocalAcc@1', 0.0)
+            stat_matrix[99, i] = test_stats.get('OwnSeenAcc@1', 0.0)
+            stat_matrix[100, i] = test_stats.get('OwnLocalLoss', 0.0)
+            stat_matrix[101, i] = test_stats.get('OwnSeenLoss', 0.0)
+            stat_matrix[102, i] = test_stats.get('OwnSeenTaskAcc', 0.0)
+            stat_matrix[103, i] = test_stats.get(
+                'LocalToSeenFailure', 0.0)
         if bool(getattr(args, 'progressive_arrow_audit', False)):
             stat_matrix[18, i] = test_stats.get('ArrowRecall@2', 0.0)
             stat_matrix[19, i] = test_stats.get('ArrowRecall@4', 0.0)
@@ -1933,6 +1980,14 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         ).format(
             avg_stat[11], avg_stat[12], avg_stat[13], avg_stat[14],
             avg_stat[15], avg_stat[16])
+    if bool(getattr(args, 'stage_drift_audit', False)):
+        result_str += (
+            "\tOwnLocalAcc@1: {:.4f}\tOwnSeenAcc@1: {:.4f}"
+            "\tOwnLocalLoss: {:.4f}\tOwnSeenLoss: {:.4f}"
+            "\tOwnSeenTaskAcc: {:.4f}\tLocalToSeenFailure: {:.4f}"
+        ).format(
+            avg_stat[98], avg_stat[99], avg_stat[100], avg_stat[101],
+            avg_stat[102], avg_stat[103])
     if bool(getattr(args, 'progressive_arrow_audit', False)):
         result_str += (
             "\tArrowRecall@2: {:.4f}\tArrowRecall@4: {:.4f}"
