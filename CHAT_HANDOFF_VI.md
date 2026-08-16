@@ -727,3 +727,24 @@ python3 training_scripts/compare_imagenet_r_taskwise.py \
 Gui noi dung markdown, dac biet aggregate old-task, stagewise causal diagnosis,
 largest Loss regressions va final old-task deltas. Diagnostic nay quyet dinh
 owner-mass co duoc giu de sua Loss hay phai dong.
+## 35. Owner-mass retention la gain that; cho equal hedge
+
+Taskwise xac nhan old-task final tang +0.7947, lon hon initial +0.5983 va peak
++0.6082; final khong giam o task cu nao. Giu owner-mass. Loss regression bat dau
+tu stage 4, tap trung task 1-2; Acc@5 rat mong.
+
+Da khoa equal hedge: chi 5.1379% rescued rows moi lay trung binh probability
+50/50 cua owner-mass va consensus; row khac giu bit-for-bit. Khong tune weight,
+khong them LoRA/call. Gate van la ca sau metric hon conventional va cost bang
+owner-mass.
+
+~~~bash
+cd ~/Documents/truongnguyen/Hybrid_ReMatching
+git pull --ff-only
+bash training_scripts/eval_imagenet_r_owner_consensus_hedge_audit_4090.sh \
+  ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed43
+~~~
+
+Gui final task10, comparison voi conventional va owner-mass, locked efficiency,
+diagnostic, OWNER_HEDGE_ALL_METRIC_GATE va wall time. Neu fail thi khong sweep
+50/50 thanh weight khac.

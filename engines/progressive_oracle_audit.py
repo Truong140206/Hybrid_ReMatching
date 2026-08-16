@@ -1024,10 +1024,78 @@ def prediction_owner_mass_consensus_diagnostics(
             'prediction_consensus_closure_lora_counts'],
         'prediction_owner_mass_forward_calls': consensus[
             'prediction_consensus_closure_forward_calls'],
+        'prediction_owner_mass_candidate_mask': candidate_mask,
+        'prediction_owner_mass_consensus_logits': consensus[
+            'prediction_consensus_closure_output_logits'],
+        'prediction_owner_mass_consensus_tasks': consensus_tasks,
         'prediction_owner_mass_output_logits': output_logits,
         'prediction_owner_mass_output_tasks': output_tasks,
     }
 
+
+def prediction_owner_consensus_hedge_diagnostics(
+        tii_ranking, full_adapter_logits, rank_logits, task_evidence,
+        winner_tasks, full_predictions, tii_logits, class_mask,
+        initial_count=2, top_classes=5, max_candidates=5,
+        excluded_margin=20.0):
+    """Hedge owner reroutes with an equal-prior consensus probability mix."""
+    owner = prediction_owner_mass_consensus_diagnostics(
+        tii_ranking=tii_ranking,
+        full_adapter_logits=full_adapter_logits,
+        rank_logits=rank_logits,
+        task_evidence=task_evidence,
+        winner_tasks=winner_tasks,
+        full_predictions=full_predictions,
+        tii_logits=tii_logits,
+        class_mask=class_mask,
+        initial_count=initial_count,
+        top_classes=top_classes,
+        max_candidates=max_candidates,
+        excluded_margin=excluded_margin,
+    )
+    owner_logits = owner['prediction_owner_mass_output_logits']
+    consensus_logits = owner['prediction_owner_mass_consensus_logits']
+    hedge = owner['prediction_owner_mass_rescue_rate']
+    equal_mix_logits = torch.logaddexp(
+        owner_logits, consensus_logits) - owner_logits.new_tensor(2.0).log()
+    output_logits = torch.where(
+        hedge.unsqueeze(1), equal_mix_logits, owner_logits)
+    output_predictions = output_logits.argmax(dim=1)
+
+    class_to_task = torch.full(
+        (output_logits.shape[1],), -1, dtype=torch.long,
+        device=output_logits.device)
+    for task_index in range(tii_ranking.shape[1]):
+        class_index = torch.as_tensor(
+            class_mask[task_index], dtype=torch.long,
+            device=output_logits.device)
+        class_to_task[class_index] = task_index
+    mixed_tasks = class_to_task[output_predictions]
+    owner_tasks = owner['prediction_owner_mass_output_tasks']
+    output_tasks = torch.where(hedge, mixed_tasks, owner_tasks)
+    exact_agreement = (
+        output_tasks.eq(winner_tasks)
+        & output_predictions.eq(full_predictions)
+    )
+    owner_predictions = owner_logits.argmax(dim=1)
+    consensus_predictions = consensus_logits.argmax(dim=1)
+
+    return {
+        'prediction_owner_hedge_winner_recall': owner[
+            'prediction_owner_mass_winner_recall'],
+        'prediction_owner_hedge_exact_agreement': exact_agreement,
+        'prediction_owner_hedge_rate': hedge,
+        'prediction_owner_hedge_owner_agreement':
+            output_predictions.eq(owner_predictions),
+        'prediction_owner_hedge_consensus_agreement':
+            output_predictions.eq(consensus_predictions),
+        'prediction_owner_hedge_lora_counts': owner[
+            'prediction_owner_mass_lora_counts'],
+        'prediction_owner_hedge_forward_calls': owner[
+            'prediction_owner_mass_forward_calls'],
+        'prediction_owner_hedge_output_logits': output_logits,
+        'prediction_owner_hedge_output_tasks': output_tasks,
+    }
 
 @torch.no_grad()
 def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
@@ -1071,13 +1139,15 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
         args, 'progressive_prediction_corroborated_owner_audit', False))
     owner_mass_audit = bool(getattr(
         args, 'progressive_prediction_owner_mass_audit', False))
+    owner_hedge_audit = bool(getattr(
+        args, 'progressive_prediction_owner_consensus_hedge_audit', False))
     stage_drift_audit = bool(getattr(args, 'stage_drift_audit', False))
     full_adapter_logits = (
         torch.empty_like(rank_logits)
         if (closure_audit or beam_closure_audit or budget_closure_audit
             or majority_closure_audit or consensus_closure_audit
             or self_owner_audit or corroborated_owner_audit
-            or owner_mass_audit
+            or owner_mass_audit or owner_hedge_audit
             or stage_drift_audit)
         else None)
     initial_count = min(
@@ -1315,6 +1385,22 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
             max_candidates=5,
             excluded_margin=excluded_margin,
         ))
+    if owner_hedge_audit:
+        diagnostics.update(prediction_owner_consensus_hedge_diagnostics(
+            tii_ranking=candidate_tasks,
+            full_adapter_logits=full_adapter_logits,
+            rank_logits=rank_logits,
+            task_evidence=task_evidence,
+            winner_tasks=routed_tasks,
+            full_predictions=full_predictions,
+            tii_logits=tii_logits,
+            class_mask=class_mask,
+            initial_count=initial_count,
+            top_classes=getattr(
+                args, 'prediction_proposal_top_classes', 5),
+            max_candidates=5,
+            excluded_margin=excluded_margin,
+        ))
     if bool(getattr(args, 'progressive_arrow_audit', False)):
         arrow_scores = arrow_task_scores(model, inputs, seen_task_count)
         arrow_ranking = torch.argsort(arrow_scores, dim=1, descending=True)
@@ -1348,6 +1434,12 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
         return (
             diagnostics['prediction_majority_closure_output_logits'],
             diagnostics['prediction_majority_closure_output_tasks'],
+            diagnostics,
+        )
+    if owner_hedge_audit:
+        return (
+            diagnostics['prediction_owner_hedge_output_logits'],
+            diagnostics['prediction_owner_hedge_output_tasks'],
             diagnostics,
         )
     if owner_mass_audit:

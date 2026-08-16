@@ -3612,3 +3612,30 @@ regressions moi khoa mot trong hai huong: (1) neu final old-task tang that nhung
 Loss tap trung o rescued rows/stage muon, dung mot log-loss hedge khong tham so;
 (2) neu retention PASS do initial/peak bi ha, dong owner-mass thay vi sua
 calibration. Khong chon huong truoc bang aggregate task-10.
+## 2026-08-16 - Taskwise xac nhan owner-mass retention; preregister equal hedge
+
+Taskwise owner-mass xac nhan retention PASS la gain that, khong phai ha
+initial/peak. Tren task 1-9, initial tang +0.5983, peak +0.6082, nhung final
+tang lon hon +0.7947; Forgetting giam 0.1864 va Backward tang 0.1964. Final
+Acc@1 khong giam o bat ky old task nao: task 6 bang baseline, 8 task con lai
+tang. Vi vay giu owner-mass routing.
+
+Nut that la probability calibration va top-5. Loss tot hon baseline o stage 2-3
+nhung bat dau tang tu stage 4, dat delta +0.0998 o stage 10; regression lon nhat
+tap trung task 1 stage 8-10 (+0.193 den +0.225), task 2 stage 7 (+0.182) va
+task 6 stage 8 (+0.169). Acc@5 thap hon baseline o moi stage 2-9, du chi vua
+vuot +0.0542 o stage 10. Owner-mass chi reroute 5.1379%, va so voi consensus
+lam Loss tang 0.0505.
+
+Phep thu tiep theo duoc khoa: equal-probability owner/consensus hedge. Chi tren
+row owner-mass da reroute, output la arithmetic probability mixture
+`0.5 * P_owner + 0.5 * P_consensus`, tinh on dinh bang logaddexp. Trong moi row
+khac, output giu owner-mass bit-for-bit. Hai nhanh co prior 1/2 doi xung; day
+khong phai coefficient fit tren seed 43. Mixed top-1 quyet dinh output task de
+Acc@task khong bao cao prompt khac voi class prediction.
+
+Hedge khong them adapter, call, label routing, anh/feature cu hay calibration
+data. Gate: ca sau quality metric hon conventional seed 43; LoRA/calls bang
+owner-mass trong 1e-4 va <5/<4. Agreement voi owner/consensus va exhaustive chi
+diagnostic. Chi mot equal mixture; neu fail thi dong probability hedge, khong
+sweep mixing weight, temperature hay smoothing tren test.

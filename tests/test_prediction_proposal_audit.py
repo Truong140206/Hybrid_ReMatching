@@ -22,6 +22,7 @@ from engines.progressive_oracle_audit import (
     prediction_corroborated_self_owner_diagnostics,
     prediction_majority_budget_closure_diagnostics,
     prediction_owner_mass_consensus_diagnostics,
+    prediction_owner_consensus_hedge_diagnostics,
     prediction_self_owner_consensus_diagnostics,
     prediction_proposal_diagnostics,
 )
@@ -515,6 +516,55 @@ def test_prediction_owner_mass_only_reroutes_ambiguous_disagreement():
 
 
 
+def test_owner_consensus_hedge_is_equal_mix_only_on_rescued_rows():
+    tii_ranking = torch.tensor([[0, 1, 2], [0, 1, 2]])
+    full_adapter_logits = torch.tensor([
+        [[0.0, 0.0, 6.0], [0.0, 5.0, 0.0], [5.0, 0.0, 0.0]],
+        [[5.0, 0.0, 0.0], [5.0, 4.9, 0.0], [0.0, 0.0, 5.0]],
+    ])
+    rank_logits = torch.full((2, 3, 3), float('-inf'))
+    rank_logits[:, 0, 0] = 5.0
+    rank_logits[:, 1, 1] = 4.0
+    rank_logits[:, 2, 2] = 3.0
+    kwargs = dict(
+        tii_ranking=tii_ranking,
+        full_adapter_logits=full_adapter_logits,
+        rank_logits=rank_logits,
+        task_evidence=torch.tensor([[5.0, 4.0, 3.0],
+                                    [5.0, 4.0, 3.0]]),
+        winner_tasks=torch.tensor([0, 0]),
+        full_predictions=torch.tensor([0, 0]),
+        tii_logits=torch.tensor([[3.0, 2.0, 1.0],
+                                 [3.0, 2.0, 1.0]]),
+        class_mask=[[0], [1], [2]],
+        initial_count=2,
+        top_classes=1,
+        max_candidates=3,
+    )
+
+    owner = prediction_owner_mass_consensus_diagnostics(**kwargs)
+    hedge = prediction_owner_consensus_hedge_diagnostics(**kwargs)
+    expected_mix = torch.logaddexp(
+        owner['prediction_owner_mass_output_logits'][0],
+        owner['prediction_owner_mass_consensus_logits'][0],
+    ) - torch.log(torch.tensor(2.0))
+
+    assert hedge['prediction_owner_hedge_rate'].tolist() == [True, False]
+    assert torch.allclose(
+        hedge['prediction_owner_hedge_output_logits'][0], expected_mix)
+    assert torch.equal(
+        hedge['prediction_owner_hedge_output_logits'][1],
+        owner['prediction_owner_mass_output_logits'][1])
+    assert torch.allclose(
+        hedge['prediction_owner_hedge_output_logits'].exp().sum(dim=1),
+        torch.ones(2), atol=1e-6)
+    assert torch.equal(
+        hedge['prediction_owner_hedge_lora_counts'],
+        owner['prediction_owner_mass_lora_counts'])
+    assert torch.equal(
+        hedge['prediction_owner_hedge_forward_calls'],
+        owner['prediction_owner_mass_forward_calls'])
+
 def test_prediction_proposal_is_allowed_by_strict_exemplar_free_protocol():
     validate_exemplar_free_protocol(SimpleNamespace(
         strict_exemplar_free=True,
@@ -529,6 +579,7 @@ def test_prediction_proposal_is_allowed_by_strict_exemplar_free_protocol():
         progressive_prediction_self_owner_audit=True,
         progressive_prediction_corroborated_owner_audit=True,
         progressive_prediction_owner_mass_audit=True,
+        progressive_prediction_owner_consensus_hedge_audit=True,
         prediction_closure_rematching=True,
         prediction_proposal_rematching=True,
         prediction_proposal_cross_adapter_audit=True,

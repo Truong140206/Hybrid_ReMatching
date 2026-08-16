@@ -954,6 +954,34 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                         audit[
                             'prediction_owner_mass_forward_calls'
                         ].mean().item(), n=input.shape[0])
+                if bool(getattr(
+                        args,
+                        'progressive_prediction_owner_consensus_hedge_audit',
+                        False)):
+                    hedge_percent_metrics = {
+                        'OwnerHedgeWinnerRecall':
+                            'prediction_owner_hedge_winner_recall',
+                        'OwnerHedgeExactAgreement':
+                            'prediction_owner_hedge_exact_agreement',
+                        'OwnerHedgeRate':
+                            'prediction_owner_hedge_rate',
+                        'OwnerHedgeOwnerAgreement':
+                            'prediction_owner_hedge_owner_agreement',
+                        'OwnerHedgeConsensusAgreement':
+                            'prediction_owner_hedge_consensus_agreement',
+                    }
+                    for metric_name, audit_name in (
+                            hedge_percent_metrics.items()):
+                        metric_logger.meters[metric_name].update(
+                            audit[audit_name].float().mean().mul(100.0).item(),
+                            n=input.shape[0])
+                    metric_logger.meters['OwnerHedgeLoRA/sample'].update(
+                        audit['prediction_owner_hedge_lora_counts'].mean().item(),
+                        n=input.shape[0])
+                    metric_logger.meters['OwnerHedgeCalls/sample'].update(
+                        audit[
+                            'prediction_owner_hedge_forward_calls'
+                        ].mean().item(), n=input.shape[0])
                 continue
 
             if bool(getattr(args, 'progressive_rematching', False)):
@@ -1645,6 +1673,27 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 ambiguous=metric_logger.meters['OwnerMassAmbiguousRate'],
                 cost=metric_logger.meters['OwnerMassLoRA/sample'],
                 calls=metric_logger.meters['OwnerMassCalls/sample']))
+    if bool(getattr(
+            args, 'progressive_prediction_owner_consensus_hedge_audit',
+            False)):
+        print(
+            '* PredictionOwnerHedgeAudit WinnerRecall '
+            '{recall.global_avg:.3f} ExactAgreement '
+            '{agreement.global_avg:.3f} HedgeRate '
+            '{rate.global_avg:.3f} OwnerAgreement '
+            '{owner.global_avg:.3f} ConsensusAgreement '
+            '{consensus.global_avg:.3f} LoRA/sample '
+            '{cost.global_avg:.3f} ForwardCalls/sample '
+            '{calls.global_avg:.3f}'
+            .format(
+                recall=metric_logger.meters['OwnerHedgeWinnerRecall'],
+                agreement=metric_logger.meters['OwnerHedgeExactAgreement'],
+                rate=metric_logger.meters['OwnerHedgeRate'],
+                owner=metric_logger.meters['OwnerHedgeOwnerAgreement'],
+                consensus=metric_logger.meters[
+                    'OwnerHedgeConsensusAgreement'],
+                cost=metric_logger.meters['OwnerHedgeLoRA/sample'],
+                calls=metric_logger.meters['OwnerHedgeCalls/sample']))
     if bool(getattr(args, 'progressive_arrow_audit', False)):
         print(
             '* ArrowAudit ArrowRecall@2 {arrow2.global_avg:.3f} '
@@ -1913,7 +1962,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((123, args.num_tasks))
+    stat_matrix = np.zeros((130, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -2071,6 +2120,23 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                 'OwnerMassLoRA/sample', 0.0)
             stat_matrix[122, i] = test_stats.get(
                 'OwnerMassCalls/sample', 0.0)
+        if bool(getattr(
+                args, 'progressive_prediction_owner_consensus_hedge_audit',
+                False)):
+            stat_matrix[123, i] = test_stats.get(
+                'OwnerHedgeWinnerRecall', 0.0)
+            stat_matrix[124, i] = test_stats.get(
+                'OwnerHedgeExactAgreement', 0.0)
+            stat_matrix[125, i] = test_stats.get(
+                'OwnerHedgeRate', 0.0)
+            stat_matrix[126, i] = test_stats.get(
+                'OwnerHedgeOwnerAgreement', 0.0)
+            stat_matrix[127, i] = test_stats.get(
+                'OwnerHedgeConsensusAgreement', 0.0)
+            stat_matrix[128, i] = test_stats.get(
+                'OwnerHedgeLoRA/sample', 0.0)
+            stat_matrix[129, i] = test_stats.get(
+                'OwnerHedgeCalls/sample', 0.0)
         if (bool(getattr(args, 'vectorized_exhaustive_rematching', False))
                 or bool(getattr(args, 'prediction_proposal_rematching', False))
                 or bool(getattr(args, 'prediction_closure_rematching', False))):
@@ -2300,6 +2366,20 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         ).format(
             avg_stat[117], avg_stat[118], avg_stat[119],
             avg_stat[120], avg_stat[121], avg_stat[122])
+    if bool(getattr(
+            args, 'progressive_prediction_owner_consensus_hedge_audit',
+            False)):
+        result_str += (
+            "\tOwnerHedgeWinnerRecall: {:.4f}"
+            "\tOwnerHedgeExactAgreement: {:.4f}"
+            "\tOwnerHedgeRate: {:.4f}"
+            "\tOwnerHedgeOwnerAgreement: {:.4f}"
+            "\tOwnerHedgeConsensusAgreement: {:.4f}"
+            "\tOwnerHedgeLoRA/sample: {:.4f}"
+            "\tOwnerHedgeCalls/sample: {:.4f}"
+        ).format(
+            avg_stat[123], avg_stat[124], avg_stat[125],
+            avg_stat[126], avg_stat[127], avg_stat[128], avg_stat[129])
     if (bool(getattr(args, 'vectorized_exhaustive_rematching', False))
             or bool(getattr(args, 'prediction_proposal_rematching', False))
             or bool(getattr(args, 'prediction_closure_rematching', False))):

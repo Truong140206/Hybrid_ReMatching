@@ -303,6 +303,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--progressive_prediction_self_owner_audit', action='store_true', help='route within the consensus-cap5 evaluated set using self-endorsing adapters, task-vote support, and TII-rank tie breaking')
     subparsers.add_argument('--progressive_prediction_corroborated_owner_audit', action='store_true', help='rescue consensus only when a disagreeing self-owner receives at least two votes from evaluated adapters')
     subparsers.add_argument('--progressive_prediction_owner_mass_audit', action='store_true', help='rescue uncertified consensus routes using each evaluated adapter owner-task probability mass')
+    subparsers.add_argument('--progressive_prediction_owner_consensus_hedge_audit', action='store_true', help='average owner-mass and consensus probabilities with equal prior on rerouted ambiguous samples')
     subparsers.add_argument('--prediction_closure_rematching', action='store_true', help='run operational adaptive prediction closure with top-1-safe TII tail completion')
     subparsers.add_argument('--prediction_proposal_rematching', action='store_true', help='run only TII initial LoRAs plus fixed-budget tasks proposed by their class predictions')
     subparsers.add_argument('--prediction_proposal_initial_branch_audit', action='store_true', help='audit free per-sample complementarity between proposal output and the already-computed initial TII-top1 adapter output')
