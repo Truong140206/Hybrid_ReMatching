@@ -705,3 +705,25 @@ bash training_scripts/eval_imagenet_r_owner_mass_audit_4090.sh \
 Gui final task10, hai bang comparison, locked efficiency, diagnostic,
 OWNER_MASS_ALL_METRIC_GATE va wall time. Neu fail thi dong score owner-mass,
 khong them temperature, he so pha hay threshold tren seed 43.
+## 34. Owner-mass 5/6 PASS; can taskwise truoc khi sua Loss
+
+Owner-mass giu cost 3.0529/1.9060. So voi conventional, Acc@task, Acc@1, Acc@5,
+Backward va Forgetting PASS; chi Loss +0.0998 FAIL. Tuy nhien Acc@5 margin chi
++0.0543 va ExactAgreement giam 4.5309 diem so voi consensus. Khong blend hay
+tune temperature tu ket qua task-10 nay.
+
+Chay diagnostic CPU sau (dung `python3`, khong phai `python`):
+
+~~~bash
+cd ~/Documents/truongnguyen/Hybrid_ReMatching
+git pull --ff-only
+python3 training_scripts/compare_imagenet_r_taskwise.py \
+  --baseline ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed43_eval_conventional.log \
+  --proposal ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed43_eval_owner_mass_consensus_cap5_i2_c5_dev.log \
+  --exhaustive ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed43_eval_prediction_closure_tii_tail_i2_c5_strict.log \
+  --output ~/Documents/truongnguyen/hrm-pet-output/imagenet_r_seed43_owner_mass_taskwise.md
+~~~
+
+Gui noi dung markdown, dac biet aggregate old-task, stagewise causal diagnosis,
+largest Loss regressions va final old-task deltas. Diagnostic nay quyet dinh
+owner-mass co duoc giu de sua Loss hay phai dong.

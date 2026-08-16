@@ -3589,3 +3589,26 @@ quality metric hon conventional seed 43; LoRA/calls bang consensus trong 1e-4
 va <5/<4. WinnerRecall, ExactAgreement, RescueRate va AmbiguousRate chi
 diagnostic. Mot run; neu fail thi dong owner-mass, khong them he so pha hay
 nguong tren test.
+## 2026-08-16 - Owner-mass dat 5/6; khoa taskwise loss diagnostic
+
+Owner-mass seed 43 chay 419 giay voi cost giu dung consensus: 3.0529 LoRA va
+1.9060 calls. So voi conventional, Acc@task +3.4409, Acc@1 +0.8161, Acc@5
++0.0543, Backward +0.1964 va Forgetting -0.1865 PASS; chi Loss +0.0998 FAIL.
+OWNER_MASS_ALL_METRIC_GATE=FAIL. So voi consensus, Backward tang +0.8351 va
+Forgetting giam 0.6967, nhung Acc@1 giam 0.2926, Acc@5 giam 0.7112 va Loss
+tang 0.0505.
+
+Chi 5.1379% sample duoc rescue trong 40.8124% vung mo ho, nhung ExactAgreement
+giam tu consensus 97.7482 xuong 93.2173. Acc@5 chi hon conventional 0.0543,
+nen khong duoc them temperature, smoothing hay he so blend sau khi da thay ket
+qua. Truoc GPU hypothesis tiep theo, phai tach task/stage de xac minh Backward
+va Forgetting PASS den tu final old-task gain that, khong phai initial/peak bi
+ha. Dung parser co san voi conventional lam baseline, owner-mass lam proposal
+va locked full closure lam exhaustive-like reference; diagnostic khong thay
+model va khong dung GPU.
+
+Chi sau khi doc aggregate initial/peak/final, stagewise Loss va largest task
+regressions moi khoa mot trong hai huong: (1) neu final old-task tang that nhung
+Loss tap trung o rescued rows/stage muon, dung mot log-loss hedge khong tham so;
+(2) neu retention PASS do initial/peak bi ha, dong owner-mass thay vi sua
+calibration. Khong chon huong truoc bang aggregate task-10.
