@@ -3639,3 +3639,41 @@ data. Gate: ca sau quality metric hon conventional seed 43; LoRA/calls bang
 owner-mass trong 1e-4 va <5/<4. Agreement voi owner/consensus va exhaustive chi
 diagnostic. Chi mot equal mixture; neu fail thi dong probability hedge, khong
 sweep mixing weight, temperature hay smoothing tren test.
+
+## 2026-08-16 - Equal hedge FAIL; dong probability hedge va routing-only line
+
+Equal-probability owner/consensus hedge seed 43 chay 420 giay, giu dung cost
+owner-mass: 3.0529 LoRA va 1.9060 calls, HedgeRate 5.1379%. Task-10 aggregate:
+Acc@task 80.9797, Acc@1 75.6078, Acc@5 87.1176, Loss 1.2767, Forgetting 2.6805,
+Backward -2.6340; WinnerRecall 97.7482, ExactAgreement 94.8998.
+
+So voi conventional seed 43: Acc@task +3.7153, Acc@1 +1.2001, Acc@5 +0.5999 PASS;
+Loss +0.0554, Forgetting +0.0816, Backward -0.2256 FAIL. So voi owner-mass:
+Acc@task +0.2744, Acc@1 +0.3840, Acc@5 +0.5456, Loss -0.0444 (tot hon), nhung
+Forgetting +0.2681 va Backward -0.4220 (xau hon). Efficiency PASS toan bo.
+OWNER_HEDGE_ALL_METRIC_GATE=FAIL.
+
+Chan doan: hedge lam dung viec thiet ke - giam Loss regression (owner-mass Loss
+delta +0.0998 -> hedge +0.0554) va tang ca ba accuracy so voi owner-mass. Nhung
+tron consensus tro lai pha retention: owner-mass dang PASS Backward (+0.1964) va
+Forgetting (-0.1865), hedge keo xuong FAIL (Backward -0.2256, Forgetting
++0.0816). Ket cuc 5/6 -> 3/6. Xac nhan trong khong gian routing-only, Loss va
+retention danh doi lan nhau; khong the PASS ca sau bang hau xu ly routing.
+
+Theo quy tac khoa truoc: dong nhanh probability hedge, khong sweep mixing weight,
+temperature hay smoothing tren test seed 43. Owner-mass (5/6, chi Loss FAIL) van
+la tran cua routing-only tren seed 43.
+
+Ket luan line: da vet can khong gian routing-only tren seed 43 (frontier cap5,
+majority cap5, consensus cap5, self-owner, corroborated, owner-mass, equal hedge).
+Owner-mass la tot nhat va van FAIL Loss; hedge sua Loss thi mat retention. Luu y
+quan trong: chinh current-best closure+TII tail cung FAIL gate seed 43 (Backward
+-0.6207, Forgetting +0.4457, muc 25), tuc conventional routing seed 43 co retention
+manh bat thuong, nen moi reroute deu doi retention lay accuracy. Day khong phai
+loi cua tung method ma la dac tinh cua seed 43. Khong con nhanh routing-only nao
+preregister. Buoc tiep phai la mot trong: (1) multi-seed reproduction cua
+current-best strict operational closure+TII tail (seed 42 da PASS ca sau) de chot
+ket qua paper; (2) co che training-side/stage-consistent cho bottleneck calibration
+Loss task 1-2, doi retrain va dev/holdout protocol rieng; hoac (3) dong line
+budget-reduction va viet current-best + cac negative ablation. Khong tiep tuc
+bien the routing-only nao tren seed 42/43.

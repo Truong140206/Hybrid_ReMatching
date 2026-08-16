@@ -748,3 +748,33 @@ bash training_scripts/eval_imagenet_r_owner_consensus_hedge_audit_4090.sh \
 Gui final task10, comparison voi conventional va owner-mass, locked efficiency,
 diagnostic, OWNER_HEDGE_ALL_METRIC_GATE va wall time. Neu fail thi khong sweep
 50/50 thanh weight khac.
+
+## 36. Equal hedge FAIL; routing-only line da dong; can quyet dinh huong
+
+Equal hedge seed 43 (log co san, khong chay lai): Acc@task 80.9797, Acc@1
+75.6078, Acc@5 87.1176, Loss 1.2767, Forgetting 2.6805, Backward -2.6340;
+3.0529 LoRA, 1.9060 calls, HedgeRate 5.1379%, wall 420 giay.
+OWNER_HEDGE_ALL_METRIC_GATE=FAIL.
+
+So conventional: Acc@task/Acc@1/Acc@5 PASS; Loss +0.0554, Forgetting +0.0816,
+Backward -0.2256 FAIL. So owner-mass: 3 accuracy va Loss tot hon (Loss -0.0444),
+nhung Forgetting +0.2681 va Backward -0.4220 xau hon. Hedge sua duoc Loss nhung
+mat retention: 5/6 (owner-mass) -> 3/6. Da dong probability hedge dung quy tac
+khoa; khong sweep weight/temperature/smoothing tren test.
+
+Trang thai line: da vet can routing-only tren seed 43 (frontier/majority/
+consensus cap5, self-owner, corroborated, owner-mass, equal hedge). Owner-mass
+5/6 la tran; khong the PASS ca sau bang routing-only. Ghi chu then chot:
+current-best closure+TII tail cung FAIL gate seed 43 (muc 25), nen seed 43
+conventional co retention manh bat thuong va moi reroute deu doi retention lay
+accuracy - dac tinh cua seed, khong phai loi method.
+
+Khong con nhanh routing-only preregister. Day la diem re can nguoi dung chon:
+(1) multi-seed reproduction current-best strict operational closure+TII tail
+(seed 42 PASS ca sau) - can train checkpoint rank-8/TII con thieu moi seed roi
+eval; huong chot ket qua paper. (2) Co che training-side/stage-consistent cho
+calibration Loss task 1-2 giu retention task 6-8 - lon, khong chac, can retrain
+va dev/holdout rieng. (3) Dong budget-reduction, viet current-best + negative
+ablation. Khong chay them bien the routing-only tren seed 42/43. Current best
+strict operational van la closure+TII tail seed 42 (muc 20): 5.5593 LoRA,
+2.5995 calls, PASS ca sau, giam ~44% LoRA va ~28% wall so exhaustive.
