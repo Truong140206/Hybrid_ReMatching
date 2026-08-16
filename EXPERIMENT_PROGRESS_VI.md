@@ -3677,3 +3677,49 @@ ket qua paper; (2) co che training-side/stage-consistent cho bottleneck calibrat
 Loss task 1-2, doi retrain va dev/holdout protocol rieng; hoac (3) dong line
 budget-reduction va viet current-best + cac negative ablation. Khong tiep tuc
 bien the routing-only nao tren seed 42/43.
+
+## 2026-08-16 - Audit seed 43: retention "deficit" cua closure+tail la artifact
+
+Chay exhaustive seed 43 (c4/p0.3/t1.0, y het seed 42) + taskwise decomposition
+de xac dinh retention loss cua closure+tail la that hay artifact. Ket qua lat
+nguoc gia dinh.
+
+Exhaustive seed 43: Acc@task 80.6896, Acc@1 75.6188, Acc@5 89.5382, Loss 1.0710,
+Forgetting 3.1120, Backward -3.0964, 10 LoRA/sample, 3 calls, wall 411 giay.
+
+Ba phat hien:
+
+1. Retention loss la ARTIFACT do-theo-dinh, khong phai final drop. Aggregate
+   old-task (task 1-9): initial base 76.9665 -> prop 78.6622 (+1.6957); peak
+   77.1569 -> 78.6777 (+1.5207); final 74.5581 -> 75.6330 (+1.0750). Final
+   old-task cua closure+tail CAO HON conventional +1.0750, khong giam. Forgetting
+   "te hon" (+0.4458) chi vi peak tang nhieu hon final - dac trung cua metric
+   tuong doi so voi peak khi plasticity cao hon. Khong old task nao co final giam
+   dang ke (task 7 -0.18, con lai tang, task 4 +3.30).
+
+2. closure+tail bam exhaustive gan nhu tuyet doi ve final old-task. "Proposal
+   headroom to exhaustive on final old-task Acc@1": task 1/3/4/5/6 gap = +0.0000.
+
+3. Exhaustive - tran chat luong - CUNG co Forgetting/Backward te hon conventional
+   (Forgetting 3.1120 vs ~2.5989; Backward -3.0964 vs -2.4084). Cung co che.
+   closure+tail Forgetting 3.0446 con nhinh hon exhaustive 3.1120.
+
+Stagewise: closure+tail hon conventional o MOI stage 2-10 ca Acc@1, Acc@5 va Loss
+(DeltaLoss am moi stage, -0.076 den -0.149; DeltaAcc@5 duong den +2.34). Nghia la
+tren seed 43 closure+tail thang conventional o Acc@task/Acc@1/Acc@5/Loss; chi
+Forgetting/Backward "te hon" va da chung minh la artifact.
+
+Parity vs exhaustive: closure+tail >= exhaustive o 4/6 (Acc@task +0.0507, Acc@1
++0.0446, Forgetting -0.0674, Backward +0.0673), chi kem Acc@5 -0.8273 va Loss
++0.0585, o 55% so LoRA (5.5277 vs 10).
+
+Ket luan: KHONG can CFS. Tien de "retention thieu" la sai; retention da bang
+exhaustive va hon conventional ve final. Them CFS se tieu Acc@5 that (metric mong
+nhat, cung la cho duy nhat kem exhaustive) de vá mot artifact. Buoc dung tiep la
+multi-seed reproduction closure+tail (framing vs exhaustive parity + vs
+conventional improvement), bao cao Forgetting/Backward trung thuc kem
+decomposition peak/final chung minh retention duoc bao toan. Ngoai le duy nhat:
+neu buoc phai co literal 6/6-thang-conventional (reviewer khong chap nhan giai
+thich artifact), CFS co du headroom (Acc@1 +1.2, Acc@5 +2.19) de mua ~0.5-0.7
+Forgetting/Backward - nhung do la vá artifact, ton Acc@5, va them caveat synthetic
+replay vao claim rehearsal-free.
