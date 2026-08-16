@@ -892,6 +892,43 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                         audit[
                             'prediction_self_owner_forward_calls'
                         ].mean().item(), n=input.shape[0])
+                if bool(getattr(
+                        args,
+                        'progressive_prediction_corroborated_owner_audit',
+                        False)):
+                    corroborated_percent_metrics = {
+                        'CorroboratedOwnerWinnerRecall':
+                            'prediction_corroborated_owner_winner_recall',
+                        'CorroboratedOwnerExactAgreement':
+                            'prediction_corroborated_owner_exact_agreement',
+                        'CorroboratedOwnerRescueRate':
+                            'prediction_corroborated_owner_rescue_rate',
+                    }
+                    for metric_name, audit_name in (
+                            corroborated_percent_metrics.items()):
+                        metric_logger.meters[metric_name].update(
+                            audit[audit_name].float().mean().mul(100.0).item(),
+                            n=input.shape[0])
+                    rescued = audit[
+                        'prediction_corroborated_owner_rescue_rate']
+                    rescued_support = audit[
+                        'prediction_corroborated_owner_support']
+                    support_total = rescued_support.sum()
+                    support_count = rescued.sum().clamp_min(1)
+                    metric_logger.meters[
+                        'CorroboratedOwnerSupport'].update(
+                            (support_total / support_count).item(),
+                            n=max(1, int(rescued.sum().item())))
+                    metric_logger.meters[
+                        'CorroboratedOwnerLoRA/sample'].update(
+                            audit[
+                                'prediction_corroborated_owner_lora_counts'
+                            ].mean().item(), n=input.shape[0])
+                    metric_logger.meters[
+                        'CorroboratedOwnerCalls/sample'].update(
+                            audit[
+                                'prediction_corroborated_owner_forward_calls'
+                            ].mean().item(), n=input.shape[0])
                 continue
 
             if bool(getattr(args, 'progressive_rematching', False)):
@@ -1542,6 +1579,30 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 support=metric_logger.meters['SelfOwnerSupport'],
                 cost=metric_logger.meters['SelfOwnerLoRA/sample'],
                 calls=metric_logger.meters['SelfOwnerCalls/sample']))
+    if bool(getattr(
+            args, 'progressive_prediction_corroborated_owner_audit',
+            False)):
+        print(
+            '* PredictionCorroboratedOwnerAudit WinnerRecall '
+            '{recall.global_avg:.3f} ExactAgreement '
+            '{agreement.global_avg:.3f} RescueRate '
+            '{rescue.global_avg:.3f} Support '
+            '{support.global_avg:.3f} LoRA/sample '
+            '{cost.global_avg:.3f} ForwardCalls/sample '
+            '{calls.global_avg:.3f}'
+            .format(
+                recall=metric_logger.meters[
+                    'CorroboratedOwnerWinnerRecall'],
+                agreement=metric_logger.meters[
+                    'CorroboratedOwnerExactAgreement'],
+                rescue=metric_logger.meters[
+                    'CorroboratedOwnerRescueRate'],
+                support=metric_logger.meters[
+                    'CorroboratedOwnerSupport'],
+                cost=metric_logger.meters[
+                    'CorroboratedOwnerLoRA/sample'],
+                calls=metric_logger.meters[
+                    'CorroboratedOwnerCalls/sample']))
     if bool(getattr(args, 'progressive_arrow_audit', False)):
         print(
             '* ArrowAudit ArrowRecall@2 {arrow2.global_avg:.3f} '
@@ -1810,7 +1871,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((111, args.num_tasks))
+    stat_matrix = np.zeros((117, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -1939,6 +2000,21 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                 'SelfOwnerLoRA/sample', 0.0)
             stat_matrix[110, i] = test_stats.get(
                 'SelfOwnerCalls/sample', 0.0)
+        if bool(getattr(
+                args, 'progressive_prediction_corroborated_owner_audit',
+                False)):
+            stat_matrix[111, i] = test_stats.get(
+                'CorroboratedOwnerWinnerRecall', 0.0)
+            stat_matrix[112, i] = test_stats.get(
+                'CorroboratedOwnerExactAgreement', 0.0)
+            stat_matrix[113, i] = test_stats.get(
+                'CorroboratedOwnerRescueRate', 0.0)
+            stat_matrix[114, i] = test_stats.get(
+                'CorroboratedOwnerSupport', 0.0)
+            stat_matrix[115, i] = test_stats.get(
+                'CorroboratedOwnerLoRA/sample', 0.0)
+            stat_matrix[116, i] = test_stats.get(
+                'CorroboratedOwnerCalls/sample', 0.0)
         if (bool(getattr(args, 'vectorized_exhaustive_rematching', False))
                 or bool(getattr(args, 'prediction_proposal_rematching', False))
                 or bool(getattr(args, 'prediction_closure_rematching', False))):
@@ -2143,6 +2219,19 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         ).format(
             avg_stat[104], avg_stat[105], avg_stat[106], avg_stat[107],
             avg_stat[108], avg_stat[109], avg_stat[110])
+    if bool(getattr(
+            args, 'progressive_prediction_corroborated_owner_audit',
+            False)):
+        result_str += (
+            "	CorroboratedOwnerWinnerRecall: {:.4f}"
+            "	CorroboratedOwnerExactAgreement: {:.4f}"
+            "	CorroboratedOwnerRescueRate: {:.4f}"
+            "	CorroboratedOwnerSupport: {:.4f}"
+            "	CorroboratedOwnerLoRA/sample: {:.4f}"
+            "	CorroboratedOwnerCalls/sample: {:.4f}"
+        ).format(
+            avg_stat[111], avg_stat[112], avg_stat[113],
+            avg_stat[114], avg_stat[115], avg_stat[116])
     if (bool(getattr(args, 'vectorized_exhaustive_rematching', False))
             or bool(getattr(args, 'prediction_proposal_rematching', False))
             or bool(getattr(args, 'prediction_closure_rematching', False))):

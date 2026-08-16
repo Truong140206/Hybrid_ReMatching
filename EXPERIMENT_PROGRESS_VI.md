@@ -3536,3 +3536,26 @@ Forgetting thap hon; LoRA/calls phai bang consensus trong 1e-4 va van <5/<4.
 WinnerRecall, ExactAgreement, RouteRate, MultipleRate va Support chi diagnostic.
 Chi mot cau hinh duoc chay; neu fail thi dong self-owner, khong sweep vote hay
 tie-break tren test.
+## 2026-08-16 - Self-owner FAIL; preregister corroborated rescue
+
+Self-owner seed 43 chay 414 giay, chi phi giu dung consensus. So voi
+conventional: Acc@task +1.2070 va Backward +0.1819 PASS, nhung Acc@1 -0.9056,
+Acc@5 -0.4834, Loss +0.0232 va Forgetting +0.2146 FAIL. So voi consensus,
+Backward tang +0.8206 va Forgetting giam 0.2956, nhung Acc@1 giam 2.0143,
+Acc@5 giam 1.2489. RouteRate 99.4010% va ExactAgreement chi 88.5134%.
+
+Ket qua xac nhan self-owner co tin hieu retention huu ich nhung certificate
+gan nhu luon bat, nen thay the consensus qua rong. Dong self-owner toan cuc;
+khong sweep support threshold, vote weight hay TII tie-break tren test.
+
+Nhanh duy nhat tiep theo duoc khoa: corroborated self-owner rescue. Giu nguyen
+consensus cho moi sample, chi rescue khi self-owner task (1) khac route
+consensus va (2) nhan it nhat hai task vote tu cac adapter da evaluate. Hai
+phieu la muc corroboration doc lap toi thieu, khong phai nguong fit. Rescue dung
+task-local calibrated logits cua adapter da chon va top-1-safe TII tail, khong
+dung raw full logits; khong co rescue thi output consensus bit-for-bit.
+
+Candidate mask, LoRA va calls ke thua consensus, khong forward moi. Gate:
+ca sau quality metric hon conventional seed 43; LoRA/calls bang consensus trong
+1e-4 va <5/<4. RescueRate, support va agreement chi diagnostic. Mot run, khong
+sweep neu fail.

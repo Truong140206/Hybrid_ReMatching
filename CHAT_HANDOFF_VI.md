@@ -662,3 +662,23 @@ bash training_scripts/eval_imagenet_r_self_owner_consensus_audit_4090.sh   ~/Doc
 Gui final task10, comparison voi conventional va consensus, locked efficiency,
 diagnostic, SELF_OWNER_ALL_METRIC_GATE va wall time. Cac dong ten gate/duong
 dan trong tin nhan la noi dung can gui lai, khong phai lenh shell rieng.
+## 32. Self-owner FAIL; cho corroborated rescue
+
+Self-owner giu cost 3.0529/1.9060 va cai thien retention so voi consensus
+(Backward +0.8206, Forgetting -0.2956), nhung RouteRate 99.4010% lam Acc@1
+giam 2.0143; so voi conventional, Acc@1/Acc@5/Loss/Forgetting deu FAIL. Dong
+self-owner toan cuc.
+
+Da khoa corroborated rescue: chi doi consensus neu self-owner bat dong route va
+co it nhat hai adapter cung vote; rescued output dung task-local logits + TII
+tail. Moi truong hop khac giu consensus. Cost bat buoc bang consensus.
+
+~~~bash
+cd ~/Documents/truongnguyen/Hybrid_ReMatching
+git pull --ff-only
+bash training_scripts/eval_imagenet_r_corroborated_owner_audit_4090.sh   ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed43
+~~~
+
+Gui final task10, hai bang comparison, efficiency, diagnostic,
+CORROBORATED_OWNER_ALL_METRIC_GATE va wall time. Neu fail thi dong vote/self-owner
+branch, khong doi so phieu tren seed 43.

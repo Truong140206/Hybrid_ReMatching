@@ -835,8 +835,94 @@ def prediction_self_owner_consensus_diagnostics(
             'prediction_consensus_closure_lora_counts'],
         'prediction_self_owner_forward_calls': consensus[
             'prediction_consensus_closure_forward_calls'],
+        'prediction_self_owner_candidate_mask': candidate_mask,
+        'prediction_self_owner_selected_tasks': selected_tasks,
+        'prediction_self_owner_consensus_logits': consensus[
+            'prediction_consensus_closure_output_logits'],
+        'prediction_self_owner_consensus_tasks': consensus[
+            'prediction_consensus_closure_output_tasks'],
         'prediction_self_owner_output_logits': output_logits,
         'prediction_self_owner_output_tasks': output_tasks,
+    }
+
+
+def prediction_corroborated_self_owner_diagnostics(
+        tii_ranking, full_adapter_logits, rank_logits, task_evidence,
+        winner_tasks, full_predictions, tii_logits, class_mask,
+        initial_count=2, top_classes=5, max_candidates=5,
+        excluded_margin=20.0):
+    """Rescue consensus only with independently corroborated self-ownership.
+
+    The selected self-owner must disagree with the locked consensus route and
+    receive at least two task votes from already-evaluated adapters. Rescued
+    samples use only the selected adapter's task-local calibrated logits plus
+    the same top-1-safe TII tail; all other samples preserve consensus exactly.
+    """
+    self_owner = prediction_self_owner_consensus_diagnostics(
+        tii_ranking=tii_ranking,
+        full_adapter_logits=full_adapter_logits,
+        rank_logits=rank_logits,
+        task_evidence=task_evidence,
+        winner_tasks=winner_tasks,
+        full_predictions=full_predictions,
+        tii_logits=tii_logits,
+        class_mask=class_mask,
+        initial_count=initial_count,
+        top_classes=top_classes,
+        max_candidates=max_candidates,
+        excluded_margin=excluded_margin,
+    )
+    selected_tasks = self_owner['prediction_self_owner_selected_tasks']
+    consensus_tasks = self_owner['prediction_self_owner_consensus_tasks']
+    selected_support = self_owner['prediction_self_owner_support']
+    rescue = (
+        self_owner['prediction_self_owner_route_rate']
+        & selected_support.ge(2.0)
+        & selected_tasks.ne(consensus_tasks)
+    )
+
+    batch_size = tii_ranking.shape[0]
+    device = tii_ranking.device
+    selected_rank = tii_ranking.eq(
+        selected_tasks.unsqueeze(1)).to(torch.int64).argmax(dim=1)
+    rows = torch.arange(batch_size, device=device)
+    selected_local_logits = rank_logits[rows, selected_rank]
+    selected_candidate_mask = torch.zeros_like(
+        self_owner['prediction_self_owner_candidate_mask'])
+    selected_candidate_mask.scatter_(
+        1, selected_tasks.unsqueeze(1), True)
+    rescued_logits = complete_with_tii_probability_mass(
+        selected_local_logits, tii_logits, class_mask,
+        selected_candidate_mask)
+
+    output_logits = torch.where(
+        rescue.unsqueeze(1), rescued_logits,
+        self_owner['prediction_self_owner_consensus_logits'])
+    output_tasks = torch.where(
+        rescue, selected_tasks,
+        consensus_tasks)
+    output_predictions = output_logits.argmax(dim=1)
+    exact_agreement = (
+        output_tasks.eq(winner_tasks)
+        & output_predictions.eq(full_predictions)
+    )
+    candidate_mask = self_owner[
+        'prediction_self_owner_candidate_mask']
+    winner_recall = candidate_mask.gather(
+        1, winner_tasks.unsqueeze(1)).squeeze(1)
+
+    return {
+        'prediction_corroborated_owner_winner_recall': winner_recall,
+        'prediction_corroborated_owner_exact_agreement': exact_agreement,
+        'prediction_corroborated_owner_rescue_rate': rescue,
+        'prediction_corroborated_owner_support': torch.where(
+            rescue, selected_support, torch.zeros_like(selected_support)),
+        'prediction_corroborated_owner_lora_counts': self_owner[
+            'prediction_self_owner_lora_counts'],
+        'prediction_corroborated_owner_forward_calls': self_owner[
+            'prediction_self_owner_forward_calls'],
+        'prediction_corroborated_owner_output_logits': output_logits,
+        'prediction_corroborated_owner_output_tasks': output_tasks,
     }
 
 
@@ -878,12 +964,15 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
         args, 'progressive_prediction_consensus_closure_audit', False))
     self_owner_audit = bool(getattr(
         args, 'progressive_prediction_self_owner_audit', False))
+    corroborated_owner_audit = bool(getattr(
+        args, 'progressive_prediction_corroborated_owner_audit', False))
     stage_drift_audit = bool(getattr(args, 'stage_drift_audit', False))
     full_adapter_logits = (
         torch.empty_like(rank_logits)
         if (closure_audit or beam_closure_audit or budget_closure_audit
             or majority_closure_audit or consensus_closure_audit
-            or self_owner_audit or stage_drift_audit)
+            or self_owner_audit or corroborated_owner_audit
+            or stage_drift_audit)
         else None)
     initial_count = min(
         max(1, int(getattr(args, 'prediction_proposal_initial_count', 2))),
@@ -1087,6 +1176,23 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
             max_candidates=5,
             excluded_margin=excluded_margin,
         ))
+    if corroborated_owner_audit:
+        diagnostics.update(
+            prediction_corroborated_self_owner_diagnostics(
+                tii_ranking=candidate_tasks,
+                full_adapter_logits=full_adapter_logits,
+                rank_logits=rank_logits,
+                task_evidence=task_evidence,
+                winner_tasks=routed_tasks,
+                full_predictions=full_predictions,
+                tii_logits=tii_logits,
+                class_mask=class_mask,
+                initial_count=initial_count,
+                top_classes=getattr(
+                    args, 'prediction_proposal_top_classes', 5),
+                max_candidates=5,
+                excluded_margin=excluded_margin,
+            ))
     if bool(getattr(args, 'progressive_arrow_audit', False)):
         arrow_scores = arrow_task_scores(model, inputs, seen_task_count)
         arrow_ranking = torch.argsort(arrow_scores, dim=1, descending=True)
@@ -1120,6 +1226,12 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
         return (
             diagnostics['prediction_majority_closure_output_logits'],
             diagnostics['prediction_majority_closure_output_tasks'],
+            diagnostics,
+        )
+    if corroborated_owner_audit:
+        return (
+            diagnostics['prediction_corroborated_owner_output_logits'],
+            diagnostics['prediction_corroborated_owner_output_tasks'],
             diagnostics,
         )
     if self_owner_audit:
