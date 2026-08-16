@@ -682,3 +682,26 @@ bash training_scripts/eval_imagenet_r_corroborated_owner_audit_4090.sh   ~/Docum
 Gui final task10, hai bang comparison, efficiency, diagnostic,
 CORROBORATED_OWNER_ALL_METRIC_GATE va wall time. Neu fail thi dong vote/self-owner
 branch, khong doi so phieu tren seed 43.
+
+## 33. Corroborated-owner FAIL; cho ambiguous owner-mass
+
+Corroborated-owner giu cost 3.0529/1.9060, RescueRate 9.5408% nhung Acc@1 va
+Acc@5 giam 1.8523/1.9282 so voi consensus. So voi conventional chi Acc@task va
+Backward PASS; bon metric con lai FAIL. Dong vote/self-owner, khong doi support.
+
+Da khoa owner-mass: giu nguyen moi consensus row da certify; chi tren row mo ho
+moi xep candidate bang log probability mass ma tung adapter dat vao task chu
+cua no. Chi khi task thang khac consensus moi rescue bang task-local logits +
+TII tail. Khong threshold, khong fit/calibration, khong them LoRA/call; cost phai
+bang consensus.
+
+~~~bash
+cd ~/Documents/truongnguyen/Hybrid_ReMatching
+git pull --ff-only
+bash training_scripts/eval_imagenet_r_owner_mass_audit_4090.sh \
+  ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed43
+~~~
+
+Gui final task10, hai bang comparison, locked efficiency, diagnostic,
+OWNER_MASS_ALL_METRIC_GATE va wall time. Neu fail thi dong score owner-mass,
+khong them temperature, he so pha hay threshold tren seed 43.

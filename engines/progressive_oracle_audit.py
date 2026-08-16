@@ -926,6 +926,109 @@ def prediction_corroborated_self_owner_diagnostics(
     }
 
 
+def prediction_owner_mass_consensus_diagnostics(
+        tii_ranking, full_adapter_logits, rank_logits, task_evidence,
+        winner_tasks, full_predictions, tii_logits, class_mask,
+        initial_count=2, top_classes=5, max_candidates=5,
+        excluded_margin=20.0):
+    """Rescue uncertified consensus using adapter owner-task mass.
+
+    For each already-evaluated adapter, the routing score is
+    log P(y belongs to the adapter's own task | x), computed over all seen
+    classes. This comparison is offset-invariant and keeps within-task class
+    ranking untouched. Certified consensus rows and non-rerouted ambiguous
+    rows remain bitwise equal to the locked consensus-cap5 output.
+    """
+    consensus = prediction_consensus_budget_closure_diagnostics(
+        tii_ranking=tii_ranking,
+        full_adapter_logits=full_adapter_logits,
+        rank_logits=rank_logits,
+        task_evidence=task_evidence,
+        winner_tasks=winner_tasks,
+        full_predictions=full_predictions,
+        tii_logits=tii_logits,
+        class_mask=class_mask,
+        initial_count=initial_count,
+        top_classes=top_classes,
+        max_candidates=max_candidates,
+        excluded_margin=excluded_margin,
+    )
+    batch_size, seen_task_count = tii_ranking.shape
+    device = tii_ranking.device
+    candidate_mask = consensus[
+        'prediction_consensus_closure_candidate_mask']
+    selected_rank_mask = candidate_mask.gather(1, tii_ranking)
+
+    seen_classes = [
+        int(class_id)
+        for task_index in range(seen_task_count)
+        for class_id in class_mask[task_index]
+    ]
+    seen_class_index = torch.as_tensor(
+        seen_classes, dtype=torch.long, device=device)
+    owner_log_mass = torch.full(
+        (batch_size, seen_task_count), float('-inf'),
+        dtype=full_adapter_logits.dtype, device=device)
+    for rank in range(seen_task_count):
+        active_tasks = tii_ranking[:, rank]
+        adapter_seen_logits = full_adapter_logits[
+            :, rank].index_select(1, seen_class_index)
+        seen_log_mass = torch.logsumexp(adapter_seen_logits, dim=1)
+        for task_index in active_tasks.unique().tolist():
+            rows = torch.nonzero(active_tasks == task_index).flatten()
+            class_index = torch.as_tensor(
+                class_mask[task_index], dtype=torch.long, device=device)
+            local_log_mass = torch.logsumexp(
+                full_adapter_logits[rows, rank].index_select(
+                    1, class_index), dim=1)
+            owner_log_mass[rows, rank] = (
+                local_log_mass - seen_log_mass.index_select(0, rows))
+    owner_log_mass = owner_log_mass.masked_fill(
+        ~selected_rank_mask, float('-inf'))
+    selected_rank = owner_log_mass.argmax(dim=1)
+    selected_tasks = tii_ranking.gather(
+        1, selected_rank.unsqueeze(1)).squeeze(1)
+    consensus_tasks = consensus[
+        'prediction_consensus_closure_output_tasks']
+    ambiguous = ~consensus[
+        'prediction_consensus_closure_certified_rate']
+    rescue = ambiguous & selected_tasks.ne(consensus_tasks)
+
+    rows = torch.arange(batch_size, device=device)
+    selected_local_logits = rank_logits[rows, selected_rank]
+    selected_candidate_mask = torch.zeros_like(candidate_mask)
+    selected_candidate_mask.scatter_(
+        1, selected_tasks.unsqueeze(1), True)
+    rescued_logits = complete_with_tii_probability_mass(
+        selected_local_logits, tii_logits, class_mask,
+        selected_candidate_mask)
+    output_logits = torch.where(
+        rescue.unsqueeze(1), rescued_logits,
+        consensus['prediction_consensus_closure_output_logits'])
+    output_tasks = torch.where(
+        rescue, selected_tasks, consensus_tasks)
+    output_predictions = output_logits.argmax(dim=1)
+    exact_agreement = (
+        output_tasks.eq(winner_tasks)
+        & output_predictions.eq(full_predictions)
+    )
+    winner_recall = candidate_mask.gather(
+        1, winner_tasks.unsqueeze(1)).squeeze(1)
+
+    return {
+        'prediction_owner_mass_winner_recall': winner_recall,
+        'prediction_owner_mass_exact_agreement': exact_agreement,
+        'prediction_owner_mass_rescue_rate': rescue,
+        'prediction_owner_mass_ambiguous_rate': ambiguous,
+        'prediction_owner_mass_lora_counts': consensus[
+            'prediction_consensus_closure_lora_counts'],
+        'prediction_owner_mass_forward_calls': consensus[
+            'prediction_consensus_closure_forward_calls'],
+        'prediction_owner_mass_output_logits': output_logits,
+        'prediction_owner_mass_output_tasks': output_tasks,
+    }
+
+
 @torch.no_grad()
 def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
                              seen_task_count, args, targets=None,
@@ -966,12 +1069,15 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
         args, 'progressive_prediction_self_owner_audit', False))
     corroborated_owner_audit = bool(getattr(
         args, 'progressive_prediction_corroborated_owner_audit', False))
+    owner_mass_audit = bool(getattr(
+        args, 'progressive_prediction_owner_mass_audit', False))
     stage_drift_audit = bool(getattr(args, 'stage_drift_audit', False))
     full_adapter_logits = (
         torch.empty_like(rank_logits)
         if (closure_audit or beam_closure_audit or budget_closure_audit
             or majority_closure_audit or consensus_closure_audit
             or self_owner_audit or corroborated_owner_audit
+            or owner_mass_audit
             or stage_drift_audit)
         else None)
     initial_count = min(
@@ -1193,6 +1299,22 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
                 max_candidates=5,
                 excluded_margin=excluded_margin,
             ))
+    if owner_mass_audit:
+        diagnostics.update(prediction_owner_mass_consensus_diagnostics(
+            tii_ranking=candidate_tasks,
+            full_adapter_logits=full_adapter_logits,
+            rank_logits=rank_logits,
+            task_evidence=task_evidence,
+            winner_tasks=routed_tasks,
+            full_predictions=full_predictions,
+            tii_logits=tii_logits,
+            class_mask=class_mask,
+            initial_count=initial_count,
+            top_classes=getattr(
+                args, 'prediction_proposal_top_classes', 5),
+            max_candidates=5,
+            excluded_margin=excluded_margin,
+        ))
     if bool(getattr(args, 'progressive_arrow_audit', False)):
         arrow_scores = arrow_task_scores(model, inputs, seen_task_count)
         arrow_ranking = torch.argsort(arrow_scores, dim=1, descending=True)
@@ -1226,6 +1348,12 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
         return (
             diagnostics['prediction_majority_closure_output_logits'],
             diagnostics['prediction_majority_closure_output_tasks'],
+            diagnostics,
+        )
+    if owner_mass_audit:
+        return (
+            diagnostics['prediction_owner_mass_output_logits'],
+            diagnostics['prediction_owner_mass_output_tasks'],
             diagnostics,
         )
     if corroborated_owner_audit:

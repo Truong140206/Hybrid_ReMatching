@@ -929,6 +929,31 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                             audit[
                                 'prediction_corroborated_owner_forward_calls'
                             ].mean().item(), n=input.shape[0])
+                if bool(getattr(
+                        args, 'progressive_prediction_owner_mass_audit',
+                        False)):
+                    owner_mass_percent_metrics = {
+                        'OwnerMassWinnerRecall':
+                            'prediction_owner_mass_winner_recall',
+                        'OwnerMassExactAgreement':
+                            'prediction_owner_mass_exact_agreement',
+                        'OwnerMassRescueRate':
+                            'prediction_owner_mass_rescue_rate',
+                        'OwnerMassAmbiguousRate':
+                            'prediction_owner_mass_ambiguous_rate',
+                    }
+                    for metric_name, audit_name in (
+                            owner_mass_percent_metrics.items()):
+                        metric_logger.meters[metric_name].update(
+                            audit[audit_name].float().mean().mul(100.0).item(),
+                            n=input.shape[0])
+                    metric_logger.meters['OwnerMassLoRA/sample'].update(
+                        audit['prediction_owner_mass_lora_counts'].mean().item(),
+                        n=input.shape[0])
+                    metric_logger.meters['OwnerMassCalls/sample'].update(
+                        audit[
+                            'prediction_owner_mass_forward_calls'
+                        ].mean().item(), n=input.shape[0])
                 continue
 
             if bool(getattr(args, 'progressive_rematching', False)):
@@ -1603,6 +1628,23 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     'CorroboratedOwnerLoRA/sample'],
                 calls=metric_logger.meters[
                     'CorroboratedOwnerCalls/sample']))
+    if bool(getattr(
+            args, 'progressive_prediction_owner_mass_audit', False)):
+        print(
+            '* PredictionOwnerMassAudit WinnerRecall '
+            '{recall.global_avg:.3f} ExactAgreement '
+            '{agreement.global_avg:.3f} RescueRate '
+            '{rescue.global_avg:.3f} AmbiguousRate '
+            '{ambiguous.global_avg:.3f} LoRA/sample '
+            '{cost.global_avg:.3f} ForwardCalls/sample '
+            '{calls.global_avg:.3f}'
+            .format(
+                recall=metric_logger.meters['OwnerMassWinnerRecall'],
+                agreement=metric_logger.meters['OwnerMassExactAgreement'],
+                rescue=metric_logger.meters['OwnerMassRescueRate'],
+                ambiguous=metric_logger.meters['OwnerMassAmbiguousRate'],
+                cost=metric_logger.meters['OwnerMassLoRA/sample'],
+                calls=metric_logger.meters['OwnerMassCalls/sample']))
     if bool(getattr(args, 'progressive_arrow_audit', False)):
         print(
             '* ArrowAudit ArrowRecall@2 {arrow2.global_avg:.3f} '
@@ -1871,7 +1913,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((117, args.num_tasks))
+    stat_matrix = np.zeros((123, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -2015,6 +2057,20 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                 'CorroboratedOwnerLoRA/sample', 0.0)
             stat_matrix[116, i] = test_stats.get(
                 'CorroboratedOwnerCalls/sample', 0.0)
+        if bool(getattr(
+                args, 'progressive_prediction_owner_mass_audit', False)):
+            stat_matrix[117, i] = test_stats.get(
+                'OwnerMassWinnerRecall', 0.0)
+            stat_matrix[118, i] = test_stats.get(
+                'OwnerMassExactAgreement', 0.0)
+            stat_matrix[119, i] = test_stats.get(
+                'OwnerMassRescueRate', 0.0)
+            stat_matrix[120, i] = test_stats.get(
+                'OwnerMassAmbiguousRate', 0.0)
+            stat_matrix[121, i] = test_stats.get(
+                'OwnerMassLoRA/sample', 0.0)
+            stat_matrix[122, i] = test_stats.get(
+                'OwnerMassCalls/sample', 0.0)
         if (bool(getattr(args, 'vectorized_exhaustive_rematching', False))
                 or bool(getattr(args, 'prediction_proposal_rematching', False))
                 or bool(getattr(args, 'prediction_closure_rematching', False))):
@@ -2232,6 +2288,18 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         ).format(
             avg_stat[111], avg_stat[112], avg_stat[113],
             avg_stat[114], avg_stat[115], avg_stat[116])
+    if bool(getattr(
+            args, 'progressive_prediction_owner_mass_audit', False)):
+        result_str += (
+            "\tOwnerMassWinnerRecall: {:.4f}"
+            "\tOwnerMassExactAgreement: {:.4f}"
+            "\tOwnerMassRescueRate: {:.4f}"
+            "\tOwnerMassAmbiguousRate: {:.4f}"
+            "\tOwnerMassLoRA/sample: {:.4f}"
+            "\tOwnerMassCalls/sample: {:.4f}"
+        ).format(
+            avg_stat[117], avg_stat[118], avg_stat[119],
+            avg_stat[120], avg_stat[121], avg_stat[122])
     if (bool(getattr(args, 'vectorized_exhaustive_rematching', False))
             or bool(getattr(args, 'prediction_proposal_rematching', False))
             or bool(getattr(args, 'prediction_closure_rematching', False))):

@@ -21,6 +21,7 @@ from engines.progressive_oracle_audit import (
     prediction_consensus_budget_closure_diagnostics,
     prediction_corroborated_self_owner_diagnostics,
     prediction_majority_budget_closure_diagnostics,
+    prediction_owner_mass_consensus_diagnostics,
     prediction_self_owner_consensus_diagnostics,
     prediction_proposal_diagnostics,
 )
@@ -467,6 +468,53 @@ def test_prediction_corroborated_owner_rescues_only_two_vote_disagreement():
         True, True]
 
 
+def test_prediction_owner_mass_only_reroutes_ambiguous_disagreement():
+    tii_ranking = torch.tensor([[0, 1, 2], [0, 1, 2]])
+    full_adapter_logits = torch.tensor([
+        [
+            [0.0, 0.0, 6.0],
+            [0.0, 5.0, 0.0],
+            [5.0, 0.0, 0.0],
+        ],
+        [
+            [5.0, 0.0, 0.0],
+            [5.0, 4.9, 0.0],
+            [0.0, 0.0, 5.0],
+        ],
+    ])
+    rank_logits = torch.full((2, 3, 3), float('-inf'))
+    rank_logits[:, 0, 0] = 5.0
+    rank_logits[:, 1, 1] = 4.0
+    rank_logits[:, 2, 2] = 3.0
+
+    audit = prediction_owner_mass_consensus_diagnostics(
+        tii_ranking=tii_ranking,
+        full_adapter_logits=full_adapter_logits,
+        rank_logits=rank_logits,
+        task_evidence=torch.tensor([[5.0, 4.0, 3.0],
+                                    [5.0, 4.0, 3.0]]),
+        winner_tasks=torch.tensor([0, 0]),
+        full_predictions=torch.tensor([0, 0]),
+        tii_logits=torch.tensor([[3.0, 2.0, 1.0],
+                                 [3.0, 2.0, 1.0]]),
+        class_mask=[[0], [1], [2]],
+        initial_count=2,
+        top_classes=1,
+        max_candidates=3,
+    )
+
+    assert audit['prediction_owner_mass_ambiguous_rate'].tolist() == [
+        True, False]
+    assert audit['prediction_owner_mass_rescue_rate'].tolist() == [
+        True, False]
+    assert audit['prediction_owner_mass_output_tasks'].tolist() == [1, 0]
+    assert audit['prediction_owner_mass_output_logits'].argmax(
+        dim=1).tolist() == [1, 0]
+    assert audit['prediction_owner_mass_lora_counts'].tolist() == [3.0, 2.0]
+    assert audit['prediction_owner_mass_forward_calls'].tolist() == [2.0, 1.0]
+
+
+
 def test_prediction_proposal_is_allowed_by_strict_exemplar_free_protocol():
     validate_exemplar_free_protocol(SimpleNamespace(
         strict_exemplar_free=True,
@@ -480,6 +528,7 @@ def test_prediction_proposal_is_allowed_by_strict_exemplar_free_protocol():
         progressive_prediction_consensus_closure_audit=True,
         progressive_prediction_self_owner_audit=True,
         progressive_prediction_corroborated_owner_audit=True,
+        progressive_prediction_owner_mass_audit=True,
         prediction_closure_rematching=True,
         prediction_proposal_rematching=True,
         prediction_proposal_cross_adapter_audit=True,

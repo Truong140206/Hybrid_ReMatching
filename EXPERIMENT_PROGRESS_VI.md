@@ -3559,3 +3559,33 @@ Candidate mask, LoRA va calls ke thua consensus, khong forward moi. Gate:
 ca sau quality metric hon conventional seed 43; LoRA/calls bang consensus trong
 1e-4 va <5/<4. RescueRate, support va agreement chi diagnostic. Mot run, khong
 sweep neu fail.
+
+## 2026-08-16 - Corroborated-owner FAIL; preregister ambiguous owner-mass
+
+Corroborated-owner seed 43 chay 414 giay, giu dung cost consensus 3.0529 LoRA va
+1.9060 calls. RescueRate 9.5408%, WinnerRecall 97.7482%, nhung ExactAgreement
+chi 88.9090%. So voi conventional, Acc@task +1.4068 va Backward +0.1187 PASS;
+Acc@1 -0.7436, Acc@5 -1.1627, Loss +0.1826 va Forgetting +0.1614 FAIL. So voi
+consensus, Acc@1 giam 1.8523 va Acc@5 giam 1.9282. Retention tang di kem muc
+accuracy tuyet doi thap hon, khong phai giu duoc gain cua consensus.
+
+Ket qua dong ca self-owner toan cuc va corroborated vote; khong thay doi so
+phieu, support hay them threshold tren seed 43. Stage-drift van cho thay can
+mot score task-consistent, nhung vote top-1 nhi phan khong du manh.
+
+Phep thu tiep theo duoc khoa truoc khi chay: ambiguous owner-mass. Giu output
+consensus bit-for-bit o moi sample da dual-endorsement certify. Tren sample mo
+ho, voi moi adapter da nam trong candidate mask, tinh
+`logsumexp(logits owner-task) - logsumexp(logits all-seen)`, tuc
+`log P(y thuoc task chu cua adapter | x)`. Chon adapter co owner-mass lon nhat;
+chi reroute neu task nay khac task consensus. Rescue dung task-local calibrated
+logits va top-1-safe TII tail, nen ranking trong task khong doi.
+
+Quy tac khong co temperature/threshold/score hoc, khong nhan routing, anh hay
+feature cu, va khong forward moi. No khac strict task-mass fusion da fail: TII
+khong bi coi la posterior task, class logits khong bi nhan/phan bo lai, va
+owner-mass chi chon route trong vung consensus chua certify. Gate: ca sau
+quality metric hon conventional seed 43; LoRA/calls bang consensus trong 1e-4
+va <5/<4. WinnerRecall, ExactAgreement, RescueRate va AmbiguousRate chi
+diagnostic. Mot run; neu fail thi dong owner-mass, khong them he so pha hay
+nguong tren test.
