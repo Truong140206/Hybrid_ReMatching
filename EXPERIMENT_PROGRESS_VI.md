@@ -3723,3 +3723,28 @@ neu buoc phai co literal 6/6-thang-conventional (reviewer khong chap nhan giai
 thich artifact), CFS co du headroom (Acc@1 +1.2, Acc@5 +2.19) de mua ~0.5-0.7
 Forgetting/Backward - nhung do la vá artifact, ton Acc@5, va them caveat synthetic
 replay vao claim rehearsal-free.
+
+## 2026-08-16 - Rank-aware tail completion: dead end (phan tich, khong chay GPU)
+
+Thu thiet ke co che tail-completion "rank-aware" de khep Acc@5 (-0.83) va Loss
+(+0.059) cua closure+tail ve exhaustive ma khong retrain, khong them LoRA, giu
+top-1 bat bien. Da cai dat guarded flag (`--closure_rank_aware_tail`, clip thay
+vi scale), viet unit test, py_compile PASS. Nhung trace ky phan toan truoc khi
+chay GPU cho thay co che va tien de deu sai, nen da revert toan bo.
+
+Loi co che: dat `candidate_part = (1 - outside_mass) * candidate` roi clip class
+duoi duoi dinh candidate. Khi cap top1-safe binding (outside_mass lon ~0.98),
+dinh candidate teo con ~0.011 nen tran clip cung ~0.011 -> moi class duoi bi ep
+xuong ~0.011, mat ca thu tu noi bo va mass. Tail con TE HON safe (safe cho
+~0.32). "Clip thay vi scale" tu pha muc tieu dung o truong hop can no nhat.
+
+Loi tien de (quan trong hon): safe completion da cap cho tail
+`min(outside_mass, top1_safe_mass)` - tuc gan toi da ma rang buoc giu top-1 cho
+phep. Muon tail nhieu hon phai hoac vuot outside_mass (bia mass) hoac pha top-1.
+Cap chi binding khi TII don >~50% mass vao task CHUA danh gia, tuc khi TII bat
+dong voi routing; ma winner recall 99.8% nen hiem, va khi do tin TII chinh la
+dung bai hoc CFS-TII da fail. Ket luan: khoang cach Acc@5/Loss toi exhaustive la
+INFORMATION GAP (khong tinh logit that cua task duoi), khong phai calibration
+gap; khong phep reweight TII nao lap duoc. Khong thu lai tail reweighting.
+Buoc dung tiep: multi-seed reproduction closure+tail nhu hien trang; residual
+Acc@5/Loss gap se duoc bao cao trung thuc va giai thich la information gap.
