@@ -20,6 +20,7 @@ from engines.progressive_oracle_audit import (
     prediction_closure_diagnostics,
     prediction_consensus_budget_closure_diagnostics,
     prediction_majority_budget_closure_diagnostics,
+    prediction_self_owner_consensus_diagnostics,
     prediction_proposal_diagnostics,
 )
 
@@ -379,6 +380,43 @@ def test_prediction_consensus_closure_certifies_only_dual_endorsement():
     assert torch.allclose(
         output.exp().sum(dim=1), torch.ones(2), atol=1e-6)
 
+def test_prediction_self_owner_prefers_supported_self_endorsing_task():
+    tii_ranking = torch.tensor([[0, 1, 2]])
+    full_adapter_logits = torch.tensor([[
+        [-10.0, 9.0, -10.0],
+        [-10.0, 8.0, -10.0],
+        [-10.0, -10.0, 7.0],
+    ]])
+    rank_logits = torch.full((1, 3, 3), float('-inf'))
+    rank_logits[0, 0, 0] = 5.0
+    rank_logits[0, 1, 1] = 4.0
+    rank_logits[0, 2, 2] = 3.0
+
+    audit = prediction_self_owner_consensus_diagnostics(
+        tii_ranking=tii_ranking,
+        full_adapter_logits=full_adapter_logits,
+        rank_logits=rank_logits,
+        task_evidence=torch.tensor([[5.0, 4.0, 3.0]]),
+        winner_tasks=torch.tensor([1]),
+        full_predictions=torch.tensor([1]),
+        tii_logits=torch.tensor([[3.0, 2.0, 1.0]]),
+        class_mask=[[0], [1], [2]],
+        initial_count=2,
+        top_classes=1,
+        max_candidates=3,
+    )
+
+    assert audit['prediction_self_owner_route_rate'].tolist() == [True]
+    assert audit['prediction_self_owner_multiple_rate'].tolist() == [False]
+    assert audit['prediction_self_owner_support'].tolist() == [2.0]
+    assert audit['prediction_self_owner_output_tasks'].tolist() == [1]
+    assert audit['prediction_self_owner_output_logits'].argmax(
+        dim=1).tolist() == [1]
+    assert audit['prediction_self_owner_lora_counts'].tolist() == [2.0]
+    assert audit['prediction_self_owner_forward_calls'].tolist() == [1.0]
+    assert audit['prediction_self_owner_exact_agreement'].tolist() == [True]
+
+
 def test_prediction_proposal_is_allowed_by_strict_exemplar_free_protocol():
     validate_exemplar_free_protocol(SimpleNamespace(
         strict_exemplar_free=True,
@@ -390,6 +428,7 @@ def test_prediction_proposal_is_allowed_by_strict_exemplar_free_protocol():
         progressive_prediction_budget_closure_audit=True,
         progressive_prediction_majority_closure_audit=True,
         progressive_prediction_consensus_closure_audit=True,
+        progressive_prediction_self_owner_audit=True,
         prediction_closure_rematching=True,
         prediction_proposal_rematching=True,
         prediction_proposal_cross_adapter_audit=True,

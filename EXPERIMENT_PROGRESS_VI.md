@@ -3507,3 +3507,32 @@ Forgetting, Backward va hai cost metric. Khong dung nhan de routing, anh cu,
 feature cu hay calibration. Ket qua se quyet dinh mot trong ba nhanh da khoa:
 training/CRCT stability, stage-consistent cross-task scoring, hoac candidate
 selection trong ngan sach consensus 3.0529 LoRA.
+## 2026-08-16 - Ket qua stage-drift va preregister self-owner
+
+Stage-drift seed 43 hoan tat trong 413 giay va equivalence voi consensus-cap5
+PASS tren ca sau quality metric va hai cost metric. Aggregate task cu:
+
+- true-adapter local accuracy decay chi +0.1177;
+- cross-task competition gap growth +1.2504;
+- routing penalty so voi true adapter tren seen classes +4.4801;
+- local loss growth +0.0119, seen-class loss growth +0.1195.
+
+Task 6-8 co local delta trung binh -0.0903 nhung seen delta -1.8247 va
+proposal-vs-seen -4.7132. Nhu vay checkpoint/adapter cu gan nhu on dinh; nut
+that chi phoi la chon task/adapter, tiep theo la canh tranh score task moi.
+Khong chuyen sang training/CRCT.
+
+Nhanh moi duoc khoa truoc khi chay: self-owner consensus. Candidate va cost giu
+nguyen consensus i2/c5/cap5. Voi moi adapter da evaluate, lay raw top-1 tren
+toan bo seen classes. Adapter chi duoc chon neu top-1 nay thuoc task cua chinh
+adapter (self-endorsement). Trong cac adapter hop le, task-vote support la khoa
+chinh va thu hang TII pha hoa; neu khong co self-owner thi giu output consensus
+cu. Self-owner xuat raw seen-class logits cua adapter duoc chon. Khong threshold,
+score hoc, probability calibration, nhan routing, anh/feature cu hay forward
+moi.
+
+Gate seed 43: Acc@task, Acc@1, Acc@5, Backward cao hon conventional; Loss va
+Forgetting thap hon; LoRA/calls phai bang consensus trong 1e-4 va van <5/<4.
+WinnerRecall, ExactAgreement, RouteRate, MultipleRate va Support chi diagnostic.
+Chi mot cau hinh duoc chay; neu fail thi dong self-owner, khong sweep vote hay
+tie-break tren test.

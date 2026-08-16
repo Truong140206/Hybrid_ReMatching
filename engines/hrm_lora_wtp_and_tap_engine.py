@@ -864,6 +864,34 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                         audit[
                             'prediction_consensus_closure_forward_calls'
                         ].mean().item(), n=input.shape[0])
+                if bool(getattr(
+                        args, 'progressive_prediction_self_owner_audit',
+                        False)):
+                    self_owner_percent_metrics = {
+                        'SelfOwnerWinnerRecall':
+                            'prediction_self_owner_winner_recall',
+                        'SelfOwnerExactAgreement':
+                            'prediction_self_owner_exact_agreement',
+                        'SelfOwnerRouteRate':
+                            'prediction_self_owner_route_rate',
+                        'SelfOwnerMultipleRate':
+                            'prediction_self_owner_multiple_rate',
+                    }
+                    for metric_name, audit_name in (
+                            self_owner_percent_metrics.items()):
+                        metric_logger.meters[metric_name].update(
+                            audit[audit_name].float().mean().mul(100.0).item(),
+                            n=input.shape[0])
+                    metric_logger.meters['SelfOwnerSupport'].update(
+                        audit['prediction_self_owner_support'].mean().item(),
+                        n=input.shape[0])
+                    metric_logger.meters['SelfOwnerLoRA/sample'].update(
+                        audit['prediction_self_owner_lora_counts'].mean().item(),
+                        n=input.shape[0])
+                    metric_logger.meters['SelfOwnerCalls/sample'].update(
+                        audit[
+                            'prediction_self_owner_forward_calls'
+                        ].mean().item(), n=input.shape[0])
                 continue
 
             if bool(getattr(args, 'progressive_rematching', False)):
@@ -1495,6 +1523,25 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 seen_loss=metric_logger.meters['OwnSeenLoss'],
                 task_acc=metric_logger.meters['OwnSeenTaskAcc'],
                 failure=metric_logger.meters['LocalToSeenFailure']))
+    if bool(getattr(
+            args, 'progressive_prediction_self_owner_audit', False)):
+        print(
+            '* PredictionSelfOwnerAudit WinnerRecall '
+            '{recall.global_avg:.3f} ExactAgreement '
+            '{agreement.global_avg:.3f} RouteRate '
+            '{route.global_avg:.3f} MultipleRate '
+            '{multiple.global_avg:.3f} Support '
+            '{support.global_avg:.3f} LoRA/sample '
+            '{cost.global_avg:.3f} ForwardCalls/sample '
+            '{calls.global_avg:.3f}'
+            .format(
+                recall=metric_logger.meters['SelfOwnerWinnerRecall'],
+                agreement=metric_logger.meters['SelfOwnerExactAgreement'],
+                route=metric_logger.meters['SelfOwnerRouteRate'],
+                multiple=metric_logger.meters['SelfOwnerMultipleRate'],
+                support=metric_logger.meters['SelfOwnerSupport'],
+                cost=metric_logger.meters['SelfOwnerLoRA/sample'],
+                calls=metric_logger.meters['SelfOwnerCalls/sample']))
     if bool(getattr(args, 'progressive_arrow_audit', False)):
         print(
             '* ArrowAudit ArrowRecall@2 {arrow2.global_avg:.3f} '
@@ -1763,7 +1810,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((104, args.num_tasks))
+    stat_matrix = np.zeros((111, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -1876,6 +1923,22 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                 'ConsensusClosureLoRA/sample', 0.0)
             stat_matrix[97, i] = test_stats.get(
                 'ConsensusClosureCalls/sample', 0.0)
+        if bool(getattr(
+                args, 'progressive_prediction_self_owner_audit', False)):
+            stat_matrix[104, i] = test_stats.get(
+                'SelfOwnerWinnerRecall', 0.0)
+            stat_matrix[105, i] = test_stats.get(
+                'SelfOwnerExactAgreement', 0.0)
+            stat_matrix[106, i] = test_stats.get(
+                'SelfOwnerRouteRate', 0.0)
+            stat_matrix[107, i] = test_stats.get(
+                'SelfOwnerMultipleRate', 0.0)
+            stat_matrix[108, i] = test_stats.get(
+                'SelfOwnerSupport', 0.0)
+            stat_matrix[109, i] = test_stats.get(
+                'SelfOwnerLoRA/sample', 0.0)
+            stat_matrix[110, i] = test_stats.get(
+                'SelfOwnerCalls/sample', 0.0)
         if (bool(getattr(args, 'vectorized_exhaustive_rematching', False))
                 or bool(getattr(args, 'prediction_proposal_rematching', False))
                 or bool(getattr(args, 'prediction_closure_rematching', False))):
@@ -2067,6 +2130,19 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         ).format(
             avg_stat[93], avg_stat[94], avg_stat[95], avg_stat[96],
             avg_stat[97])
+    if bool(getattr(
+            args, 'progressive_prediction_self_owner_audit', False)):
+        result_str += (
+            "	SelfOwnerWinnerRecall: {:.4f}"
+            "	SelfOwnerExactAgreement: {:.4f}"
+            "	SelfOwnerRouteRate: {:.4f}"
+            "	SelfOwnerMultipleRate: {:.4f}"
+            "	SelfOwnerSupport: {:.4f}"
+            "	SelfOwnerLoRA/sample: {:.4f}"
+            "	SelfOwnerCalls/sample: {:.4f}"
+        ).format(
+            avg_stat[104], avg_stat[105], avg_stat[106], avg_stat[107],
+            avg_stat[108], avg_stat[109], avg_stat[110])
     if (bool(getattr(args, 'vectorized_exhaustive_rematching', False))
             or bool(getattr(args, 'prediction_proposal_rematching', False))
             or bool(getattr(args, 'prediction_closure_rematching', False))):

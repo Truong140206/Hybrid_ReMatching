@@ -639,3 +639,26 @@ Gui lai noi dung file
 ~/Documents/truongnguyen/hrm-pet-output/imagenet_r_seed43_stage_drift.md,
 dong STAGE_DRIFT_EQUIVALENCE_GATE, STAGE_DRIFT_AUDIT va wall time. Khong chay
 them routing/training variant truoc khi doc decomposition nay.
+## 31. Stage-drift xac nhan routing; cho self-owner audit
+
+Stage-drift equivalence PASS, wall 413 giay. True-adapter local decay chi
+0.1177, cross-task competition 1.2504, routing penalty 4.4801. Task 6-8 local
+gan nhu khong doi (-0.0903) nhung proposal thap hon true-adapter seen output
+4.7132 diem. Ket luan: khong retrain checkpoint; sua router trong dung ngan
+sach consensus 3.0529 LoRA/1.9060 calls.
+
+Da trien khai self-owner consensus: chi chon adapter tu endorse task cua no,
+task-vote support xep hang, TII rank pha hoa; khong self-owner thi fallback
+consensus. Candidate/cost khong doi, khong threshold/calibration/du lieu cu.
+
+Lenh chay:
+
+~~~bash
+cd ~/Documents/truongnguyen/Hybrid_ReMatching
+git pull --ff-only
+bash training_scripts/eval_imagenet_r_self_owner_consensus_audit_4090.sh   ~/Documents/truongnguyen/hrm-pet-output/imr_lora_rank8_baseline_10tasks_seed43
+~~~
+
+Gui final task10, comparison voi conventional va consensus, locked efficiency,
+diagnostic, SELF_OWNER_ALL_METRIC_GATE va wall time. Cac dong ten gate/duong
+dan trong tin nhan la noi dung can gui lai, khong phai lenh shell rieng.
