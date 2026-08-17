@@ -3759,6 +3759,49 @@ Buc tranh 3 seed (42/43/44):
 Con seed 45 (holdout thu hai) de du bo 4 seed. Khong tune gi; config khoa i2/c5,
 prior 0.3, temp 1.0 y het.
 
+## 2026-08-16 - MULTI-SEED HOAN TAT (42/43/44/45): ket qua chinh
+
+Seed 45: conventional Acc@task 77.9417/Acc@1 74.0719/Acc@5 86.8835/Loss 1.2262/
+Forg 3.6919/Back -3.6468. Exhaustive 80.3774/75.0261/88.9492/1.0826/3.6344/
+-3.6188 (10 LoRA, wall 409). closure+tail 80.2905/74.9884/88.2097/1.1365/3.8304/
+-3.8304 (5.5137 LoRA, 2.581 calls, winner 99.76%). vs conventional: 4 accuracy/
+loss PASS, Forgetting +0.1385 va Backward -0.1836 FAIL. Taskwise xac nhan artifact:
+old-task final +0.7942 (khong giam), Forgetting te chi vi peak +0.9326 > final
++0.7942. Retention thuc te duoc bao toan.
+
+Bang 4 seed (Acc@1):
+- Conventional: 74.0191 / 74.4077 / 73.2768 / 74.0719 -> mean 73.94 +- 0.48
+- closure+tail: 75.4164 / 75.6634 / 74.5076 / 74.9884 -> mean 75.14 +- 0.51
+- Exhaustive:  75.4277 / 75.6188 / 74.9037 / 75.0261 -> mean 75.24 +- 0.34
+
+Mean 4 seed cac metric:
+- Acc@5: conv 86.71, closure 88.15, exh 89.04
+- Loss:  conv 1.228, closure 1.137, exh 1.080
+- Forgetting: conv 3.360, closure 3.358, exh 3.260
+- Backward:   conv -3.156, closure -3.292, exh -3.184
+- LoRA/sample: closure 5.53, exh 10.0 (55.3%, tiet kiem 44.7%)
+
+Parity vs exhaustive (mean paired-delta, 4 seed): Acc@task -0.10, Acc@1 -0.10,
+Acc@5 -0.88, Loss +0.057, Forgetting +0.098, Backward -0.108. Khop exhaustive o
+Acc@task/Acc@1/Forgetting/Backward trong ~0.1; gap nhat quan duy nhat la Acc@5
+(~-0.9) + Loss (+0.057) = phan TAIL. Xac nhan tail-completion la doi tuong sua
+tiem nang neu muon match exhaustive ca 6.
+
+Ket luan chinh (trung thuc):
+1. closure+tail THANG conventional o Acc@task/Acc@1/Acc@5/Loss tren CA 4 seed,
+   dong deu (Acc@1 +1.20 mean).
+2. All-six-vs-conventional literal: seed 42 PASS, 44 PASS; seed 43, 45 fail chi
+   Forgetting/Backward - da chung minh bang taskwise la artifact peak/final
+   (final old-task cao hon conventional +1.08 seed 43, +0.79 seed 45).
+3. Forgetting mean closure ~= conventional (delta -0.002); Backward mean hoi kem
+   conventional (-0.14, chu yeu do seed 43).
+4. Match exhaustive trong ~0.1 tren 4/6 metric o 44.7% it LoRA hon.
+
+Buoc tiep: viet bao cao ky thuat theo khung SOHO-CL (nhung day du vector metric +
+bang chi phi + paired-delta + strict exemplar-free headline). Optional enhancement:
+tail-completion (dong Acc@5/Loss), Pareto owner-mass ~3 LoRA, them dataset/
+task-scaling. Khong tune them tren cac seed nay.
+
 ## 2026-08-16 - Rank-aware tail completion: dead end (phan tich, khong chay GPU)
 
 Thu thiet ke co che tail-completion "rank-aware" de khep Acc@5 (-0.83) va Loss
