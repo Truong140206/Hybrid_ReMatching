@@ -1497,6 +1497,14 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     #     pass
                     
             
+            # HRM-PET (DRM+CRM) cost: 1 base LoRA per sample, +1 for DRM-rerouted
+            # samples, +1 for CRM-rematched low-confidence samples (task_id > 0).
+            default_lora_counts = torch.ones(
+                input.shape[0], dtype=torch.float32, device=device)
+            default_lora_counts[equal_drm] += 1.0
+            if task_id > 0:
+                default_lora_counts[filtered_index_tensor] += 1.0
+
             if bool(getattr(args, 'budgeted_rematching', False)):
                 base_lora_counts = torch.ones(
                     input.shape[0], dtype=torch.float32, device=device)
@@ -1560,6 +1568,11 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 )
                 filtered_index_tensor = torch.empty(0, dtype=torch.long, device=device)
                 re_id = None
+            else:
+                metric_logger.meters['LoRA/sample'].update(
+                    default_lora_counts.mean().item(), n=input.shape[0])
+                metric_logger.meters['ForwardCalls/sample'].update(
+                    default_lora_counts.mean().item(), n=input.shape[0])
 
             loss = criterion(logits, target)
 
@@ -1977,7 +1990,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((150, args.num_tasks))
+    stat_matrix = np.zeros((152, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -2009,6 +2022,9 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
             stat_matrix[14, i] = test_stats.get('ExactAgreement@4', 0.0)
             stat_matrix[15, i] = test_stats.get('OracleLoRA/sample', 0.0)
             stat_matrix[16, i] = test_stats.get('ActualLoRA/sample', 0.0)
+        if bool(getattr(args, 'report_conventional_cost', False)):
+            stat_matrix[150, i] = test_stats.get('LoRA/sample', 0.0)
+            stat_matrix[151, i] = test_stats.get('ForwardCalls/sample', 0.0)
         if bool(getattr(args, 'router_recall_audit', False)):
             router_base = {'max': 130, 'energy': 135, 'margin': 140,
                            'mean': 145}
@@ -2266,6 +2282,9 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         ).format(
             avg_stat[11], avg_stat[12], avg_stat[13], avg_stat[14],
             avg_stat[15], avg_stat[16])
+    if bool(getattr(args, 'report_conventional_cost', False)):
+        result_str += "\tLoRA/sample: {:.4f}\tForwardCalls/sample: {:.4f}".format(
+            avg_stat[150], avg_stat[151])
     if bool(getattr(args, 'router_recall_audit', False)):
         router_base = {'max': 130, 'energy': 135, 'margin': 140, 'mean': 145}
         for router_name, base in router_base.items():
