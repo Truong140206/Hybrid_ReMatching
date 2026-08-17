@@ -1977,7 +1977,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((130, args.num_tasks))
+    stat_matrix = np.zeros((150, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -2009,6 +2009,16 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
             stat_matrix[14, i] = test_stats.get('ExactAgreement@4', 0.0)
             stat_matrix[15, i] = test_stats.get('OracleLoRA/sample', 0.0)
             stat_matrix[16, i] = test_stats.get('ActualLoRA/sample', 0.0)
+        if bool(getattr(args, 'router_recall_audit', False)):
+            router_base = {'max': 130, 'energy': 135, 'margin': 140,
+                           'mean': 145}
+            for router_name, base in router_base.items():
+                stat_matrix[base, i] = test_stats.get(
+                    'Router_{}_MeanRank'.format(router_name), 0.0)
+                for offset, recall_k in enumerate((1, 2, 3, 4), start=1):
+                    stat_matrix[base + offset, i] = test_stats.get(
+                        'Router_{}_Recall@{}'.format(router_name, recall_k),
+                        0.0)
         if bool(getattr(args, 'stage_drift_audit', False)):
             stat_matrix[98, i] = test_stats.get('OwnLocalAcc@1', 0.0)
             stat_matrix[99, i] = test_stats.get('OwnSeenAcc@1', 0.0)
@@ -2256,6 +2266,16 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         ).format(
             avg_stat[11], avg_stat[12], avg_stat[13], avg_stat[14],
             avg_stat[15], avg_stat[16])
+    if bool(getattr(args, 'router_recall_audit', False)):
+        router_base = {'max': 130, 'energy': 135, 'margin': 140, 'mean': 145}
+        for router_name, base in router_base.items():
+            result_str += (
+                "\tRouter_{0}_MeanRank: {1:.4f}"
+                "\tRouter_{0}_Recall@1: {2:.4f}\tRouter_{0}_Recall@2: {3:.4f}"
+                "\tRouter_{0}_Recall@3: {4:.4f}\tRouter_{0}_Recall@4: {5:.4f}"
+            ).format(
+                router_name, avg_stat[base], avg_stat[base + 1],
+                avg_stat[base + 2], avg_stat[base + 3], avg_stat[base + 4])
     if bool(getattr(args, 'stage_drift_audit', False)):
         result_str += (
             "\tOwnLocalAcc@1: {:.4f}\tOwnSeenAcc@1: {:.4f}"
