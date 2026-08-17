@@ -678,6 +678,21 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     audit['oracle_lora_counts'].mean().item(), n=input.shape[0])
                 metric_logger.meters['ActualLoRA/sample'].update(
                     audit['actual_lora_counts'].mean().item(), n=input.shape[0])
+                if bool(getattr(args, 'router_recall_audit', False)):
+                    for router_name in ('max', 'energy', 'margin', 'mean'):
+                        metric_logger.meters[
+                            'Router_{}_MeanRank'.format(router_name)].update(
+                            audit['router_{}_mean_rank'.format(
+                                router_name)].mean().item(),
+                            n=input.shape[0])
+                        for recall_k in (1, 2, 3, 4):
+                            metric_logger.meters[
+                                'Router_{}_Recall@{}'.format(
+                                    router_name, recall_k)].update(
+                                audit['router_{}_recall_{}'.format(
+                                    router_name, recall_k)].float().mean()
+                                .mul(100.0).item(),
+                                n=input.shape[0])
                 if bool(getattr(args, 'stage_drift_audit', False)):
                     stage_percent_metrics = {
                         'OwnLocalAcc@1':

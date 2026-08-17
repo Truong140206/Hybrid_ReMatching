@@ -1098,6 +1098,53 @@ def prediction_owner_consensus_hedge_diagnostics(
     }
 
 @torch.no_grad()
+def router_recall_diagnostics(tii_logits, class_mask, seen_task_count,
+                              winner_tasks):
+    """Rank the exhaustive winner task under alternative TII aggregations.
+
+    Every score below is computed only from ``tii_logits`` (no LoRA forward),
+    so any aggregation that ranks the winner higher than the current ``max``
+    router is a free, strict cost reduction: fewer LoRAs need to be evaluated
+    before the winner is covered. ``winner_tasks`` is the task the full
+    exhaustive evaluation routes to.
+    """
+    device = tii_logits.device
+    max_scores = []
+    energy_scores = []
+    margin_scores = []
+    mean_scores = []
+    for task_index in range(seen_task_count):
+        class_index = torch.as_tensor(
+            class_mask[task_index], dtype=torch.long, device=device)
+        task_logits = tii_logits.index_select(1, class_index)
+        max_scores.append(task_logits.max(dim=1).values)
+        energy_scores.append(torch.logsumexp(task_logits, dim=1))
+        mean_scores.append(task_logits.mean(dim=1))
+        top2 = task_logits.topk(
+            k=min(2, task_logits.shape[1]), dim=1).values
+        if top2.shape[1] >= 2:
+            margin_scores.append(top2[:, 0] - top2[:, 1])
+        else:
+            margin_scores.append(top2[:, 0])
+    routers = {
+        'max': torch.stack(max_scores, dim=1),
+        'energy': torch.stack(energy_scores, dim=1),
+        'margin': torch.stack(margin_scores, dim=1),
+        'mean': torch.stack(mean_scores, dim=1),
+    }
+    diagnostics = {}
+    winner_index = winner_tasks.unsqueeze(1)
+    for name, scores in routers.items():
+        winner_score = scores.gather(1, winner_index)
+        # 1-indexed rank of the winner: number of tasks scoring strictly higher.
+        rank = (scores > winner_score).sum(dim=1) + 1
+        diagnostics['router_{}_mean_rank'.format(name)] = rank.float()
+        for k in (1, 2, 3, 4):
+            diagnostics['router_{}_recall_{}'.format(name, k)] = rank.le(
+                min(k, seen_task_count))
+    return diagnostics
+
+
 def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
                              seen_task_count, args, targets=None,
                              true_task=None):
@@ -1142,6 +1189,7 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
     owner_hedge_audit = bool(getattr(
         args, 'progressive_prediction_owner_consensus_hedge_audit', False))
     stage_drift_audit = bool(getattr(args, 'stage_drift_audit', False))
+    router_recall_audit = bool(getattr(args, 'router_recall_audit', False))
     full_adapter_logits = (
         torch.empty_like(rank_logits)
         if (closure_audit or beam_closure_audit or budget_closure_audit
@@ -1229,6 +1277,9 @@ def progressive_oracle_audit(model, inputs, tii_logits, class_mask,
         'actual_lora_counts': torch.full_like(
             oracle_counts, float(seen_task_count)),
     }
+    if router_recall_audit:
+        diagnostics.update(router_recall_diagnostics(
+            tii_logits, class_mask, seen_task_count, routed_tasks))
     if stage_drift_audit:
         if targets is None or true_task is None:
             raise ValueError(
