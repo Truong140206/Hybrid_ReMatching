@@ -3724,6 +3724,41 @@ thich artifact), CFS co du headroom (Acc@1 +1.2, Acc@5 +2.19) de mua ~0.5-0.7
 Forgetting/Backward - nhung do la vá artifact, ton Acc@5, va them caveat synthetic
 replay vao claim rehearsal-free.
 
+## 2026-08-16 - Seed 44 holdout: closure+tail PASS ca 6 vs conventional (literal)
+
+Da train xong seed 44 (TII 15 phut, rank-8 1h43) va chay du 3 phuong phap.
+
+Conventional 44: Acc@task 77.3359, Acc@1 73.2768, Acc@5 86.5352, Loss 1.2343,
+Forgetting 3.8695, Backward -3.6567.
+Exhaustive 44: Acc@task 80.3613, Acc@1 74.9037, Acc@5 88.7369, Loss 1.0810,
+Forgetting 3.2152, Backward -3.1111; 10 LoRA, 3 calls, wall 410s.
+closure+tail 44: Acc@task 79.9995, Acc@1 74.5076, Acc@5 87.7681, Loss 1.1418,
+Forgetting 3.4665, Backward -3.4134; 5.5172 LoRA, 2.5883 calls, winner recall
+99.6217%.
+
+vs conventional: Acc@task +2.6636, Acc@1 +1.2308, Acc@5 +1.2329, Loss -0.0925,
+Forgetting -0.4030, Backward +0.2433. CLOSURE_TII_TAIL_ALL_METRIC_GATE=PASS -
+thang ca sau LITERALLY, ke ca Forgetting va Backward (khong phai artifact nhu
+seed 43). Seed holdout chua tung dung, khong CFS/tune.
+
+vs exhaustive (parity): Acc@task -0.3618, Acc@1 -0.3961, Acc@5 -0.9688, Loss
++0.0608, Forgetting +0.2513, Backward -0.3023, o 55.2% so LoRA.
+
+Buc tranh 3 seed (42/43/44):
+- All-six vs conventional: 42 PASS, 43 5/6 (Forg/Back artifact, retention thuc te
+  bao toan), 44 PASS. 2/3 literal all-six win.
+- Parity vs exhaustive, mean paired-delta 3 seed: Acc@task -0.10, Acc@1 -0.12,
+  Acc@5 -0.93, Loss +0.059, Forgetting +0.066, Backward -0.074. Khop exhaustive o
+  Acc@task/Acc@1/Forgetting/Backward trong ~0.1; gap nhat quan duy nhat la Acc@5
+  (~-0.9) va Loss (+0.06) - dung phan TAIL (class task chua eval). Validate gia
+  thuyet tail-completion la doi tuong sua tiem nang neu muon.
+- Acc@1 mean+-std: conventional 73.90+-0.57, closure+tail 75.20+-0.61, exhaustive
+  75.32+-0.37. closure ngoi ngay ben exhaustive, deu tren conventional, o 5.5 vs
+  10 LoRA (-44.7%).
+
+Con seed 45 (holdout thu hai) de du bo 4 seed. Khong tune gi; config khoa i2/c5,
+prior 0.3, temp 1.0 y het.
+
 ## 2026-08-16 - Rank-aware tail completion: dead end (phan tich, khong chay GPU)
 
 Thu thiet ke co che tail-completion "rank-aware" de khep Acc@5 (-0.83) va Loss
