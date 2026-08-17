@@ -34,12 +34,19 @@ strict exemplar-free = PASS (không lưu ảnh/feature từng mẫu của task c
 
 | Phương pháp | Acc@1 | Acc@5 | Loss | LoRA/mẫu | Calls/mẫu |
 |---|---:|---:|---:|---:|---:|
-| Conventional | 73.94 ± 0.48 | 86.71 | 1.228 | 1.0 | 1.0 |
+| HRM-PET (DRM+CRM) | 73.94 ± 0.48 | 86.71 | 1.228 | 1.83 | 1.83 |
 | **closure+tail** | **75.14 ± 0.51** | 88.15 | 1.137 | **5.53** | 2.58 |
 | Exhaustive | 75.24 ± 0.34 | 89.04 | 1.080 | 10.0 | 3.0 |
 
-closure+tail: **+1.20 Acc@1 so conventional**, **−0.10 so exhaustive**, ở **55.3%
-số LoRA** (tiết kiệm 44.7%).
+**"Conventional" = phương pháp HRM-PET gốc đầy đủ (TII + DRM + CRM/GEN), đo được
+1.83 LoRA/mẫu** (base + DRM reroute + CRM rematch cho mẫu low-confidence), per-seed
+1.8376/1.8295/1.8146/1.8251, `CONVENTIONAL_COST_GATE=PASS` (accuracy khớp log
+conventional). Đây là baseline đúng của bài báo, KHÔNG phải single-route.
+
+closure+tail vs exhaustive: **−0.10 Acc@1 ở 55.3% số LoRA** (near-lossless).
+closure+tail vs HRM-PET: **+1.20 Acc@1 / +1.44 Acc@5 / −0.09 Loss**, đổi lại
+3× LoRA (1.83 → 5.53). Đây là trade-off cost↔quality: closure+tail là điểm vận
+hành đạt gần exhaustive, vượt HRM-PET về chất lượng với chi phí trung bình.
 
 ### Per-seed — closure+tail (chính xác)
 
