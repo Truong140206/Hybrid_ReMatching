@@ -3785,6 +3785,29 @@ bao hoa o ~89% recall@4. Giam cost hon phai train router moi (scope lon). Day la
 ablation sach cho bao cao: cost khong giam duoc bang routing-only. Chot baseline
 report-baseline-4seed va chuyen sang viet bao cao.
 
+## 2026-08-18 - Da do cost HRM-PET va test dataset thu 2 (CIFAR-100)
+
+Cost HRM-PET (DRM+CRM) do that 4 seed ImageNet-R: ~1.83 LoRA/mau (base + DRM
+reroute + CRM rematch), CONVENTIONAL_COST_GATE=PASS. Bang cost hoan chinh:
+HRM-PET 1.83 / closure+tail 5.53 / exhaustive 10.0 LoRA. closure+tail vs
+exhaustive: -0.10 Acc@1 o 55% cost; vs HRM-PET: +1.20 Acc@1 nhung 3x LoRA
+(trade-off, khong re hon HRM-PET). Framing dung: "xap xi hieu qua cua exhaustive".
+
+Da dung pipeline CIFAR-100 (cifar100_lora + cifar100_hideprompt_5e, rank 8, no
+CFS) va chay full seed 42:
+- HRM-PET: Acc@task 89.82, Acc@1 89.77, Acc@5 98.64, Loss 0.388, 1.40 LoRA.
+- Exhaustive: 90.26, 89.73, 99.04, 0.336, 10 LoRA.
+- closure+tail: 90.27, 89.74, 98.76, 0.349, 5.86 LoRA, winner recall 99.98%.
+
+KET LUAN QUAN TRONG (that, khong artifact): tren CIFAR-100 HRM-PET (Acc@1 89.77)
+DA >= exhaustive (89.73) -> KHONG co gap routing de dong. closure+tail chi hoa
+HRM-PET (Acc@1 -0.03) o 5.86 LoRA (4.2x dat hon). Gate FAIL that su. Vi sao:
+CIFAR-100 de routing (winner recall@2 92% vs ImageNet-R 77%, oracle 2.34 LoRA),
+HRM-PET da du. => Gia tri method PHU THUOC dataset co nut that routing; winner
+recall@2 du bao noi method co ich. Diem yeu ve generality: 1/2 dataset khong loi
+ich. Buoc tiep: test CUB-200 (fine-grained, co the routing kho nhu ImageNet-R)
+de biet story la "1/3 bo" (yeu) hay "2/3 bo routing-kho" (chap nhan duoc).
+
 ## 2026-08-16 - MULTI-SEED HOAN TAT (42/43/44/45): ket qua chinh
 
 Seed 45: conventional Acc@task 77.9417/Acc@1 74.0719/Acc@5 86.8835/Loss 1.2262/
