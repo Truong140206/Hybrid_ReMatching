@@ -62,19 +62,23 @@ if [[ -s "${LOG_PATH}" ]]; then
 fi
 
 cd "${REPO_ROOT}"
+PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" "${PYTHON_BIN}" -c '
+import sys
+from protocols import validate_exemplar_free_training_log
+validate_exemplar_free_training_log(sys.argv[1])
+' "${TRAIN_LOG}"
+
 CHECKPOINT_RANK="$(PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" "${PYTHON_BIN}" -c '
 import sys
 import torch
-from protocols import validate_exemplar_free_training_log
-validate_exemplar_free_training_log(sys.argv[1])
-checkpoint = torch.load(sys.argv[2], map_location="cpu", weights_only=False)
+checkpoint = torch.load(sys.argv[1], map_location="cpu", weights_only=False)
 state = checkpoint.get("model", checkpoint)
 matches = [value for key, value in state.items()
            if key.endswith("lora_layer.k_lora_A")]
 if len(matches) != 1:
     raise SystemExit(f"Expected one lora_layer.k_lora_A tensor, found {len(matches)}")
 print(int(matches[0].shape[-1]))
-' "${TRAIN_LOG}" "${RUN_DIR}/checkpoint/task1_checkpoint.pth")"
+' "${RUN_DIR}/checkpoint/task1_checkpoint.pth")"
 if [[ -z "${LORA_RANK}" ]]; then
   LORA_RANK="${CHECKPOINT_RANK}"
 fi
