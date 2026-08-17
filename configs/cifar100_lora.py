@@ -190,3 +190,20 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--semantic_adapter_blend', default=1.0, type=float)
     subparsers.add_argument('--semantic_adapter_min_classes', default=5, type=int)
     subparsers.add_argument('--print_freq', type=int, default=10, help = 'The frequency of printing')
+
+    # Rematching / audit flags shared with the ImageNet-R pipeline so the same
+    # conventional / exhaustive / closure evaluation scripts run on CIFAR-100.
+    subparsers.add_argument('--strict_exemplar_free', action='store_true', help='reject any configuration that stores per-example real features or rereads historical train images')
+    subparsers.add_argument('--report_conventional_cost', action='store_true', help='log per-sample LoRA and forward-call cost of the default HRM-PET (DRM+CRM) evaluation path')
+    subparsers.add_argument('--vectorized_exhaustive_rematching', action='store_true', help='preserve exhaustive scoring while batching multiple task LoRAs in each model call')
+    subparsers.add_argument('--vectorized_exhaustive_task_chunk_size', default=4, type=int)
+    subparsers.add_argument('--exhaustive_tii_prior_weight', default=0.1, type=float)
+    subparsers.add_argument('--exhaustive_logit_temperature', default=1.0, type=float)
+    subparsers.add_argument('--progressive_oracle_audit', action='store_true', help='run exhaustive once and audit the theoretical 2-to-4-to-all cascade')
+    subparsers.add_argument('--progressive_prediction_closure_audit', action='store_true', help='audit threshold-free expansion until evaluated LoRAs propose no unseen task')
+    subparsers.add_argument('--progressive_prediction_closure_tii_tail_audit', action='store_true', help='evaluate closure top-1 with zero-LoRA TII probability completion for excluded task tails')
+    subparsers.add_argument('--prediction_proposal_initial_count', default=2, type=int)
+    subparsers.add_argument('--prediction_proposal_top_classes', default=5, type=int)
+    subparsers.add_argument('--progressive_tii_prior_weight', default=0.3, type=float)
+    subparsers.add_argument('--progressive_logit_temperature', default=1.0, type=float)
+    subparsers.add_argument('--progressive_excluded_logit_margin', default=20.0, type=float)
