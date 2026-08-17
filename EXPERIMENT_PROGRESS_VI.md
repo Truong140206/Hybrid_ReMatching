@@ -3759,6 +3759,32 @@ Buc tranh 3 seed (42/43/44):
 Con seed 45 (holdout thu hai) de du bo 4 seed. Khong tune gi; config khoa i2/c5,
 prior 0.3, temp 1.0 y het.
 
+## 2026-08-16 - Router-recall audit (buoc A): 5.5 LoRA la san, khong headroom mien phi
+
+Them audit strict (opt-in --router_recall_audit, khong dung baseline) do winner
+(task exhaustive chon) duoc xep hang cao ra sao duoi 4 cach tong hop TII, tat ca
+tu tii_logits (khong LoRA). Seed 42:
+
+| router | MeanRank | Recall@1 | Recall@2 | Recall@3 | Recall@4 |
+|---|---:|---:|---:|---:|---:|
+| max (hien tai) | 2.0171 | 65.95 | 77.20 | 84.50 | 88.83 |
+| energy | 1.9744 | 66.57 | 78.31 | 84.91 | 89.50 |
+| margin | 3.0361 | 50.57 | 61.05 | 68.97 | 74.25 |
+| mean | 2.9825 | 38.48 | 56.65 | 68.29 | 77.74 |
+
+Self-check: Router_max_Recall@2 = 77.1963 = WinnerRecall@2 (dung).
+
+Ket luan: energy nhinh hon max (Recall@2 +1.11, MeanRank -0.043) nhung qua nho;
+margin/mean te hon. Mau chot: Recall@4 ~89% cho ca max lan energy -> ~11% mau co
+winner ngoai top-4 du tong hop cach nao. Chinh duoi 11% nay buoc closure mo rong
+toi 5.5 LoRA de dat recall 99.7%. Khong tong hop TII mien phi nao va duoc duoi.
+ROUTER_RECALL_AUDIT=NO_FREE_HEADROOM.
+
+=> 5.5 LoRA la SAN cua routing mien phi/strict; tin hieu TII (backbone dong bang)
+bao hoa o ~89% recall@4. Giam cost hon phai train router moi (scope lon). Day la
+ablation sach cho bao cao: cost khong giam duoc bang routing-only. Chot baseline
+report-baseline-4seed va chuyen sang viet bao cao.
+
 ## 2026-08-16 - MULTI-SEED HOAN TAT (42/43/44/45): ket qua chinh
 
 Seed 45: conventional Acc@task 77.9417/Acc@1 74.0719/Acc@5 86.8835/Loss 1.2262/
