@@ -431,13 +431,8 @@ class CUB200(torch.utils.data.Dataset):
                 download_url(self.url, root, filename=self.filename)
 
         if not os.path.exists(os.path.join(root, 'CUB_200_2011')):
-            import zipfile
-            zip_ref = zipfile.ZipFile(fpath, 'r')
-            zip_ref.extractall(root)
-            zip_ref.close()
-
             import tarfile
-            tar_ref = tarfile.open(os.path.join(root, 'CUB_200_2011.tgz'), 'r')
+            tar_ref = tarfile.open(fpath, 'r:gz')
             tar_ref.extractall(root)
             tar_ref.close()
 
@@ -452,8 +447,9 @@ class CUB200(torch.utils.data.Dataset):
         self.data = datasets.ImageFolder(fpath, transform=transform)
 
     def split(self):
-        train_folder = self.root + 'CUB_200_2011/train'
-        test_folder = self.root + 'CUB_200_2011/test'
+        base = os.path.join(self.root, 'CUB_200_2011')
+        train_folder = os.path.join(base, 'train')
+        test_folder = os.path.join(base, 'test')
 
         if os.path.exists(train_folder):
             rmtree(train_folder)
@@ -462,8 +458,8 @@ class CUB200(torch.utils.data.Dataset):
         os.mkdir(train_folder)
         os.mkdir(test_folder)
 
-        images = self.root + 'CUB_200_2011/images.txt'
-        train_test_split = self.root + 'CUB_200_2011/train_test_split.txt'
+        images = os.path.join(base, 'images.txt')
+        train_test_split = os.path.join(base, 'train_test_split.txt')
 
         with open(images, 'r') as image:
             image_paths = image.readlines()
@@ -473,17 +469,19 @@ class CUB200(torch.utils.data.Dataset):
                     image_path = image_paths[i]
                     image_path = image_path.replace('\n', '').split(' ')[-1]
                     class_name = image_path.split('/')[0]
-                    src = self.root + 'CUB_200_2011/images/' + class_name
+                    src = os.path.join(base, 'images', image_path)
 
                     if line.split(' ')[-1].replace('\n', '') == '1':
-                        if not os.path.exists(train_folder + '/' + class_name):
-                            os.mkdir(train_folder + '/' + class_name)
-                        dst = train_folder + '/' + image_path
+                        class_dir = os.path.join(train_folder, class_name)
+                        if not os.path.exists(class_dir):
+                            os.mkdir(class_dir)
+                        dst = os.path.join(train_folder, image_path)
                     else:
-                        if not os.path.exists(test_folder + '/' + class_name):
-                            os.mkdir(test_folder + '/' + class_name)
-                        dst = test_folder + '/' + image_path
-                    
+                        class_dir = os.path.join(test_folder, class_name)
+                        if not os.path.exists(class_dir):
+                            os.mkdir(class_dir)
+                        dst = os.path.join(test_folder, image_path)
+
                     move(src, dst)
                     i += 1
 
