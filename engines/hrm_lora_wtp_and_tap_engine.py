@@ -487,6 +487,7 @@ cls_cfs_model = {}
 cls_real_features = {}
 cls_shared_features = {}
 replay_task_router = None
+_gaussian_stat_cache = {}
 
 
 def reset_replay_statistics():
@@ -497,6 +498,141 @@ def reset_replay_statistics():
     cls_real_features = {}
     cls_shared_features = {}
     replay_task_router = None
+    _gaussian_stat_cache.clear()
+
+
+def _gaussian_class_stats(class_id, device, args):
+    """Return (mean, precision, logdet, is_diag) for a class Gaussian.
+
+    Precision is 1/variance vector when is_diag, else the inverse covariance
+    matrix. Covariance is shrunk toward its mean-diagonal by gaussian_shrinkage
+    for robustness with few samples per class. Cached per (class, mode, shrink).
+    """
+    mode = getattr(args, 'gaussian_cov_mode', 'diagonal')
+    shrink = float(getattr(args, 'gaussian_shrinkage', 0.1))
+    key = (int(class_id), mode, round(shrink, 6))
+    cached = _gaussian_stat_cache.get(key)
+    if cached is not None:
+        return cached
+    mean = torch.as_tensor(
+        cls_mean[int(class_id)], device=device, dtype=torch.float32)
+    cov = torch.as_tensor(
+        cls_cov[int(class_id)], device=device, dtype=torch.float32)
+    dim = mean.shape[0]
+    if cov.dim() == 1:
+        cov = torch.diag(cov)
+    diag = torch.diagonal(cov)
+    mean_diag = diag.mean().clamp_min(1e-6)
+    if mode == 'diagonal':
+        var = (1.0 - shrink) * diag + shrink * mean_diag
+        var = var.clamp_min(1e-6)
+        stats = (mean, 1.0 / var, torch.log(var).sum(), True)
+    else:
+        cov_s = (1.0 - shrink) * cov + shrink * torch.diag(
+            torch.full_like(diag, float(mean_diag)))
+        cov_s = cov_s + torch.eye(dim, device=device) * 1e-5
+        chol = torch.linalg.cholesky(cov_s)
+        precision = torch.cholesky_inverse(chol)
+        logdet = 2.0 * torch.log(torch.diagonal(chol)).sum()
+        stats = (mean, precision, logdet, False)
+    _gaussian_stat_cache[key] = stats
+    return stats
+
+
+def _tied_precision(seen_class_ids, device, args):
+    """Shared inverse covariance (mean over seen classes) + logdet for tied mode."""
+    shrink = float(getattr(args, 'gaussian_shrinkage', 0.1))
+    key = ('__tied__', len(seen_class_ids), round(shrink, 6))
+    cached = _gaussian_stat_cache.get(key)
+    if cached is not None:
+        return cached
+    accum = None
+    count = 0
+    for class_id in seen_class_ids:
+        if int(class_id) not in cls_cov:
+            continue
+        cov = torch.as_tensor(
+            cls_cov[int(class_id)], device=device, dtype=torch.float32)
+        if cov.dim() == 1:
+            cov = torch.diag(cov)
+        accum = cov if accum is None else accum + cov
+        count += 1
+    cov_mean = accum / max(1, count)
+    diag = torch.diagonal(cov_mean)
+    mean_diag = diag.mean().clamp_min(1e-6)
+    cov_s = (1.0 - shrink) * cov_mean + shrink * torch.diag(
+        torch.full_like(diag, float(mean_diag)))
+    cov_s = cov_s + torch.eye(cov_s.shape[0], device=device) * 1e-5
+    chol = torch.linalg.cholesky(cov_s)
+    precision = torch.cholesky_inverse(chol)
+    logdet = 2.0 * torch.log(torch.diagonal(chol)).sum()
+    stats = (precision, logdet)
+    _gaussian_stat_cache[key] = stats
+    return stats
+
+
+@torch.no_grad()
+def gaussian_rescoring_predict(model, inputs, class_mask, seen_task_count,
+                               args, device):
+    """Class-incremental prediction by per-class Gaussian fit.
+
+    For each seen task the query is passed through that task LoRA (the same
+    feature space the class Gaussians were estimated in), then every class of
+    that task is scored by -0.5 * Mahalanobis^2 (optionally + log-likelihood
+    normalizer and a blended LoRA classifier logit). A wrong-task feature is
+    out-of-distribution for that task Gaussians, so its Mahalanobis distance is
+    large and the cross-task hijack that breaks energy re-matching is
+    suppressed. Returns (scores[B, nb_classes], prompt_id[B]).
+    """
+    batch = inputs.shape[0]
+    nb_classes = args.nb_classes
+    include_logdet = bool(getattr(args, 'gaussian_include_logdet', False))
+    g_weight = float(getattr(args, 'gaussian_score_weight', 1.0))
+    logit_weight = float(getattr(args, 'gaussian_logit_weight', 0.0))
+    logit_temp = max(1e-6, float(getattr(args, 'gaussian_logit_temperature', 1.0)))
+    mode = getattr(args, 'gaussian_cov_mode', 'diagonal')
+    scores = torch.full(
+        (batch, nb_classes), float('-inf'), device=device, dtype=torch.float32)
+    class_task = torch.full(
+        (nb_classes,), -1, dtype=torch.long, device=device)
+    tied_precision = None
+    tied_logdet = None
+    if mode == 'tied':
+        seen_class_ids = [
+            int(c) for t in range(seen_task_count) for c in class_mask[t]]
+        tied_precision, tied_logdet = _tied_precision(
+            seen_class_ids, device, args)
+    for task in range(seen_task_count):
+        output = model(inputs, task_id=task, train=True)
+        feature = output['pre_logits'].float()
+        logits_task = output['logits'].float() if logit_weight != 0.0 else None
+        for class_id in class_mask[task]:
+            class_id = int(class_id)
+            if class_id not in cls_mean:
+                continue
+            if mode == 'tied':
+                mean = torch.as_tensor(
+                    cls_mean[class_id], device=device, dtype=torch.float32)
+                precision, logdet, is_diag = tied_precision, tied_logdet, False
+            else:
+                mean, precision, logdet, is_diag = _gaussian_class_stats(
+                    class_id, device, args)
+            diff = feature - mean
+            if is_diag:
+                maha = (diff * diff * precision).sum(dim=1)
+            else:
+                maha = (diff @ precision * diff).sum(dim=1)
+            class_score = -0.5 * maha
+            if include_logdet:
+                class_score = class_score - 0.5 * logdet
+            class_score = g_weight * class_score
+            if logits_task is not None:
+                class_score = class_score + logit_weight * (
+                    logits_task[:, class_id] / logit_temp)
+            scores[:, class_id] = class_score
+            class_task[class_id] = task
+    prompt_id = class_task[scores.argmax(dim=1)]
+    return scores, prompt_id
 
 
 def restore_real_feature_memory(feature_memory):
@@ -601,6 +737,31 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     
                 else:
                     raise NotImplementedError("original model is None")
+
+            if bool(getattr(args, 'gaussian_rescoring', False)):
+                logits, prompt_id = gaussian_rescoring_predict(
+                    model=model, inputs=input, class_mask=class_mask,
+                    seen_task_count=task_id + 1, args=args, device=device)
+                filtered_index_tensor = torch.empty(
+                    0, dtype=torch.long, device=device)
+                re_id = None
+                loss = criterion(logits, target)
+                acc1, acc5 = accuracy(logits, target, topk=(1, 5))
+                task_inference_acc = utils.task_inference_accuracy(
+                    prompt_id.unsqueeze(-1), target, target_task_map,
+                    filtered_index_tensor, re_id)
+                metric_logger.meters['Loss'].update(loss.item())
+                metric_logger.meters['Acc@1'].update(
+                    acc1.item(), n=input.shape[0])
+                metric_logger.meters['Acc@5'].update(
+                    acc5.item(), n=input.shape[0])
+                metric_logger.meters['Acc@task'].update(
+                    task_inference_acc.item(), n=input.shape[0])
+                metric_logger.meters['LoRA/sample'].update(
+                    float(task_id + 1), n=input.shape[0])
+                metric_logger.meters['ForwardCalls/sample'].update(
+                    float(task_id + 1), n=input.shape[0])
+                continue
 
             if bool(getattr(args, 'calibrated_progressive_rematching', False)):
                 logits, prompt_id, lora_counts, forward_calls, stop_stage = calibrated_progressive_rematching(

@@ -84,6 +84,8 @@ def train(args):
             getattr(args, 'distilled_router_rematching', False))
         calibrated_progressive_enabled = bool(getattr(
             args, 'calibrated_progressive_rematching', False))
+        gaussian_rescoring_enabled = bool(getattr(
+            args, 'gaussian_rescoring', False))
         if (prototype_enabled or local_prototype_enabled
                 or shared_router_enabled or calibration_enabled
                 or learned_router_enabled or distilled_router_enabled):
@@ -294,6 +296,13 @@ def train(args):
                         device=device, task_id=task_id,
                         class_mask=class_mask[task_id], args=args,
                     )
+            elif gaussian_rescoring_enabled:
+                print('Reconstructing per-class Gaussian statistics for task', task_id + 1)
+                _compute_mean(
+                    model=model, data_loader=data_loader_per_cls,
+                    device=device, task_id=task_id,
+                    class_mask=class_mask[task_id], args=args,
+                )
             _ = evaluate_till_now(model, original_model, data_loader, device,
                                   task_id, class_mask, target_task_map, acc_matrix, args, )
 
