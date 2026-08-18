@@ -25,6 +25,8 @@ The Gram inverse decorrelates the expanded features, which is what a per-class
 diagonal/full covariance in the raw 768-d space failed to do.
 """
 
+import math
+
 import torch
 
 
@@ -161,7 +163,11 @@ def fit_rp_temperature(scores, targets, args, device):
     """
     log_temperature = torch.zeros(1, device=device, requires_grad=True)
     optimizer = torch.optim.LBFGS([log_temperature], lr=0.1, max_iter=60)
-    scores = scores.detach().to(device)
+    # Unseen classes carry a -inf mask bias; differentiating through it yields
+    # NaN gradients, so fit on finite scores.
+    scores = torch.nan_to_num(
+        scores.detach().to(device).float(),
+        nan=0.0, posinf=1e4, neginf=-1e4)
     targets = targets.detach().to(device)
 
     def closure():
@@ -172,8 +178,13 @@ def fit_rp_temperature(scores, targets, args, device):
         return loss
 
     optimizer.step(closure)
-    _state['temperature'] = float(log_temperature.detach().exp().item())
-    return _state['temperature']
+    temperature = float(log_temperature.detach().exp().item())
+    if not math.isfinite(temperature) or temperature <= 0.0:
+        print('RP head calibration produced', temperature,
+              '- falling back to temperature 1.0')
+        temperature = 1.0
+    _state['temperature'] = temperature
+    return temperature
 
 
 @torch.no_grad()
@@ -185,7 +196,7 @@ def rp_head_predict(features, args, device):
     projected = project_features(features, args, device)
     scores = projected @ weights
     temperature = _state.get('temperature')
-    if temperature:
+    if temperature and math.isfinite(temperature) and temperature > 0.0:
         scores = scores / temperature
     bias = _state.get('class_mask_bias')
     if bias is not None:
