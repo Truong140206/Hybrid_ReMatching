@@ -80,10 +80,27 @@ def _ensure_projection(feature_dim, device, args):
     return projection
 
 
+def _normalize(features, args):
+    """Feature scaling before projection.
+
+    Raw ViT pre_logits have a large and uneven scale, which distorts a ReLU
+    random projection and makes a single ridge lambda fit all classes badly.
+    """
+    kind = str(getattr(args, 'rp_normalize', 'none'))
+    if kind == 'none':
+        return features
+    if kind == 'l2':
+        return torch.nn.functional.normalize(features, dim=1)
+    if kind == 'scale':
+        return features / features.norm(dim=1, keepdim=True).mean().clamp_min(1e-6)
+    raise ValueError('Unknown rp_normalize: {}'.format(kind))
+
+
 def project_features(features, args, device):
     projection = _ensure_projection(features.shape[1], device, args)
     kind = str(getattr(args, 'rp_activation', 'relu'))
-    return _activation(features.float() @ projection, kind)
+    features = _normalize(features.float(), args)
+    return _activation(features @ projection, kind)
 
 
 @torch.no_grad()

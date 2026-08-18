@@ -311,6 +311,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--rp_activation', default='relu', choices=['relu', 'square', 'gelu', 'none'], type=str)
     subparsers.add_argument('--rp_lambda', default=10000.0, type=float, help='ridge regularizer added to the Gram diagonal before inversion')
     subparsers.add_argument('--rp_seed', default=1993, type=int, help='seed for the frozen random projection (regenerated, never stored)')
+    subparsers.add_argument('--rp_normalize', default='none', choices=['none', 'l2', 'scale'], type=str, help='feature scaling before the random projection; raw ViT pre_logits scale distorts the ReLU projection and the single ridge lambda')
     subparsers.add_argument('--rp_feature_source', default='original', choices=['original', 'lora'], type=str, help='original = frozen TII backbone features (no routing at all); lora = features under each sample true/routed task adapter')
     subparsers.add_argument('--gaussian_rescoring', action='store_true', help='class-incremental prediction by per-class Gaussian (Mahalanobis) fit over stored cls_mean/cls_cov instead of energy-based re-matching; wrong-task features are OOD for a task Gaussians so hijacks are suppressed')
     subparsers.add_argument('--gaussian_cov_mode', default='diagonal', choices=['full', 'diagonal', 'tied'], type=str, help='covariance model for Gaussian re-scoring: full per-class, diagonal per-class, or tied (shared mean covariance across seen classes)')
