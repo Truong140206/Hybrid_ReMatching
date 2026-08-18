@@ -17,6 +17,7 @@ SEED="${SEED:-42}"
 GPUS="${GPUS:-1}"
 MODE="${1:-check}"
 SMOKE="${SMOKE:-0}"
+LORA_RANK="${LORA_RANK:-8}"
 
 TII_DIR="${TII_DIR:-${OUTPUT_ROOT}/cub200_tii_original_10tasks_seed${SEED}}"
 
@@ -57,9 +58,9 @@ run_tii() {
 }
 
 run_baseline() {
-  local run_name="cub200_lora_rank8_baseline_10tasks_seed${SEED}"
+  local run_name="cub200_lora_rank${LORA_RANK}_baseline_10tasks_seed${SEED}"
   local epochs="${LORA_EPOCHS:-50}"; local crct_epochs="${CRCT_EPOCHS:-30}"; local max_tasks="${MAX_TRAIN_TASKS:-0}"
-  if [[ "${SMOKE}" == "1" ]]; then run_name="cub200_lora_rank8_baseline_smoke_seed${SEED}"; epochs=1; crct_epochs=1; fi
+  if [[ "${SMOKE}" == "1" ]]; then run_name="cub200_lora_rank${LORA_RANK}_baseline_smoke_seed${SEED}"; epochs=1; crct_epochs=1; fi
   run_name="${RUN_NAME_OVERRIDE:-${run_name}}"
   local output_dir="${OUTPUT_ROOT}/${run_name}"; local log_path="${OUTPUT_ROOT}/${run_name}.log"
   require_checkpoints "${TII_DIR}" 10 "TII" || { echo "Run '$0 tii' first." >&2; exit 4; }
@@ -71,7 +72,7 @@ run_baseline() {
     --model vit_base_patch16_224 --original_model vit_base_patch16_224 \
     --batch-size "${LORA_BATCH_SIZE:-24}" --epochs "${epochs}" --data-path "${DATA_PATH}" \
     --ca_lr "${CA_LR:-0.005}" --crct_epochs "${crct_epochs}" --seed "${SEED}" \
-    --lr 0.03 --con 0.2 --lora_rank 8 --En gen --tau -10 --K 5 --sched cosine \
+    --lr 0.03 --con 0.2 --lora_rank "${LORA_RANK}" --En gen --tau -10 --K 5 --sched cosine \
     --dataset Split-CUB200 --lora_momentum 0.4 --lora_type hide \
     --trained_original_model "${TII_DIR}" --num_tasks 10 --max_train_tasks "${max_tasks}" \
     --output_dir "${output_dir}" 2>&1 | tee "${log_path}"
