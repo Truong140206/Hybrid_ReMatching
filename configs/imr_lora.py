@@ -311,6 +311,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--rp_activation', default='relu', choices=['relu', 'square', 'gelu', 'none'], type=str)
     subparsers.add_argument('--rp_lambda', default=10000.0, type=float, help='ridge regularizer added to the Gram diagonal before inversion')
     subparsers.add_argument('--rp_seed', default=1993, type=int, help='seed for the frozen random projection (regenerated, never stored)')
+    subparsers.add_argument('--rp_calibrate', action='store_true', help='fit one scalar temperature on training scores so the head Loss is comparable to a softmax classifier (only the scalar is kept)')
     subparsers.add_argument('--rp_normalize', default='none', choices=['none', 'l2', 'scale'], type=str, help='feature scaling before the random projection; raw ViT pre_logits scale distorts the ReLU projection and the single ridge lambda')
     subparsers.add_argument('--rp_feature_source', default='original', choices=['original', 'lora'], type=str, help='original = frozen TII backbone features (no routing at all); lora = one fixed HRM-PET adapter used as first-session adaptation, still routing-free')
     subparsers.add_argument('--rp_lora_task', default=0, type=int, help='which task adapter provides the fixed feature space when rp_feature_source=lora (0 = first session, RanPAC-style); it must not vary per task or the Gram matrix mixes incompatible spaces')

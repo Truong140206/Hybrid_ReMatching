@@ -43,6 +43,8 @@ def reset_rp_head():
     _state['prototypes'] = None
     _state['dim'] = None
     _state['seen_classes'] = set()
+    _state['temperature'] = None
+    _state['weights'] = None
 
 
 def rp_head_ready():
@@ -150,6 +152,30 @@ def solve_rp_head(args, device, seen_class_ids=None):
     return weights
 
 
+def fit_rp_temperature(scores, targets, args, device):
+    """Fit one scalar temperature so the ridge scores read as calibrated logits.
+
+    Ridge outputs are unnormalized regression values, so a cross-entropy loss
+    computed on them is not comparable to a softmax classifier's loss. Only the
+    scalar is kept; the scores used to fit it are transient.
+    """
+    log_temperature = torch.zeros(1, device=device, requires_grad=True)
+    optimizer = torch.optim.LBFGS([log_temperature], lr=0.1, max_iter=60)
+    scores = scores.detach().to(device)
+    targets = targets.detach().to(device)
+
+    def closure():
+        optimizer.zero_grad()
+        loss = torch.nn.functional.cross_entropy(
+            scores / log_temperature.exp(), targets)
+        loss.backward()
+        return loss
+
+    optimizer.step(closure)
+    _state['temperature'] = float(log_temperature.detach().exp().item())
+    return _state['temperature']
+
+
 @torch.no_grad()
 def rp_head_predict(features, args, device):
     """Score every class for a batch of backbone features (no routing)."""
@@ -158,6 +184,9 @@ def rp_head_predict(features, args, device):
         raise RuntimeError('RP head weights not solved yet')
     projected = project_features(features, args, device)
     scores = projected @ weights
+    temperature = _state.get('temperature')
+    if temperature:
+        scores = scores / temperature
     bias = _state.get('class_mask_bias')
     if bias is not None:
         scores = scores + bias

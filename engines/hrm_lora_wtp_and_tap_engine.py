@@ -29,7 +29,8 @@ from engines.budgeted_rematching import budgeted_exhaustive_fallback
 from engines.progressive_rematching import progressive_adapter_rematching
 from engines.progressive_oracle_audit import progressive_oracle_audit
 from engines.random_projection_head import (
-    accumulate_rp_statistics, reset_rp_head, rp_head_predict, solve_rp_head)
+    accumulate_rp_statistics, fit_rp_temperature, reset_rp_head,
+    rp_head_predict, solve_rp_head)
 from engines.prediction_proposal_rematching import (
     cross_adapter_borda_consensus,
     cross_adapter_global_consensus,
@@ -3201,6 +3202,35 @@ def compute_rp_statistics(model, original_model, data_loader, device, task_id,
                     train=True)['pre_logits']
             accumulate_rp_statistics(
                 features, targets, args, device, args.nb_classes)
+
+
+@torch.no_grad()
+def _collect_rp_calibration_scores(model, original_model, data_loader, device,
+                                   task_id, class_mask, args):
+    """Transient scores over current-task training data, for temperature fit."""
+    source = str(getattr(args, 'rp_feature_source', 'original'))
+    score_chunks = []
+    target_chunks = []
+    for cls_id in class_mask:
+        for inputs, targets in data_loader[cls_id]['train']:
+            inputs = inputs.to(device, non_blocking=True)
+            if source == 'original':
+                features = original_model(inputs)['pre_logits']
+            else:
+                features = model(
+                    inputs, task_id=int(getattr(args, 'rp_lora_task', 0)),
+                    train=True)['pre_logits']
+            score_chunks.append(rp_head_predict(features, args, device))
+            target_chunks.append(targets.to(device, non_blocking=True))
+    return torch.cat(score_chunks, dim=0), torch.cat(target_chunks, dim=0)
+
+
+def calibrate_rp_head(model, original_model, data_loader, device, task_id,
+                      class_mask, args):
+    """Fit the scalar temperature that makes the head's Loss comparable."""
+    scores, targets = _collect_rp_calibration_scores(
+        model, original_model, data_loader, device, task_id, class_mask, args)
+    return fit_rp_temperature(scores.float(), targets.long(), args, device)
 
 
 @torch.no_grad()
