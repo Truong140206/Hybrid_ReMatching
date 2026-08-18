@@ -101,9 +101,13 @@ def _normalize(features, args):
 
 
 def project_features(features, args, device):
+    features = _normalize(features.float(), args)
+    # rp_dim <= 0 skips the projection entirely: plain ridge on the raw
+    # features, which is the paper's "no RP" reference point.
+    if int(getattr(args, 'rp_dim', 5000)) <= 0:
+        return features
     projection = _ensure_projection(features.shape[1], device, args)
     kind = str(getattr(args, 'rp_activation', 'relu'))
-    features = _normalize(features.float(), args)
     return _activation(features @ projection, kind)
 
 
