@@ -745,7 +745,8 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     features = shared_features
                 else:
                     features = model(
-                        input, task_id=task_id, train=True)['pre_logits']
+                        input, task_id=int(getattr(args, 'rp_lora_task', 0)),
+                        train=True)['pre_logits']
                 logits = rp_head_predict(features, args, device)
                 loss = criterion(logits, target)
                 acc1, acc5 = accuracy(logits, target, topk=(1, 5))
@@ -3191,8 +3192,13 @@ def compute_rp_statistics(model, original_model, data_loader, device, task_id,
             if source == 'original':
                 features = original_model(inputs)['pre_logits']
             else:
+                # Fixed adapter for every task: this is RanPAC's first-session
+                # adaptation, except the adaptation is HRM-PET's own trained
+                # LoRA. The index must not vary or the Gram matrix would mix
+                # incompatible feature spaces.
                 features = model(
-                    inputs, task_id=task_id, train=True)['pre_logits']
+                    inputs, task_id=int(getattr(args, 'rp_lora_task', 0)),
+                    train=True)['pre_logits']
             accumulate_rp_statistics(
                 features, targets, args, device, args.nb_classes)
 

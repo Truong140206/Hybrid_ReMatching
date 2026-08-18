@@ -26,6 +26,7 @@ RP_ACT="${RP_ACT:-relu}"
 RP_LAMBDA="${RP_LAMBDA:-10000}"
 RP_SOURCE="${RP_SOURCE:-original}"
 RP_NORM="${RP_NORM:-none}"
+RP_LORA_TASK="${RP_LORA_TASK:-0}"
 
 if [[ -z "${RUN_DIR}" ]]; then echo "Usage: $0 RUN_DIR" >&2; exit 64; fi
 if [[ ! -x "${PYTHON_BIN}" ]]; then echo "Python not found" >&2; exit 1; fi
@@ -48,7 +49,8 @@ print(int(m[0].shape[-1]))
 ' "${RUN_DIR}/checkpoint/task1_checkpoint.pth")"
 
 tag() { printf '%s' "$1" | tr '.' 'p'; }
-LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_rp_${RP_SOURCE}_d${RP_DIM}_${RP_ACT}_l$(tag "${RP_LAMBDA}")_n${RP_NORM}.log"
+LOG_SUFFIX=""; [[ "${RP_SOURCE}" == "lora" ]] && LOG_SUFFIX="_t${RP_LORA_TASK}"
+LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_rp_${RP_SOURCE}_d${RP_DIM}_${RP_ACT}_l$(tag "${RP_LAMBDA}")_n${RP_NORM}${LOG_SUFFIX}.log"
 [[ -s "${LOG_PATH}" ]] && { echo "Refusing to overwrite: ${LOG_PATH}" >&2; exit 3; } || true
 
 cd "${REPO_ROOT}"
@@ -64,7 +66,7 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --lora_momentum 0.4 --lora_type hide --trained_original_model "${TII_DIR}" \
   --num_tasks 10 --rp_head --rp_dim "${RP_DIM}" --rp_activation "${RP_ACT}" \
   --rp_lambda "${RP_LAMBDA}" --rp_feature_source "${RP_SOURCE}" \
-  --rp_normalize "${RP_NORM}" \
+  --rp_normalize "${RP_NORM}" --rp_lora_task "${RP_LORA_TASK}" \
   --strict_exemplar_free --eval --output_dir "${RUN_DIR}" 2>&1 | tee "${LOG_PATH}"
 printf 'RP head wall time seconds: %s\n' "$(( $(date +%s) - START_TIME ))" | tee -a "${LOG_PATH}"
 echo "Final RP head metrics:"; grep "Average accuracy till task10" "${LOG_PATH}" | tail -n 1 || true
