@@ -205,6 +205,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--rp_lora_task', default=0, type=int, help='which task adapter provides the fixed feature space when rp_feature_source=lora (0 = first session, RanPAC-style); it must not vary per task or the Gram matrix mixes incompatible spaces')
     subparsers.add_argument('--rp_logit_blend', default=0.0, type=float, help='weight on the HRM-PET classifier log-probabilities blended into the head scores; free because it comes from the same adapter forward (0 = pure head)')
     subparsers.add_argument('--rp_pin_extractor', action='store_true', help='freeze the task-1 TII snapshot as the RP feature extractor; without it the per-task checkpoint reload mixes incompatible feature spaces in the Gram matrix')
+    subparsers.add_argument('--rp_input_norm', default='none', choices=['none', 'half'], type=str, help="input range for the RP head's frozen extractor: 'half' maps ToTensor()'s [0,1] to the [-1,1] the ImageNet-21K ViT checkpoint was trained on; the LoRA path is left untouched")
     subparsers.add_argument('--report_conventional_cost', action='store_true', help='log per-sample LoRA and forward-call cost of the default HRM-PET (DRM+CRM) evaluation path')
     subparsers.add_argument('--vectorized_exhaustive_rematching', action='store_true', help='preserve exhaustive scoring while batching multiple task LoRAs in each model call')
     subparsers.add_argument('--vectorized_exhaustive_task_chunk_size', default=4, type=int)

@@ -660,6 +660,21 @@ def set_replay_task_router(router):
     replay_task_router = router
 
 
+def _rp_inputs(inputs, args):
+    """Match the pretrained ViT's expected input range for the frozen head.
+
+    build_transform() emits ToTensor() output in [0, 1] with no Normalize, but
+    the ImageNet-21K ViT-B/16 checkpoint was trained on [-1, 1] (mean=std=0.5).
+    HRM-PET is unaffected because it trains its LoRA and classifier on whatever
+    features it gets, but a training-free head inherits the mismatch directly.
+    Only the RP head's extraction path is rescaled; the LoRA path keeps the
+    range its adapters were trained on.
+    """
+    if str(getattr(args, 'rp_input_norm', 'none')) == 'half':
+        return (inputs - 0.5) / 0.5
+    return inputs
+
+
 def pin_rp_extractor(original_model, args):
     """Snapshot the task-1 TII model as a fixed feature extractor.
 
@@ -791,9 +806,10 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 blend_weight = float(getattr(args, 'rp_logit_blend', 0.0))
                 adapter_logits = None
                 if str(getattr(args, 'rp_feature_source', 'original')) == 'original':
-                    if bool(getattr(args, 'rp_pin_extractor', False)):
-                        features = rp_extractor(
-                            original_model, args)(input)['pre_logits']
+                    if (bool(getattr(args, 'rp_pin_extractor', False))
+                            or str(getattr(args, 'rp_input_norm', 'none')) != 'none'):
+                        features = rp_extractor(original_model, args)(
+                            _rp_inputs(input, args))['pre_logits']
                     else:
                         features = shared_features
                     if blend_weight != 0.0:
@@ -3252,8 +3268,8 @@ def compute_rp_statistics(model, original_model, data_loader, device, task_id,
             inputs = inputs.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
             if source == 'original':
-                features = rp_extractor(
-                    original_model, args)(inputs)['pre_logits']
+                features = rp_extractor(original_model, args)(
+                    _rp_inputs(inputs, args))['pre_logits']
             else:
                 # Fixed adapter for every task: this is RanPAC's first-session
                 # adaptation, except the adaptation is HRM-PET's own trained
