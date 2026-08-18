@@ -659,6 +659,22 @@ def set_replay_task_router(router):
     replay_task_router = router
 
 
+def _blend_scores(head_scores, classifier_logits, weight):
+    """Combine head scores with the HRM-PET classifier on a common scale.
+
+    The two live on different scales (ridge regression values vs softmax
+    logits), so each is converted to log-probabilities before mixing; masked
+    classes stay at -inf.
+    """
+    finite = torch.isfinite(head_scores)
+    head_log = torch.full_like(head_scores, float('-inf'))
+    head_log[finite] = head_scores[finite]
+    head_log = torch.log_softmax(head_log, dim=1)
+    classifier_log = torch.log_softmax(
+        classifier_logits.masked_fill(~finite, float('-inf')), dim=1)
+    return head_log + weight * classifier_log
+
+
 @torch.no_grad()
 def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loader,
              device, i=-1, task_id=-1, class_mask=None, target_task_map=None, args=None, ):
@@ -742,13 +758,24 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     raise NotImplementedError("original model is None")
 
             if bool(getattr(args, 'rp_head', False)):
+                blend_weight = float(getattr(args, 'rp_logit_blend', 0.0))
+                adapter_logits = None
                 if str(getattr(args, 'rp_feature_source', 'original')) == 'original':
                     features = shared_features
+                    if blend_weight != 0.0:
+                        adapter_logits = old_logits
                 else:
-                    features = model(
+                    adapter_output = model(
                         input, task_id=int(getattr(args, 'rp_lora_task', 0)),
-                        train=True)['pre_logits']
+                        train=True)
+                    features = adapter_output['pre_logits']
+                    # Same forward, so blending the HRM-PET classifier costs
+                    # no extra adapter call.
+                    adapter_logits = adapter_output['logits']
                 logits = rp_head_predict(features, args, device)
+                if blend_weight != 0.0 and adapter_logits is not None:
+                    logits = _blend_scores(
+                        logits, adapter_logits.float(), blend_weight)
                 loss = criterion(logits, target)
                 acc1, acc5 = accuracy(logits, target, topk=(1, 5))
                 predicted_class = logits.argmax(dim=1)
