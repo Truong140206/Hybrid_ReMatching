@@ -491,6 +491,7 @@ cls_real_features = {}
 cls_shared_features = {}
 replay_task_router = None
 _gaussian_stat_cache = {}
+_rp_frozen_extractor = {'model': None}
 
 
 def reset_replay_statistics():
@@ -659,6 +660,35 @@ def set_replay_task_router(router):
     replay_task_router = router
 
 
+def pin_rp_extractor(original_model, args):
+    """Snapshot the task-1 TII model as a fixed feature extractor.
+
+    The TII model always applies its prompts, and evaluation reloads its
+    checkpoint for every task, so accumulating the Gram matrix straight from
+    `original_model` mixes ten different extractors. Pinning the first-task
+    snapshot makes the feature space constant, which is also exactly the
+    first-session adaptation the RP head expects.
+    """
+    if not bool(getattr(args, 'rp_pin_extractor', False)):
+        return None
+    if _rp_frozen_extractor['model'] is None:
+        import copy
+        snapshot = copy.deepcopy(original_model)
+        snapshot.eval()
+        for parameter in snapshot.parameters():
+            parameter.requires_grad = False
+        _rp_frozen_extractor['model'] = snapshot
+    return _rp_frozen_extractor['model']
+
+
+def rp_extractor(original_model, args):
+    """Pinned extractor when enabled, otherwise the current TII model."""
+    pinned = _rp_frozen_extractor['model']
+    if bool(getattr(args, 'rp_pin_extractor', False)) and pinned is not None:
+        return pinned
+    return original_model
+
+
 def _blend_scores(head_scores, classifier_logits, weight):
     """Combine head scores with the HRM-PET classifier on a common scale.
 
@@ -761,7 +791,11 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 blend_weight = float(getattr(args, 'rp_logit_blend', 0.0))
                 adapter_logits = None
                 if str(getattr(args, 'rp_feature_source', 'original')) == 'original':
-                    features = shared_features
+                    if bool(getattr(args, 'rp_pin_extractor', False)):
+                        features = rp_extractor(
+                            original_model, args)(input)['pre_logits']
+                    else:
+                        features = shared_features
                     if blend_weight != 0.0:
                         adapter_logits = old_logits
                 else:
@@ -3218,7 +3252,8 @@ def compute_rp_statistics(model, original_model, data_loader, device, task_id,
             inputs = inputs.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
             if source == 'original':
-                features = original_model(inputs)['pre_logits']
+                features = rp_extractor(
+                    original_model, args)(inputs)['pre_logits']
             else:
                 # Fixed adapter for every task: this is RanPAC's first-session
                 # adaptation, except the adaptation is HRM-PET's own trained

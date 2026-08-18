@@ -7,7 +7,7 @@ import time, datetime, os, sys, random, numpy as np
 from datasets import build_continual_dataloader
 from engines.hrm_lora_wtp_and_tap_engine import (
     _compute_mean, _compute_shared_feature_memory, calibrate_rp_head,
-    compute_rp_statistics, evaluate_till_now,
+    compute_rp_statistics, evaluate_till_now, pin_rp_extractor,
     get_real_feature_memory, get_shared_feature_memory,
     reset_replay_statistics, restore_real_feature_memory,
     set_replay_task_router, train_and_evaluate,
@@ -307,6 +307,7 @@ def train(args):
                         class_mask=class_mask[task_id], args=args,
                     )
             elif rp_head_enabled:
+                pin_rp_extractor(original_model, args)
                 print('Accumulating RP-head statistics for task', task_id + 1)
                 compute_rp_statistics(
                     model=model, original_model=original_model,
