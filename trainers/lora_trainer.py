@@ -6,11 +6,13 @@ from timm.optim import create_optimizer
 import time, datetime, os, sys, random, numpy as np
 from datasets import build_continual_dataloader
 from engines.hrm_lora_wtp_and_tap_engine import (
-    _compute_mean, _compute_shared_feature_memory, evaluate_till_now,
+    _compute_mean, _compute_shared_feature_memory, compute_rp_statistics,
+    evaluate_till_now,
     get_real_feature_memory, get_shared_feature_memory,
     reset_replay_statistics, restore_real_feature_memory,
     set_replay_task_router, train_and_evaluate,
 )
+from engines.random_projection_head import reset_rp_head, solve_rp_head
 from engines.replay_logit_calibration import calibrate_task_logits
 from engines.replay_task_router import train_replay_task_router
 from engines.distilled_task_router import train_distilled_task_router
@@ -86,6 +88,14 @@ def train(args):
             args, 'calibrated_progressive_rematching', False))
         gaussian_rescoring_enabled = bool(getattr(
             args, 'gaussian_rescoring', False))
+        rp_head_enabled = bool(getattr(args, 'rp_head', False))
+        if rp_head_enabled:
+            reset_rp_head()
+            print(
+                'Routing-free RP head: dim=', getattr(args, 'rp_dim', 5000),
+                'activation=', getattr(args, 'rp_activation', 'relu'),
+                'lambda=', getattr(args, 'rp_lambda', 1e4),
+                'source=', getattr(args, 'rp_feature_source', 'original'))
         if (prototype_enabled or local_prototype_enabled
                 or shared_router_enabled or calibration_enabled
                 or learned_router_enabled or distilled_router_enabled):
@@ -296,6 +306,17 @@ def train(args):
                         device=device, task_id=task_id,
                         class_mask=class_mask[task_id], args=args,
                     )
+            elif rp_head_enabled:
+                print('Accumulating RP-head statistics for task', task_id + 1)
+                compute_rp_statistics(
+                    model=model, original_model=original_model,
+                    data_loader=data_loader_per_cls, device=device,
+                    task_id=task_id, class_mask=class_mask[task_id], args=args,
+                )
+                seen_class_ids = [
+                    int(c) for t in range(task_id + 1) for c in class_mask[t]]
+                solve_rp_head(args, device, seen_class_ids=seen_class_ids)
+                print('RP head solved over', len(seen_class_ids), 'seen classes')
             elif gaussian_rescoring_enabled:
                 print('Reconstructing per-class Gaussian statistics for task', task_id + 1)
                 _compute_mean(

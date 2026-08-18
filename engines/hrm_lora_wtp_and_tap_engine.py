@@ -28,6 +28,8 @@ from engines.hierarchical_rematching import hierarchical_adapter_rematching
 from engines.budgeted_rematching import budgeted_exhaustive_fallback
 from engines.progressive_rematching import progressive_adapter_rematching
 from engines.progressive_oracle_audit import progressive_oracle_audit
+from engines.random_projection_head import (
+    accumulate_rp_statistics, reset_rp_head, rp_head_predict, solve_rp_head)
 from engines.prediction_proposal_rematching import (
     cross_adapter_borda_consensus,
     cross_adapter_global_consensus,
@@ -737,6 +739,37 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     
                 else:
                     raise NotImplementedError("original model is None")
+
+            if bool(getattr(args, 'rp_head', False)):
+                if str(getattr(args, 'rp_feature_source', 'original')) == 'original':
+                    features = shared_features
+                else:
+                    features = model(
+                        input, task_id=task_id, train=True)['pre_logits']
+                logits = rp_head_predict(features, args, device)
+                loss = criterion(logits, target)
+                acc1, acc5 = accuracy(logits, target, topk=(1, 5))
+                predicted_class = logits.argmax(dim=1)
+                prompt_id = torch.tensor(
+                    [target_task_map[int(c)] for c in predicted_class.cpu()],
+                    device=device)
+                task_inference_acc = utils.task_inference_accuracy(
+                    prompt_id.unsqueeze(-1), target, target_task_map,
+                    torch.empty(0, dtype=torch.long, device=device), None)
+                metric_logger.meters['Loss'].update(loss.item())
+                metric_logger.meters['Acc@1'].update(
+                    acc1.item(), n=input.shape[0])
+                metric_logger.meters['Acc@5'].update(
+                    acc5.item(), n=input.shape[0])
+                metric_logger.meters['Acc@task'].update(
+                    task_inference_acc.item(), n=input.shape[0])
+                metric_logger.meters['LoRA/sample'].update(
+                    0.0 if str(getattr(
+                        args, 'rp_feature_source', 'original')) == 'original'
+                    else 1.0, n=input.shape[0])
+                metric_logger.meters['ForwardCalls/sample'].update(
+                    1.0, n=input.shape[0])
+                continue
 
             if bool(getattr(args, 'gaussian_rescoring', False)):
                 logits, prompt_id = gaussian_rescoring_predict(
@@ -3136,6 +3169,32 @@ def _sample_hybrid_class_replay(class_id, total_count, model, seen_classes,
             'Hybrid replay generated {} instead of {} samples for class {}'.format(
                 replay.shape[0], total_count, class_id))
     return replay, 0 if real_features is None else real_features.shape[0]
+
+
+@torch.no_grad()
+def compute_rp_statistics(model, original_model, data_loader, device, task_id,
+                          class_mask=None, args=None):
+    """Accumulate Gram matrix and class prototypes for the routing-free head.
+
+    Only aggregate second-order statistics are kept (no per-example features),
+    so the strict exemplar-free protocol holds. With rp_feature_source=original
+    the features come from the frozen backbone, which means the head needs no
+    task inference at all -- the bottleneck that caps HRM-PET on CUB/CIFAR.
+    """
+    model.eval()
+    original_model.eval()
+    source = str(getattr(args, 'rp_feature_source', 'original'))
+    for cls_id in class_mask:
+        for inputs, targets in data_loader[cls_id]['train']:
+            inputs = inputs.to(device, non_blocking=True)
+            targets = targets.to(device, non_blocking=True)
+            if source == 'original':
+                features = original_model(inputs)['pre_logits']
+            else:
+                features = model(
+                    inputs, task_id=task_id, train=True)['pre_logits']
+            accumulate_rp_statistics(
+                features, targets, args, device, args.nb_classes)
 
 
 @torch.no_grad()
