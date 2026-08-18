@@ -28,6 +28,7 @@ RP_NORM="${RP_NORM:-none}"
 RP_LORA_TASK="${RP_LORA_TASK:-0}"
 CALIBRATE="${CALIBRATE:-1}"
 NUM_TASKS="${NUM_TASKS:-10}"
+CONFIG="${CONFIG:-imr_lora}"
 
 if [[ -z "${RUN_DIR}" ]]; then echo "Usage: DATASET=... TII_DIR=... $0 RUN_DIR" >&2; exit 64; fi
 if [[ -z "${DATASET}" ]]; then echo "Set DATASET (e.g. Split-CUB200)" >&2; exit 64; fi
@@ -61,7 +62,7 @@ echo "Hybrid RP head on ${DATASET}; dim=${RP_DIM} lambda=${RP_LAMBDA} source=${R
 START_TIME="$(date +%s)"
 PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --nproc_per_node=1 --master_port="${MASTER_PORT:-29558}" \
-  main.py imr_lora \
+  main.py "${CONFIG}" \
   --model vit_base_patch16_224 --original_model vit_base_patch16_224 \
   --batch-size "${EVAL_BATCH_SIZE:-24}" --epochs 1 --data-path "${DATA_PATH}" \
   --seed "${SEED}" --lr 0.03 --con 0.2 --lora_rank "${CHECKPOINT_RANK}" \

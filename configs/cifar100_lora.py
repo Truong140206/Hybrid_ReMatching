@@ -194,6 +194,15 @@ def get_args_parser(subparsers):
     # Rematching / audit flags shared with the ImageNet-R pipeline so the same
     # conventional / exhaustive / closure evaluation scripts run on CIFAR-100.
     subparsers.add_argument('--strict_exemplar_free', action='store_true', help='reject any configuration that stores per-example real features or rereads historical train images')
+    subparsers.add_argument('--rp_head', action='store_true', help='routing-free RanPAC-style classifier: frozen random projection + nonlinearity, then ridge on the accumulated Gram matrix and class prototypes; bypasses the task-inference bottleneck entirely')
+    subparsers.add_argument('--rp_dim', default=5000, type=int, help='random projection width M (RanPAC default 10000; 5000 halves the Gram cost)')
+    subparsers.add_argument('--rp_activation', default='relu', choices=['relu', 'square', 'gelu', 'none'], type=str)
+    subparsers.add_argument('--rp_lambda', default=10000.0, type=float, help='ridge regularizer added to the Gram diagonal before inversion')
+    subparsers.add_argument('--rp_seed', default=1993, type=int, help='seed for the frozen random projection (regenerated, never stored)')
+    subparsers.add_argument('--rp_calibrate', action='store_true', help='fit one scalar temperature on training scores so the head Loss is comparable to a softmax classifier (only the scalar is kept)')
+    subparsers.add_argument('--rp_normalize', default='none', choices=['none', 'l2', 'scale'], type=str, help='feature scaling before the random projection; raw ViT pre_logits scale distorts the ReLU projection and the single ridge lambda')
+    subparsers.add_argument('--rp_feature_source', default='original', choices=['original', 'lora'], type=str, help='original = frozen TII backbone features (no routing at all); lora = one fixed HRM-PET adapter used as first-session adaptation, still routing-free')
+    subparsers.add_argument('--rp_lora_task', default=0, type=int, help='which task adapter provides the fixed feature space when rp_feature_source=lora (0 = first session, RanPAC-style); it must not vary per task or the Gram matrix mixes incompatible spaces')
     subparsers.add_argument('--report_conventional_cost', action='store_true', help='log per-sample LoRA and forward-call cost of the default HRM-PET (DRM+CRM) evaluation path')
     subparsers.add_argument('--vectorized_exhaustive_rematching', action='store_true', help='preserve exhaustive scoring while batching multiple task LoRAs in each model call')
     subparsers.add_argument('--vectorized_exhaustive_task_chunk_size', default=4, type=int)
