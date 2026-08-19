@@ -1952,6 +1952,11 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
             default_lora_counts[equal_drm] += 1.0
             if task_id > 0:
                 default_lora_counts[filtered_index_tensor] += 1.0
+            if bool(getattr(args, 'rp_route_fusion_drm', False)):
+                # Router fusion runs one extra adapter forward per sample to
+                # extract the RP head's features; count it so the reported cost
+                # is the method's real cost, not the baseline's.
+                default_lora_counts += 1.0
 
             if bool(getattr(args, 'budgeted_rematching', False)):
                 base_lora_counts = torch.ones(
