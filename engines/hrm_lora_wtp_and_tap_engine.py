@@ -670,8 +670,17 @@ def _rp_inputs(inputs, args):
     Only the RP head's extraction path is rescaled; the LoRA path keeps the
     range its adapters were trained on.
     """
-    if str(getattr(args, 'rp_input_norm', 'none')) == 'half':
+    mode = str(getattr(args, 'rp_input_norm', 'none'))
+    if mode == 'half':
         return (inputs - 0.5) / 0.5
+    if mode == 'cifar_half':
+        # build_cifar_transform() already normalizes with CIFAR statistics, so
+        # undo that first; applying the [-1, 1] rescale on top of it would be a
+        # double normalization.
+        mean = torch.tensor([0.5071, 0.4867, 0.4408], device=inputs.device)
+        std = torch.tensor([0.2675, 0.2565, 0.2761], device=inputs.device)
+        raw = inputs * std.view(1, -1, 1, 1) + mean.view(1, -1, 1, 1)
+        return (raw - 0.5) / 0.5
     return inputs
 
 
