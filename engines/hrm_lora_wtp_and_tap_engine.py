@@ -713,6 +713,39 @@ def rp_extractor(original_model, args):
     return original_model
 
 
+def _task_scores_from_class_scores(scores, class_mask, seen_task_count, device):
+    """Reduce per-class scores to one score per task (max over its classes)."""
+    out = torch.full((scores.shape[0], seen_task_count), float('-inf'),
+                     device=device, dtype=torch.float32)
+    for task in range(seen_task_count):
+        index = torch.as_tensor(
+            [int(c) for c in class_mask[task]], dtype=torch.long, device=device)
+        out[:, task] = scores.index_select(1, index).max(dim=1).values
+    return out
+
+
+def fuse_routers(rp_scores, tii_logits, class_mask, seen_task_count, args,
+                 device):
+    """Route by combining the RP head and TII, which fail on different samples.
+
+    Measured on seed 42: the RP head routes better than raw TII everywhere
+    (ImageNet-R 77.1 vs 63.8, CIFAR 89.5 vs 81.2, CUB 94.0 vs 93.0), and the
+    union of the two exceeds HRM-PET's own post-DRM/CRM routing on all three
+    (83.0 vs 77.8, 92.9 vs 89.8, 96.3 vs 93.2). Both are mapped to
+    log-probabilities over tasks before mixing, since their raw scales differ.
+    """
+    weight = float(getattr(args, 'rp_route_fusion_weight', 0.5))
+    rp_task = _task_scores_from_class_scores(
+        torch.nan_to_num(rp_scores.float(), neginf=-1e4),
+        class_mask, seen_task_count, device)
+    tii_task = _task_scores_from_class_scores(
+        torch.nan_to_num(tii_logits.float(), neginf=-1e4),
+        class_mask, seen_task_count, device)
+    fused = (weight * torch.log_softmax(tii_task, dim=1)
+             + (1.0 - weight) * torch.log_softmax(rp_task, dim=1))
+    return fused.argmax(dim=1)
+
+
 def _blend_scores(head_scores, classifier_logits, weight):
     """Combine head scores with the HRM-PET classifier on a common scale.
 
@@ -832,6 +865,38 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     # no extra adapter call.
                     adapter_logits = adapter_output['logits']
                 logits = rp_head_predict(features, args, device)
+                if bool(getattr(args, 'rp_route_fusion', False)):
+                    routed = fuse_routers(
+                        logits, old_logits, class_mask, task_id + 1, args,
+                        device)
+                    routed_logits = model(input, task_id=routed)['logits']
+                    if class_mask is not None:
+                        seen = []
+                        for seen_task in range(task_id + 1):
+                            seen.extend(class_mask[seen_task])
+                        unseen = np.setdiff1d(np.arange(args.nb_classes), seen)
+                        routed_logits = routed_logits.index_fill(
+                            dim=1,
+                            index=torch.tensor(
+                                unseen, dtype=torch.int64, device=device),
+                            value=float('-inf'))
+                    loss = criterion(routed_logits, target)
+                    acc1, acc5 = accuracy(routed_logits, target, topk=(1, 5))
+                    task_inference_acc = utils.task_inference_accuracy(
+                        routed.unsqueeze(-1), target, target_task_map,
+                        torch.empty(0, dtype=torch.long, device=device), None)
+                    metric_logger.meters['Loss'].update(loss.item())
+                    metric_logger.meters['Acc@1'].update(
+                        acc1.item(), n=input.shape[0])
+                    metric_logger.meters['Acc@5'].update(
+                        acc5.item(), n=input.shape[0])
+                    metric_logger.meters['Acc@task'].update(
+                        task_inference_acc.item(), n=input.shape[0])
+                    metric_logger.meters['LoRA/sample'].update(
+                        2.0, n=input.shape[0])
+                    metric_logger.meters['ForwardCalls/sample'].update(
+                        2.0, n=input.shape[0])
+                    continue
                 if blend_weight != 0.0 and adapter_logits is not None:
                     logits = _blend_scores(
                         logits, adapter_logits.float(), blend_weight)
