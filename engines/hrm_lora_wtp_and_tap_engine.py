@@ -1869,8 +1869,9 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 if use_layer:
                     layer_scores = layer_stat_scores(task_id + 1, device)
                     remove_hooks()
+                fusion_rp_scores = rp_head_predict(rp_features, args, device)
                 prompt_id = fuse_routers(
-                    rp_head_predict(rp_features, args, device), id_logits,
+                    fusion_rp_scores, id_logits,
                     class_mask, task_id + 1, args, device,
                     layer_scores=layer_scores)
             ##############
@@ -2033,6 +2034,25 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
 
             task_inference_acc = utils.task_inference_accuracy(prompt_id.unsqueeze(-1), target, target_task_map, filtered_index_tensor,re_id)
 
+            if (bool(getattr(args, 'classifier_union_audit', False))
+                    and 'fusion_rp_scores' in dir()):
+                # Routing gains convert poorly into Acc@1 because the shared
+                # classifier often gets the class right despite a wrong route.
+                # This measures whether the RP head, used as a classifier in its
+                # own right, is correct where the routed head is wrong.
+                routed_ok = logits.argmax(dim=1).eq(target)
+                rp_ok = fusion_rp_scores.argmax(dim=1).eq(target)
+                metric_logger.meters['ClsRouted'].update(
+                    routed_ok.float().mean().mul(100.0).item(),
+                    n=input.shape[0])
+                metric_logger.meters['ClsRP'].update(
+                    rp_ok.float().mean().mul(100.0).item(), n=input.shape[0])
+                metric_logger.meters['ClsUnion'].update(
+                    (routed_ok | rp_ok).float().mean().mul(100.0).item(),
+                    n=input.shape[0])
+                metric_logger.meters['ClsRPOnly'].update(
+                    (rp_ok & ~routed_ok).float().mean().mul(100.0).item(),
+                    n=input.shape[0])
             metric_logger.meters['Loss'].update(loss.item())
             metric_logger.meters['Acc@1'].update(acc1.item(), n=input.shape[0])
             metric_logger.meters['Acc@5'].update(acc5.item(), n=input.shape[0])
@@ -2485,6 +2505,10 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
             for offset, name in enumerate(
                     ('RouteLS', 'RouteUnion3', 'RouteLSOnly')):
                 stat_matrix[152 + offset, i] = test_stats.get(name, 0.0)
+        if bool(getattr(args, 'classifier_union_audit', False)):
+            for offset, name in enumerate(
+                    ('ClsRouted', 'ClsRP', 'ClsUnion', 'ClsRPOnly')):
+                stat_matrix[155 + offset, i] = test_stats.get(name, 0.0)
         if bool(getattr(args, 'report_conventional_cost', False)):
             stat_matrix[150, i] = test_stats.get('LoRA/sample', 0.0)
             stat_matrix[151, i] = test_stats.get('ForwardCalls/sample', 0.0)
@@ -2751,6 +2775,9 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         if bool(getattr(args, 'layer_stat_router', False)):
             result_str += "	RouteLS: {:.4f}	RouteUnion3: {:.4f}	RouteLSOnly: {:.4f}".format(
                 *[np.mean(stat_matrix[152 + k, :task_id + 1]) for k in range(3)])
+    if bool(getattr(args, 'classifier_union_audit', False)):
+        result_str += "	ClsRouted: {:.4f}	ClsRP: {:.4f}	ClsUnion: {:.4f}	ClsRPOnly: {:.4f}".format(
+            *[np.mean(stat_matrix[155 + k, :task_id + 1]) for k in range(4)])
     if bool(getattr(args, 'report_conventional_cost', False)):
         result_str += "\tLoRA/sample: {:.4f}\tForwardCalls/sample: {:.4f}".format(
             avg_stat[150], avg_stat[151])
