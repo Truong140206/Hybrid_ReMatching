@@ -3293,7 +3293,8 @@ def _collect_rp_calibration_scores(model, original_model, data_loader, device,
         for inputs, targets in data_loader[cls_id]['train']:
             inputs = inputs.to(device, non_blocking=True)
             if source == 'original':
-                features = original_model(inputs)['pre_logits']
+                features = rp_extractor(original_model, args)(
+                    _rp_inputs(inputs, args))['pre_logits']
             else:
                 features = model(
                     inputs, task_id=int(getattr(args, 'rp_lora_task', 0)),
