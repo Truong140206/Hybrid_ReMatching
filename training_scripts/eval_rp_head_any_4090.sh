@@ -32,6 +32,7 @@ CONFIG="${CONFIG:-imr_lora}"
 RP_BLEND="${RP_BLEND:-0.0}"
 RP_PIN="${RP_PIN:-1}"
 RP_INORM="${RP_INORM:-none}"
+RP_ROUTE_AUDIT="${RP_ROUTE_AUDIT:-0}"
 
 if [[ -z "${RUN_DIR}" ]]; then echo "Usage: DATASET=... TII_DIR=... $0 RUN_DIR" >&2; exit 64; fi
 if [[ -z "${DATASET}" ]]; then echo "Set DATASET (e.g. Split-CUB200)" >&2; exit 64; fi
@@ -58,7 +59,8 @@ print(int(m[0].shape[-1]))
 tag() { printf '%s' "$1" | tr '.' 'p'; }
 CAL_FLAG=""; [[ "${CALIBRATE}" == "1" ]] && CAL_FLAG="--rp_calibrate"
 PIN_FLAG=""; [[ "${RP_PIN}" == "1" ]] && PIN_FLAG="--rp_pin_extractor"
-LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_rp_${RP_SOURCE}_d${RP_DIM}_${RP_ACT}_l$(tag "${RP_LAMBDA}")_n${RP_NORM}_t${RP_LORA_TASK}_b$(tag "${RP_BLEND}")_p${RP_PIN}_i${RP_INORM}_c${CALIBRATE}.log"
+AUDIT_FLAG=""; [[ "${RP_ROUTE_AUDIT}" == "1" ]] && AUDIT_FLAG="--rp_route_audit"
+LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_rp_${RP_SOURCE}_d${RP_DIM}_${RP_ACT}_l$(tag "${RP_LAMBDA}")_n${RP_NORM}_t${RP_LORA_TASK}_b$(tag "${RP_BLEND}")_p${RP_PIN}_i${RP_INORM}_c${CALIBRATE}_ra${RP_ROUTE_AUDIT}.log"
 [[ -s "${LOG_PATH}" ]] && { echo "Refusing to overwrite: ${LOG_PATH}" >&2; exit 3; } || true
 
 cd "${REPO_ROOT}"
@@ -75,7 +77,7 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --num_tasks "${NUM_TASKS}" --rp_head --rp_dim "${RP_DIM}" \
   --rp_activation "${RP_ACT}" --rp_lambda "${RP_LAMBDA}" \
   --rp_feature_source "${RP_SOURCE}" --rp_normalize "${RP_NORM}" \
-  --rp_lora_task "${RP_LORA_TASK}" --rp_logit_blend "${RP_BLEND}" --rp_input_norm "${RP_INORM}" ${CAL_FLAG} ${PIN_FLAG} \
+  --rp_lora_task "${RP_LORA_TASK}" --rp_logit_blend "${RP_BLEND}" --rp_input_norm "${RP_INORM}" ${CAL_FLAG} ${PIN_FLAG} ${AUDIT_FLAG} \
   --strict_exemplar_free --eval --output_dir "${RUN_DIR}" 2>&1 | tee "${LOG_PATH}"
 printf 'Hybrid RP head wall time seconds: %s\n' "$(( $(date +%s) - START_TIME ))" | tee -a "${LOG_PATH}"
 echo "Final hybrid metrics:"; grep "Average accuracy till task${NUM_TASKS}" "${LOG_PATH}" | tail -n 1 || true

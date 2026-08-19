@@ -844,6 +844,37 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 task_inference_acc = utils.task_inference_accuracy(
                     prompt_id.unsqueeze(-1), target, target_task_map,
                     torch.empty(0, dtype=torch.long, device=device), None)
+                if bool(getattr(args, 'rp_route_audit', False)):
+                    # Are the RP head and TII wrong on the SAME samples? If
+                    # their routing errors are decorrelated, fusing them can
+                    # recover accuracy that neither reaches alone.
+                    true_task = torch.tensor(
+                        [target_task_map[int(t)] for t in target.cpu()],
+                        device=device)
+                    tii_class = old_logits.argmax(dim=1)
+                    tii_task = torch.tensor(
+                        [target_task_map[int(c)] for c in tii_class.cpu()],
+                        device=device)
+                    tii_ok = tii_task.eq(true_task)
+                    rp_ok = prompt_id.eq(true_task)
+                    metric_logger.meters['RouteTII'].update(
+                        tii_ok.float().mean().mul(100.0).item(),
+                        n=input.shape[0])
+                    metric_logger.meters['RouteRP'].update(
+                        rp_ok.float().mean().mul(100.0).item(),
+                        n=input.shape[0])
+                    metric_logger.meters['RouteUnion'].update(
+                        (tii_ok | rp_ok).float().mean().mul(100.0).item(),
+                        n=input.shape[0])
+                    metric_logger.meters['RouteBoth'].update(
+                        (tii_ok & rp_ok).float().mean().mul(100.0).item(),
+                        n=input.shape[0])
+                    metric_logger.meters['RouteAgree'].update(
+                        tii_task.eq(prompt_id).float().mean().mul(100.0).item(),
+                        n=input.shape[0])
+                    metric_logger.meters['RouteRPOnly'].update(
+                        (rp_ok & ~tii_ok).float().mean().mul(100.0).item(),
+                        n=input.shape[0])
                 metric_logger.meters['Loss'].update(loss.item())
                 metric_logger.meters['Acc@1'].update(
                     acc1.item(), n=input.shape[0])
@@ -2304,6 +2335,11 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
             stat_matrix[14, i] = test_stats.get('ExactAgreement@4', 0.0)
             stat_matrix[15, i] = test_stats.get('OracleLoRA/sample', 0.0)
             stat_matrix[16, i] = test_stats.get('ActualLoRA/sample', 0.0)
+        if bool(getattr(args, 'rp_route_audit', False)):
+            for offset, name in enumerate((
+                    'RouteTII', 'RouteRP', 'RouteUnion', 'RouteBoth',
+                    'RouteAgree', 'RouteRPOnly')):
+                stat_matrix[124 + offset, i] = test_stats.get(name, 0.0)
         if bool(getattr(args, 'report_conventional_cost', False)):
             stat_matrix[150, i] = test_stats.get('LoRA/sample', 0.0)
             stat_matrix[151, i] = test_stats.get('ForwardCalls/sample', 0.0)
@@ -2564,6 +2600,9 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
         ).format(
             avg_stat[11], avg_stat[12], avg_stat[13], avg_stat[14],
             avg_stat[15], avg_stat[16])
+    if bool(getattr(args, 'rp_route_audit', False)):
+        result_str += "	RouteTII: {:.4f}	RouteRP: {:.4f}	RouteUnion: {:.4f}	RouteBoth: {:.4f}	RouteAgree: {:.4f}	RouteRPOnly: {:.4f}".format(
+            *[np.mean(stat_matrix[124 + k, :task_id + 1]) for k in range(6)])
     if bool(getattr(args, 'report_conventional_cost', False)):
         result_str += "\tLoRA/sample: {:.4f}\tForwardCalls/sample: {:.4f}".format(
             avg_stat[150], avg_stat[151])
