@@ -741,8 +741,17 @@ def fuse_routers(rp_scores, tii_logits, class_mask, seen_task_count, args,
     tii_task = _task_scores_from_class_scores(
         torch.nan_to_num(tii_logits.float(), neginf=-1e4),
         class_mask, seen_task_count, device)
-    fused = (weight * torch.log_softmax(tii_task, dim=1)
-             + (1.0 - weight) * torch.log_softmax(rp_task, dim=1))
+
+    def standardize(scores):
+        # log_softmax preserves the spread of its input, and TII logits are on a
+        # far wider scale than ridge scores, so mixing them directly lets TII
+        # dominate at any weight. Standardizing per sample first makes the
+        # weight mean what it says.
+        centered = scores - scores.mean(dim=1, keepdim=True)
+        return centered / centered.std(dim=1, keepdim=True).clamp_min(1e-6)
+
+    fused = (weight * standardize(tii_task)
+             + (1.0 - weight) * standardize(rp_task))
     return fused.argmax(dim=1)
 
 
