@@ -210,6 +210,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--layer_stat_router', action='store_true', help='third routing signal from per-task transformer-block activation statistics (PMI-CFS layer-wise prior), scored by diagonal-Gaussian KL; needs no extra adapter call')
     subparsers.add_argument('--rp_route_fusion', action='store_true', help='route by fusing RP-head and TII task scores, then classify with the routed task LoRA; the two routers fail on different samples so their union exceeds HRM-PET routing on every dataset measured')
     subparsers.add_argument('--rp_route_fusion_weight', default=0.5, type=float, help='weight on TII in the fused task log-probabilities (0 = RP head only, 1 = TII only)')
+    subparsers.add_argument('--rp_route_fusion_ls_weight', default=0.0, type=float, help='weight on the layer-statistics router added to the fused task scores; keep small since that router is weak alone but complementary')
     subparsers.add_argument('--rp_route_fusion_drm', action='store_true', help='hand the fused route to the existing DRM/CRM refinement instead of replacing it; keeps the stage that carries the baseline and improves only the routing that precedes it')
     subparsers.add_argument('--report_conventional_cost', action='store_true', help='log per-sample LoRA and forward-call cost of the default HRM-PET (DRM+CRM) evaluation path')
     subparsers.add_argument('--vectorized_exhaustive_rematching', action='store_true', help='preserve exhaustive scoring while batching multiple task LoRAs in each model call')

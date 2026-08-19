@@ -728,7 +728,7 @@ def _task_scores_from_class_scores(scores, class_mask, seen_task_count, device):
 
 
 def fuse_routers(rp_scores, tii_logits, class_mask, seen_task_count, args,
-                 device):
+                 device, layer_scores=None):
     """Route by combining the RP head and TII, which fail on different samples.
 
     Measured on seed 42: the RP head routes better than raw TII everywhere
@@ -755,6 +755,12 @@ def fuse_routers(rp_scores, tii_logits, class_mask, seen_task_count, args,
 
     fused = (weight * standardize(tii_task)
              + (1.0 - weight) * standardize(rp_task))
+    layer_weight = float(getattr(args, 'rp_route_fusion_ls_weight', 0.0))
+    if layer_scores is not None and layer_weight != 0.0:
+        # Weak on its own (48.5 on ImageNet-R) but its errors barely overlap the
+        # other two -- it alone rescues 2.8% of the samples both miss, lifting
+        # the three-router union to 85.8 from 83.0. Keep the weight small.
+        fused = fused + layer_weight * standardize(layer_scores.float())
     return fused.argmax(dim=1)
 
 
@@ -1844,6 +1850,14 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 # Replace only HRM-PET's first stage. Its DRM/CRM refinement is
                 # what carries the baseline on ImageNet-R, so it is kept; the
                 # fused router just hands it a better starting task.
+                use_layer = (
+                    bool(getattr(args, 'layer_stat_router', False))
+                    and task_stats_ready(task_id + 1))
+                if use_layer:
+                    install_hooks(
+                        rp_extractor(original_model, args)
+                        if str(getattr(args, 'rp_feature_source', 'original'))
+                        == 'original' else model)
                 if str(getattr(args, 'rp_feature_source', 'original')) == 'original':
                     rp_features = rp_extractor(original_model, args)(
                         _rp_inputs(input, args))['pre_logits']
@@ -1851,9 +1865,14 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     rp_features = model(
                         input, task_id=int(getattr(args, 'rp_lora_task', 0)),
                         train=True)['pre_logits']
+                layer_scores = None
+                if use_layer:
+                    layer_scores = layer_stat_scores(task_id + 1, device)
+                    remove_hooks()
                 prompt_id = fuse_routers(
                     rp_head_predict(rp_features, args, device), id_logits,
-                    class_mask, task_id + 1, args, device)
+                    class_mask, task_id + 1, args, device,
+                    layer_scores=layer_scores)
             ##############
             # target_id = torch.tensor([target_task_map[v.item()] for v in target], device=device)
 
