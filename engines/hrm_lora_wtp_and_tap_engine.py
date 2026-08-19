@@ -31,6 +31,9 @@ from engines.progressive_oracle_audit import progressive_oracle_audit
 from engines.random_projection_head import (
     accumulate_rp_statistics, fit_rp_temperature, reset_rp_head,
     rp_head_predict, solve_rp_head)
+from engines.layer_stat_router import (
+    accumulate_task_stats, install_hooks, layer_stat_scores, remove_hooks,
+    reset_layer_stats, task_stats_ready)
 from engines.prediction_proposal_rematching import (
     cross_adapter_borda_consensus,
     cross_adapter_global_consensus,
@@ -857,6 +860,14 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     and not bool(getattr(args, 'rp_route_fusion_drm', False))):
                 blend_weight = float(getattr(args, 'rp_logit_blend', 0.0))
                 adapter_logits = None
+                layer_router = (
+                    bool(getattr(args, 'layer_stat_router', False))
+                    and task_stats_ready(task_id + 1))
+                if layer_router:
+                    install_hooks(
+                        rp_extractor(original_model, args)
+                        if str(getattr(args, 'rp_feature_source', 'original'))
+                        == 'original' else model)
                 if str(getattr(args, 'rp_feature_source', 'original')) == 'original':
                     if (bool(getattr(args, 'rp_pin_extractor', False))
                             or str(getattr(args, 'rp_input_norm', 'none')) != 'none'):
@@ -874,6 +885,11 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     # Same forward, so blending the HRM-PET classifier costs
                     # no extra adapter call.
                     adapter_logits = adapter_output['logits']
+                layer_route = None
+                if layer_router:
+                    layer_route = layer_stat_scores(
+                        task_id + 1, device).argmax(dim=1)
+                    remove_hooks()
                 logits = rp_head_predict(features, args, device)
                 if bool(getattr(args, 'rp_route_fusion', False)):
                     routed = fuse_routers(
@@ -950,6 +966,17 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     metric_logger.meters['RouteRPOnly'].update(
                         (rp_ok & ~tii_ok).float().mean().mul(100.0).item(),
                         n=input.shape[0])
+                    if layer_route is not None:
+                        ls_ok = layer_route.eq(true_task)
+                        metric_logger.meters['RouteLS'].update(
+                            ls_ok.float().mean().mul(100.0).item(),
+                            n=input.shape[0])
+                        metric_logger.meters['RouteUnion3'].update(
+                            (tii_ok | rp_ok | ls_ok).float().mean().mul(
+                                100.0).item(), n=input.shape[0])
+                        metric_logger.meters['RouteLSOnly'].update(
+                            (ls_ok & ~tii_ok & ~rp_ok).float().mean().mul(
+                                100.0).item(), n=input.shape[0])
                 metric_logger.meters['Loss'].update(loss.item())
                 metric_logger.meters['Acc@1'].update(
                     acc1.item(), n=input.shape[0])
@@ -2392,7 +2419,7 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                       device, task_id=-1, class_mask=None, target_task_map=None, acc_matrix=None, args=None, ):
     global con_num, incon_num ,con_all, incon_all
     
-    stat_matrix = np.zeros((152, args.num_tasks))
+    stat_matrix = np.zeros((160, args.num_tasks))
 
     for i in range(task_id + 1):
         con_num=0
@@ -2429,6 +2456,11 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
                     'RouteTII', 'RouteRP', 'RouteUnion', 'RouteBoth',
                     'RouteAgree', 'RouteRPOnly')):
                 stat_matrix[124 + offset, i] = test_stats.get(name, 0.0)
+        if bool(getattr(args, 'layer_stat_router', False)):
+            # 130-149 belong to router_recall_audit, so keep clear of them.
+            for offset, name in enumerate(
+                    ('RouteLS', 'RouteUnion3', 'RouteLSOnly')):
+                stat_matrix[152 + offset, i] = test_stats.get(name, 0.0)
         if bool(getattr(args, 'report_conventional_cost', False)):
             stat_matrix[150, i] = test_stats.get('LoRA/sample', 0.0)
             stat_matrix[151, i] = test_stats.get('ForwardCalls/sample', 0.0)
@@ -2692,6 +2724,9 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
     if bool(getattr(args, 'rp_route_audit', False)):
         result_str += "	RouteTII: {:.4f}	RouteRP: {:.4f}	RouteUnion: {:.4f}	RouteBoth: {:.4f}	RouteAgree: {:.4f}	RouteRPOnly: {:.4f}".format(
             *[np.mean(stat_matrix[124 + k, :task_id + 1]) for k in range(6)])
+        if bool(getattr(args, 'layer_stat_router', False)):
+            result_str += "	RouteLS: {:.4f}	RouteUnion3: {:.4f}	RouteLSOnly: {:.4f}".format(
+                *[np.mean(stat_matrix[152 + k, :task_id + 1]) for k in range(3)])
     if bool(getattr(args, 'report_conventional_cost', False)):
         result_str += "\tLoRA/sample: {:.4f}\tForwardCalls/sample: {:.4f}".format(
             avg_stat[150], avg_stat[151])
@@ -3404,6 +3439,13 @@ def compute_rp_statistics(model, original_model, data_loader, device, task_id,
         for inputs, targets in data_loader[cls_id]['train']:
             inputs = inputs.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
+            layer_router = bool(getattr(args, 'layer_stat_router', False))
+            if layer_router:
+                # Hooks must sit on whichever backbone actually runs the
+                # forward, otherwise nothing is captured.
+                install_hooks(
+                    rp_extractor(original_model, args)
+                    if source == 'original' else model)
             if source == 'original':
                 features = rp_extractor(original_model, args)(
                     _rp_inputs(inputs, args))['pre_logits']
@@ -3415,6 +3457,9 @@ def compute_rp_statistics(model, original_model, data_loader, device, task_id,
                 features = model(
                     inputs, task_id=int(getattr(args, 'rp_lora_task', 0)),
                     train=True)['pre_logits']
+            if layer_router:
+                accumulate_task_stats(task_id)
+                remove_hooks()
             accumulate_rp_statistics(
                 features, targets, args, device, args.nb_classes)
 

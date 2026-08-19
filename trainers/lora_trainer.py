@@ -13,6 +13,7 @@ from engines.hrm_lora_wtp_and_tap_engine import (
     set_replay_task_router, train_and_evaluate,
 )
 from engines.random_projection_head import reset_rp_head, solve_rp_head
+from engines.layer_stat_router import reset_layer_stats
 from engines.replay_logit_calibration import calibrate_task_logits
 from engines.replay_task_router import train_replay_task_router
 from engines.distilled_task_router import train_distilled_task_router
@@ -91,6 +92,7 @@ def train(args):
         rp_head_enabled = bool(getattr(args, 'rp_head', False))
         if rp_head_enabled:
             reset_rp_head()
+            reset_layer_stats()
             print(
                 'Routing-free RP head: dim=', getattr(args, 'rp_dim', 5000),
                 'activation=', getattr(args, 'rp_activation', 'relu'),
