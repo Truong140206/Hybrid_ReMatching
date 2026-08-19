@@ -764,6 +764,38 @@ def fuse_routers(rp_scores, tii_logits, class_mask, seen_task_count, args,
     return fused.argmax(dim=1)
 
 
+def _standardize_valid(scores, valid):
+    """Zero-mean unit-variance over a sample's valid classes only."""
+    masked = torch.where(valid, scores, torch.zeros_like(scores))
+    count = valid.sum(dim=1, keepdim=True).clamp_min(1).float()
+    mean = masked.sum(dim=1, keepdim=True) / count
+    centered = torch.where(valid, scores - mean, torch.zeros_like(scores))
+    std = (centered.pow(2).sum(dim=1, keepdim=True) / count).sqrt()
+    return centered / std.clamp_min(1e-6)
+
+
+def fuse_class_scores(routed_logits, rp_scores, weight):
+    """Mix the routed HRM-PET classifier with the RP head as a second classifier.
+
+    Routing gains convert into Acc@1 poorly -- the shared head often already
+    predicts the right class despite a wrong route, so fixing that route buys
+    nothing and can even flip a correct prediction. The RP head is a full
+    classifier that routing discards, and it is the stronger of the two on
+    CUB-200 (87.96 against the baseline's 86.53) while weaker on ImageNet-R, so
+    a blend can beat either alone.
+
+    Ridge scores and softmax logits live on different scales, so each is
+    standardized over the sample's valid classes before mixing; masked classes
+    stay masked.
+    """
+    valid = torch.isfinite(routed_logits)
+    mixed = ((1.0 - weight) * _standardize_valid(routed_logits.float(), valid)
+             + weight * _standardize_valid(
+                 torch.nan_to_num(rp_scores.float(), neginf=0.0), valid))
+    return torch.where(
+        valid, mixed, torch.full_like(mixed, float('-inf')))
+
+
 def _blend_scores(head_scores, classifier_logits, weight):
     """Combine head scores with the HRM-PET classifier on a common scale.
 
@@ -2034,6 +2066,12 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
 
             task_inference_acc = utils.task_inference_accuracy(prompt_id.unsqueeze(-1), target, target_task_map, filtered_index_tensor,re_id)
 
+            class_weight = float(getattr(args, 'rp_class_fusion_weight', 0.0))
+            if class_weight != 0.0 and 'fusion_rp_scores' in dir():
+                logits = fuse_class_scores(
+                    logits, fusion_rp_scores, class_weight)
+                loss = criterion(logits, target)
+                acc1, acc5 = accuracy(logits, target, topk=(1, 5))
             if (bool(getattr(args, 'classifier_union_audit', False))
                     and 'fusion_rp_scores' in dir()):
                 # Routing gains convert poorly into Acc@1 because the shared
