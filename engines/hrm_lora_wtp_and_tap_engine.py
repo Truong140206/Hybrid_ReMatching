@@ -853,7 +853,8 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 else:
                     raise NotImplementedError("original model is None")
 
-            if bool(getattr(args, 'rp_head', False)):
+            if (bool(getattr(args, 'rp_head', False))
+                    and not bool(getattr(args, 'rp_route_fusion_drm', False))):
                 blend_weight = float(getattr(args, 'rp_logit_blend', 0.0))
                 adapter_logits = None
                 if str(getattr(args, 'rp_feature_source', 'original')) == 'original':
@@ -1812,6 +1813,20 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 task_map_tensor[task_map_keys] = task_map_values
                 top5_id = torch.index_select(task_map_tensor, 0, top_5_indices.view(-1)).view_as(top_5_indices)
                 prompt_id = torch.tensor([target_task_map[v.item()] for v in prompt_class], device=device)
+            if bool(getattr(args, 'rp_route_fusion_drm', False)):
+                # Replace only HRM-PET's first stage. Its DRM/CRM refinement is
+                # what carries the baseline on ImageNet-R, so it is kept; the
+                # fused router just hands it a better starting task.
+                if str(getattr(args, 'rp_feature_source', 'original')) == 'original':
+                    rp_features = rp_extractor(original_model, args)(
+                        _rp_inputs(input, args))['pre_logits']
+                else:
+                    rp_features = model(
+                        input, task_id=int(getattr(args, 'rp_lora_task', 0)),
+                        train=True)['pre_logits']
+                prompt_id = fuse_routers(
+                    rp_head_predict(rp_features, args, device), id_logits,
+                    class_mask, task_id + 1, args, device)
             ##############
             # target_id = torch.tensor([target_task_map[v.item()] for v in target], device=device)
 
