@@ -727,6 +727,29 @@ def _task_scores_from_class_scores(scores, class_mask, seen_task_count, device):
     return out
 
 
+def _stage_ramp(seen_tasks, total_tasks, gamma):
+    """How much of the second opinion this stage has earned, in (0, 1].
+
+    Both fusions currently lend the same weight at every stage, and that is why
+    Forgetting and Backward barely move: they compare a task's final accuracy
+    against its own earlier peak, so a correction applied equally at every stage
+    cancels out of both. Constant weight is also wrong on its own terms. The RP
+    head's Gram estimate needs classes before it is trustworthy -- measured
+    stage by stage on ImageNet-R it costs -1.38 and -0.95 at stages 1-2, then
+    returns +0.6 to +1.6 from stage 3 on -- while TII has more tasks to tell
+    apart as they accumulate. Both say the second opinion should be trusted more
+    as the sequence grows.
+
+    gamma = 0 reproduces the constant weight exactly, and the ramp reaches 1.0
+    at the final stage, so the reported final row is untouched either way.
+    """
+    if gamma <= 0.0:
+        return 1.0
+    total = max(1, int(total_tasks))
+    seen = min(max(1, int(seen_tasks)), total)
+    return (float(seen) / float(total)) ** float(gamma)
+
+
 def fuse_routers(rp_scores, tii_logits, class_mask, seen_task_count, args,
                  device, layer_scores=None):
     """Route by combining the RP head and TII, which fail on different samples.
@@ -738,6 +761,10 @@ def fuse_routers(rp_scores, tii_logits, class_mask, seen_task_count, args,
     log-probabilities over tasks before mixing, since their raw scales differ.
     """
     weight = float(getattr(args, 'rp_route_fusion_weight', 0.5))
+    # Weight sits on TII, so the RP share is 1 - weight; ramp that share.
+    weight = 1.0 - (1.0 - weight) * _stage_ramp(
+        seen_task_count, getattr(args, 'num_tasks', seen_task_count),
+        getattr(args, 'rp_fusion_ramp', 0.0))
     rp_task = _task_scores_from_class_scores(
         torch.nan_to_num(rp_scores.float(), neginf=-1e4),
         class_mask, seen_task_count, device)
@@ -813,7 +840,7 @@ def _fusion_gate(routed_logits, valid, mode):
     raise ValueError('unknown rp_class_fusion_gate: %s' % mode)
 
 
-def fuse_class_scores(routed_logits, rp_scores, weight):
+def fuse_class_scores(routed_logits, rp_scores, weight, seen_tasks=None):
     """Mix the routed HRM-PET classifier with the RP head as a second classifier.
 
     Routing gains convert into Acc@1 poorly -- the shared head often already
@@ -829,6 +856,10 @@ def fuse_class_scores(routed_logits, rp_scores, weight):
     """
     valid = torch.isfinite(routed_logits)
     routed = routed_logits.float()
+    if seen_tasks is not None:
+        weight = weight * _stage_ramp(
+            seen_tasks, getattr(args_ref[0], 'num_tasks', seen_tasks),
+            getattr(args_ref[0], 'rp_fusion_ramp', 0.0))
     gate = _fusion_gate(routed, valid,
                         getattr(args_ref[0], 'rp_class_fusion_gate', 'none'))
     share = weight if gate is None else weight * gate
@@ -2133,7 +2164,7 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
             if class_weight != 0.0 and 'fusion_rp_scores' in dir():
                 args_ref[0] = args
                 logits = fuse_class_scores(
-                    logits, fusion_rp_scores, class_weight)
+                    logits, fusion_rp_scores, class_weight, task_id + 1)
                 loss = criterion(logits, target)
                 acc1, acc5 = accuracy(logits, target, topk=(1, 5))
             if (bool(getattr(args, 'classifier_union_audit', False))
