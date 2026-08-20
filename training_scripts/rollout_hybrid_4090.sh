@@ -34,6 +34,6 @@ for entry in "${ENTRIES[@]}"; do
   DATASET="${dataset}" TII_DIR="${tii_dir}" SEED="${SEED}" CONFIG="${config}" \
   CALIBRATE="${CALIBRATE:-1}" RP_DIM="${RP_DIM:-10000}" RP_LAMBDA="${RP_LAMBDA:-10000}" \
     bash "${SCRIPT_DIR}/eval_rp_head_any_4090.sh" "${run_dir}" 2>&1 \
-    | grep -E "till task10|delta=|GATE|LoRA/sample|temperature|Refusing|Missing|rror"
+    | grep -E --line-buffered "till task10|delta=|GATE|LoRA/sample|temperature|Refusing|Missing|rror"
 done
 echo "==================== rollout done ===================="
