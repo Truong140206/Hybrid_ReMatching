@@ -783,6 +783,36 @@ def _standardize_valid(scores, valid):
     return torch.where(valid, scores - mean, torch.zeros_like(scores)) / std
 
 
+def _fusion_gate(routed_logits, valid, mode):
+    """How much this sample should listen to the second classifier, in [0, 1].
+
+    A fixed blend spends the same 30% of the decision on the RP head for a
+    sample the routed head calls at p=0.97 as for one it is torn on. The first
+    kind is the overwhelming majority on CIFAR-100, and paying the blend there
+    is what made Loss regress (+0.019 +- 0.003 over three seeds) while accuracy
+    still improved: flattening an already-correct peak costs cross-entropy and
+    buys no argmax. Fusion can only change a prediction by unseating the top
+    class, and its most likely challenger is the runner-up, so gate on how
+    decided the routed head is between its own top two.
+    """
+    if mode in (None, 'none'):
+        return None
+    probs = torch.softmax(
+        torch.where(valid, routed_logits.float(),
+                    torch.full_like(routed_logits, -1e4, dtype=torch.float32)),
+        dim=1)
+    if mode == 'margin':
+        top2 = probs.topk(2, dim=1).values
+        margin = ((top2[:, :1] - top2[:, 1:2])
+                  / top2.sum(dim=1, keepdim=True).clamp_min(1e-12))
+        return (1.0 - margin).clamp(0.0, 1.0)
+    if mode == 'entropy':
+        entropy = -(probs * probs.clamp_min(1e-12).log()).sum(dim=1, keepdim=True)
+        classes = valid.sum(dim=1, keepdim=True).clamp_min(2).float()
+        return (entropy / classes.log()).clamp(0.0, 1.0)
+    raise ValueError('unknown rp_class_fusion_gate: %s' % mode)
+
+
 def fuse_class_scores(routed_logits, rp_scores, weight):
     """Mix the routed HRM-PET classifier with the RP head as a second classifier.
 
@@ -799,8 +829,11 @@ def fuse_class_scores(routed_logits, rp_scores, weight):
     """
     valid = torch.isfinite(routed_logits)
     routed = routed_logits.float()
-    mixed = ((1.0 - weight) * _standardize_valid(routed, valid)
-             + weight * _standardize_valid(
+    gate = _fusion_gate(routed, valid,
+                        getattr(args_ref[0], 'rp_class_fusion_gate', 'none'))
+    share = weight if gate is None else weight * gate
+    mixed = ((1.0 - share) * _standardize_valid(routed, valid)
+             + share * _standardize_valid(
                  torch.nan_to_num(rp_scores.float(), neginf=0.0), valid))
     # Standardizing puts the mixture at unit variance, which is the wrong scale
     # for cross-entropy and made Loss regress even while accuracy improved. Map

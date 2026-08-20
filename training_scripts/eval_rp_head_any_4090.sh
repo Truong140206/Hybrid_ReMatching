@@ -40,6 +40,7 @@ RP_CLS_AUDIT="${RP_CLS_AUDIT:-0}"
 RP_CLS_W="${RP_CLS_W:-0.0}"
 RP_CLS_SHARP="${RP_CLS_SHARP:-1.0}"
 RP_CLS_MIN="${RP_CLS_MIN:-1}"
+RP_CLS_GATE="${RP_CLS_GATE:-none}"
 RP_FUSE="${RP_FUSE:-0}"
 RP_FUSE_W="${RP_FUSE_W:-0.5}"
 RP_FUSE_DRM="${RP_FUSE_DRM:-0}"
@@ -67,6 +68,7 @@ print(int(m[0].shape[-1]))
 ' "${RUN_DIR}/checkpoint/task1_checkpoint.pth")"
 
 tag() { printf '%s' "$1" | tr '.' 'p'; }
+GATE_TAG=""; [[ "${RP_CLS_GATE}" != "none" ]] && GATE_TAG="g${RP_CLS_GATE}"
 CAL_FLAG=""; [[ "${CALIBRATE}" == "1" ]] && CAL_FLAG="--rp_calibrate"
 PIN_FLAG=""; [[ "${RP_PIN}" == "1" ]] && PIN_FLAG="--rp_pin_extractor"
 AUDIT_FLAG=""; [[ "${RP_ROUTE_AUDIT}" == "1" ]] && AUDIT_FLAG="--rp_route_audit"
@@ -74,8 +76,8 @@ AUDIT_FLAG=""; [[ "${RP_ROUTE_AUDIT}" == "1" ]] && AUDIT_FLAG="--rp_route_audit"
 [[ "${RP_CLS_AUDIT}" == "1" ]] && AUDIT_FLAG="${AUDIT_FLAG} --classifier_union_audit"
 [[ "${RP_LAYER_STAT}" == "1" ]] && AUDIT_FLAG="${AUDIT_FLAG} --layer_stat_router"
 FUSE_FLAG=""; [[ "${RP_FUSE}" == "1" ]] && FUSE_FLAG="--rp_route_fusion --rp_route_fusion_weight ${RP_FUSE_W}"
-[[ "${RP_FUSE_DRM}" == "1" ]] && FUSE_FLAG="--rp_route_fusion_drm --rp_route_fusion_weight ${RP_FUSE_W} --rp_route_fusion_ls_weight ${RP_LS_W} --rp_class_fusion_weight ${RP_CLS_W} --rp_class_fusion_sharpen ${RP_CLS_SHARP} --rp_class_fusion_min_tasks ${RP_CLS_MIN}"
-LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_rp_${RP_SOURCE}_d${RP_DIM}_${RP_ACT}_l$(tag "${RP_LAMBDA}")_n${RP_NORM}_t${RP_LORA_TASK}_b$(tag "${RP_BLEND}")_p${RP_PIN}_i${RP_INORM}_c${CALIBRATE}_ra${RP_ROUTE_AUDIT}ls${RP_LAYER_STAT}_f${RP_FUSE}d${RP_FUSE_DRM}w$(tag "${RP_FUSE_W}")lsw$(tag "${RP_LS_W}")c${RP_COST}ca${RP_CLS_AUDIT}cw$(tag "${RP_CLS_W}")sh$(tag "${RP_CLS_SHARP}")m${RP_CLS_MIN}.log"
+[[ "${RP_FUSE_DRM}" == "1" ]] && FUSE_FLAG="--rp_route_fusion_drm --rp_route_fusion_weight ${RP_FUSE_W} --rp_route_fusion_ls_weight ${RP_LS_W} --rp_class_fusion_weight ${RP_CLS_W} --rp_class_fusion_sharpen ${RP_CLS_SHARP} --rp_class_fusion_min_tasks ${RP_CLS_MIN} --rp_class_fusion_gate ${RP_CLS_GATE}"
+LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_rp_${RP_SOURCE}_d${RP_DIM}_${RP_ACT}_l$(tag "${RP_LAMBDA}")_n${RP_NORM}_t${RP_LORA_TASK}_b$(tag "${RP_BLEND}")_p${RP_PIN}_i${RP_INORM}_c${CALIBRATE}_ra${RP_ROUTE_AUDIT}ls${RP_LAYER_STAT}_f${RP_FUSE}d${RP_FUSE_DRM}w$(tag "${RP_FUSE_W}")lsw$(tag "${RP_LS_W}")c${RP_COST}ca${RP_CLS_AUDIT}cw$(tag "${RP_CLS_W}")sh$(tag "${RP_CLS_SHARP}")m${RP_CLS_MIN}${GATE_TAG}.log"
 [[ -s "${LOG_PATH}" ]] && { echo "Refusing to overwrite: ${LOG_PATH}" >&2; exit 3; } || true
 
 cd "${REPO_ROOT}"

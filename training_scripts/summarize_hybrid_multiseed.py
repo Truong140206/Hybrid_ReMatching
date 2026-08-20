@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Collect conventional-vs-hybrid metrics across seeds and print report rows.
 
-Usage: python3 training_scripts/summarize_hybrid_multiseed.py [OUTPUT_ROOT]
+Usage: python3 training_scripts/summarize_hybrid_multiseed.py [OUTPUT_ROOT] [FUSION_GLOB]
 """
 import glob
 import os
@@ -15,7 +15,8 @@ DATASETS = [('imr', 'ImageNet-R'), ('cifar100', 'CIFAR-100'), ('cub200', 'CUB-20
 SEEDS = [42, 43, 44, 45]
 METRICS = ['Acc@task', 'Acc@1', 'Acc@5', 'Loss', 'Forgetting', 'Backward']
 LOWER_IS_BETTER = {'Loss', 'Forgetting'}
-FUSION_GLOB = '_eval_rp_lora_*f1d1w0p7*cw0p3sh1p0m1.log'
+FUSION_GLOB = (sys.argv[2] if len(sys.argv) > 2
+               else '_eval_rp_lora_*f1d1w0p7*cw0p3sh1p0m1.log')
 
 
 def final_row(path):
