@@ -2091,6 +2091,12 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
             task_inference_acc = utils.task_inference_accuracy(prompt_id.unsqueeze(-1), target, target_task_map, filtered_index_tensor,re_id)
 
             class_weight = float(getattr(args, 'rp_class_fusion_weight', 0.0))
+            # The RP head needs enough classes before its Gram estimate is
+            # reliable: measured stage by stage on ImageNet-R it costs -1.38 and
+            # -0.95 at stages 1-2, then gains +0.6 to +1.6 from stage 3 on. Hold
+            # the blend back until enough tasks are in.
+            if task_id + 1 < int(getattr(args, 'rp_class_fusion_min_tasks', 1)):
+                class_weight = 0.0
             if class_weight != 0.0 and 'fusion_rp_scores' in dir():
                 args_ref[0] = args
                 logits = fuse_class_scores(
