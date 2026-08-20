@@ -764,6 +764,9 @@ def fuse_routers(rp_scores, tii_logits, class_mask, seen_task_count, args,
     return fused.argmax(dim=1)
 
 
+args_ref = [None]
+
+
 def _valid_moments(scores, valid):
     """Per-sample mean and std over the valid classes only."""
     masked = torch.where(valid, scores, torch.zeros_like(scores))
@@ -807,7 +810,12 @@ def fuse_class_scores(routed_logits, rp_scores, weight):
     # --rp_calibrate was a no-op here: standardization cancels any scalar
     # temperature applied to the RP scores.)
     mean, std = _valid_moments(routed, valid)
-    mixed = mixed * std + mean
+    # Sharpening factor: mixing two classifiers shrinks the winner's margin
+    # relative to the rest, which cross-entropy penalises even when the ranking
+    # improves. Scaling is monotone per sample, so accuracy is bit-identical and
+    # only the loss moves.
+    sharpen = max(1e-3, float(getattr(args_ref[0], 'rp_class_fusion_sharpen', 1.0)))
+    mixed = mixed * sharpen * std + mean
     return torch.where(
         valid, mixed, torch.full_like(mixed, float('-inf')))
 
@@ -2084,6 +2092,7 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
 
             class_weight = float(getattr(args, 'rp_class_fusion_weight', 0.0))
             if class_weight != 0.0 and 'fusion_rp_scores' in dir():
+                args_ref[0] = args
                 logits = fuse_class_scores(
                     logits, fusion_rp_scores, class_weight)
                 loss = criterion(logits, target)

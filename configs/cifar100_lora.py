@@ -213,6 +213,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--rp_route_fusion_weight', default=0.5, type=float, help='weight on TII in the fused task log-probabilities (0 = RP head only, 1 = TII only)')
     subparsers.add_argument('--rp_route_fusion_ls_weight', default=0.0, type=float, help='weight on the layer-statistics router added to the fused task scores; keep small since that router is weak alone but complementary')
     subparsers.add_argument('--rp_class_fusion_weight', default=0.0, type=float, help='weight on the RP head as a second classifier, blended with the routed HRM-PET head after DRM/CRM (0 = routed head only); both are standardized over valid classes first')
+    subparsers.add_argument('--rp_class_fusion_sharpen', default=1.0, type=float, help='scale the fused class scores before the loss; blending flattens the winner margin and cross-entropy penalises that, and scaling is monotone so accuracy is unchanged')
     subparsers.add_argument('--rp_route_fusion_drm', action='store_true', help='hand the fused route to the existing DRM/CRM refinement instead of replacing it; keeps the stage that carries the baseline and improves only the routing that precedes it')
     subparsers.add_argument('--report_conventional_cost', action='store_true', help='log per-sample LoRA and forward-call cost of the default HRM-PET (DRM+CRM) evaluation path')
     subparsers.add_argument('--vectorized_exhaustive_rematching', action='store_true', help='preserve exhaustive scoring while batching multiple task LoRAs in each model call')
