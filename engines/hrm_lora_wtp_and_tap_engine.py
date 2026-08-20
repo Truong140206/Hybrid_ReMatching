@@ -764,14 +764,20 @@ def fuse_routers(rp_scores, tii_logits, class_mask, seen_task_count, args,
     return fused.argmax(dim=1)
 
 
-def _standardize_valid(scores, valid):
-    """Zero-mean unit-variance over a sample's valid classes only."""
+def _valid_moments(scores, valid):
+    """Per-sample mean and std over the valid classes only."""
     masked = torch.where(valid, scores, torch.zeros_like(scores))
     count = valid.sum(dim=1, keepdim=True).clamp_min(1).float()
     mean = masked.sum(dim=1, keepdim=True) / count
     centered = torch.where(valid, scores - mean, torch.zeros_like(scores))
     std = (centered.pow(2).sum(dim=1, keepdim=True) / count).sqrt()
-    return centered / std.clamp_min(1e-6)
+    return mean, std.clamp_min(1e-6)
+
+
+def _standardize_valid(scores, valid):
+    """Zero-mean unit-variance over a sample's valid classes only."""
+    mean, std = _valid_moments(scores, valid)
+    return torch.where(valid, scores - mean, torch.zeros_like(scores)) / std
 
 
 def fuse_class_scores(routed_logits, rp_scores, weight):
@@ -789,9 +795,19 @@ def fuse_class_scores(routed_logits, rp_scores, weight):
     stay masked.
     """
     valid = torch.isfinite(routed_logits)
-    mixed = ((1.0 - weight) * _standardize_valid(routed_logits.float(), valid)
+    routed = routed_logits.float()
+    mixed = ((1.0 - weight) * _standardize_valid(routed, valid)
              + weight * _standardize_valid(
                  torch.nan_to_num(rp_scores.float(), neginf=0.0), valid))
+    # Standardizing puts the mixture at unit variance, which is the wrong scale
+    # for cross-entropy and made Loss regress even while accuracy improved. Map
+    # it back onto the routed logits' own scale: an affine map per sample, so
+    # the ranking -- and therefore accuracy -- is untouched, while the loss
+    # becomes comparable to the baseline's again. (This also explains why
+    # --rp_calibrate was a no-op here: standardization cancels any scalar
+    # temperature applied to the RP scores.)
+    mean, std = _valid_moments(routed, valid)
+    mixed = mixed * std + mean
     return torch.where(
         valid, mixed, torch.full_like(mixed, float('-inf')))
 
