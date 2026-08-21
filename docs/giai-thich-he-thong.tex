@@ -1,0 +1,923 @@
+% =====================================================================
+%  Bien dich: pdfLaTeX (mac dinh cua Overleaf) -- khong can chinh gi.
+%  Neu muon dung font he thong thi doi compiler sang XeLaTeX va thay
+%  ba dong inputenc/fontenc/lmodern ben duoi bang:
+%      \usepackage{fontspec}
+%      \setmainfont{TeX Gyre Termes}
+%
+%  Moi khoi verbatim trong file nay deu la ASCII thuan y, vi verbatim
+%  khong xu ly duoc ky tu tieng Viet nhieu byte.
+% =====================================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage{lmodern}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{caption}
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage{framed}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning}
+\usepackage[hidelinks]{hyperref}
+
+\renewcommand{\tablename}{Bảng}
+\renewcommand{\figurename}{Hình}
+\renewcommand{\contentsname}{Nội dung}
+\renewcommand{\appendixname}{Phụ lục}
+
+\captionsetup[table]{skip=6pt}
+\captionsetup[figure]{skip=8pt}
+\setlist[itemize]{itemsep=3pt, topsep=4pt}
+\setlist[enumerate]{itemsep=4pt, topsep=4pt}
+
+\newcolumntype{R}{>{\raggedleft\arraybackslash}p{2.7cm}}
+\newcolumntype{L}{>{\raggedright\arraybackslash}p{7.4cm}}
+
+% Khoi luu y, dung leftbar cua goi framed cho nhe
+\newenvironment{luuy}{\begin{leftbar}\noindent\ignorespaces}{\end{leftbar}}
+
+\title{\bfseries Hệ thống này làm gì\\[2pt]
+\large\mdseries Giải thích từ đầu cho người chưa biết về đề tài}
+\author{Nguyễn Thiện Trường}
+\date{Tháng 8, 2026}
+
+\begin{document}
+\maketitle
+
+\noindent
+Tài liệu này viết cho người chưa biết gì về đề tài. Đọc hết sẽ hiểu: bài toán là
+gì, bài báo gốc HRM-PET hoạt động ra sao, chúng ta phát hiện điều gì, thêm cái gì
+vào, thêm ở chỗ nào trong mã nguồn, và tại sao lại thêm đúng chỗ đó. Không cần
+đọc mã nguồn để hiểu tài liệu, nhưng mọi chỗ nhắc tới mã đều kèm tên file và số
+dòng để tra khi cần.
+
+\tableofcontents
+\bigskip
+
+% =====================================================================
+\section{Bài toán: học liên tục}
+
+\subsection{Vấn đề}
+
+Một mô hình nhận diện ảnh bình thường được huấn luyện một lần trên toàn bộ dữ
+liệu rồi đem dùng. \textbf{Học liên tục} (continual learning) là tình huống khác:
+dữ liệu đến theo từng đợt, và mô hình phải học đợt mới mà không được xem lại đợt
+cũ.
+
+Ví dụ với bộ Split-CIFAR100 mà chúng ta dùng: tác vụ 1 học lớp 0--9, tác vụ 2 học
+lớp 10--19, cứ thế cho tới tác vụ 10 học lớp 90--99. Khi học tác vụ 2, mô hình
+\textbf{không còn được xem ảnh của lớp 0--9 nữa}. Đến cuối cùng nó vẫn phải phân
+loại đúng cả 100 lớp.
+
+\subsection{Vì sao khó: quên thảm khốc}
+
+Nếu cứ huấn luyện tiếp một cách ngây thơ, mạng nơ-ron sẽ ghi đè trọng số cũ để
+tối ưu cho dữ liệu mới. Kết quả là nó học tác vụ 10 rất tốt nhưng gần như quên
+sạch tác vụ 1. Hiện tượng này gọi là \textbf{quên thảm khốc} (catastrophic
+forgetting) và là trở ngại trung tâm của cả lĩnh vực.
+
+\subsection{Ràng buộc: không lưu mẫu}
+
+Cách chống quên đơn giản nhất là giữ lại vài trăm ảnh cũ để ôn lại, gọi là
+\emph{replay}. Nhưng nhiều tình huống thực tế cấm điều đó: dữ liệu y tế không
+được lưu vì lý do riêng tư, dữ liệu người dùng bị giới hạn bởi luật.
+
+Đề tài này theo giao thức \textbf{không lưu mẫu} (exemplar-free) nghiêm ngặt:
+không giữ bất kỳ ảnh nào, cũng không giữ đặc trưng của từng ảnh riêng lẻ. Chỉ
+được giữ các đại lượng thống kê tổng hợp, ví dụ trung bình và hiệp phương sai của
+cả một lớp. Toàn bộ mã đánh giá chạy dưới cờ
+\texttt{-{}-strict\_exemplar\_free}, và có một bước kiểm tra checkpoint sẽ báo
+lỗi nếu phát hiện đặc trưng theo mẫu bị lưu lén.
+
+\subsection{Cách tiếp cận hiện đại: đóng băng mạng lớn, gắn bộ điều hợp nhỏ}
+
+Thay vì huấn luyện lại toàn bộ mạng, hướng hiện đại làm như sau:
+
+\begin{enumerate}
+\item Lấy một mạng thị giác lớn đã huấn luyện sẵn trên tập dữ liệu khổng lồ --
+      ở đây là \textbf{ViT-B/16} huấn luyện trên ImageNet-21K, khoảng 14 triệu ảnh.
+\item \textbf{Đóng băng} toàn bộ mạng đó, không đụng vào một trọng số nào.
+\item Với mỗi tác vụ mới, huấn luyện một \textbf{bộ điều hợp} (adapter) rất nhỏ
+      gắn thêm vào. Ở đây dùng \textbf{LoRA hạng 8}, chỉ vài trăm nghìn tham số.
+\end{enumerate}
+
+Vì mạng gốc không bao giờ thay đổi, kiến thức cũ trong nó không thể bị ghi đè.
+Mỗi tác vụ có LoRA riêng, và LoRA của tác vụ 1 vẫn nguyên vẹn sau khi học tác vụ
+10. Nhưng cách này đẻ ra một vấn đề mới, và đó chính là chỗ HRM-PET bước vào.
+
+% =====================================================================
+\section{HRM-PET hoạt động như thế nào}
+
+\subsection{Vấn đề mà HRM-PET giải quyết}
+
+Ta có 10 bộ LoRA, mỗi bộ chuyên cho một tác vụ. Khi một ảnh mới đến lúc kiểm tra,
+\textbf{ta không được cho biết ảnh đó thuộc tác vụ nào}, phải tự đoán để chọn
+đúng LoRA.
+
+Hình dung như một thư viện có 10 chuyên gia, mỗi người giỏi một lĩnh vực. Có
+người mang ảnh đến hỏi nhưng không nói ảnh thuộc lĩnh vực nào. Người trực cửa
+phải đoán để chuyển đến đúng chuyên gia; đoán sai thì câu trả lời có nguy cơ sai.
+Bước đoán đó gọi là \textbf{suy luận danh tính tác vụ} (task-identity inference,
+viết tắt TII).
+
+\subsection{Bốn bước}
+
+\paragraph{Bước 1 -- TII: đoán tác vụ.}
+Một mô hình phụ (trong mã gọi là \texttt{original\_model}) chạy ảnh qua và đo
+\emph{năng lượng prompt}. Ý tưởng: mỗi tác vụ có một tập prompt riêng, và prompt
+của tác vụ đúng sẽ phản ứng mạnh hơn với ảnh thuộc tác vụ đó. Hàm đo dùng ở đây
+là entropy suy rộng (generalized entropy, cờ \texttt{-{}-En gen}).
+
+\paragraph{Bước 2 -- Định tuyến.}
+Chọn tác vụ có điểm cao nhất, nạp LoRA của tác vụ đó vào mạng, rồi chạy ảnh qua.
+
+\paragraph{Bước 3 -- Re-matching bằng DRM và CRM.}
+Đây là đóng góp chính của bài báo gốc. Sau khi chạy LoRA đầu tiên, mô hình đưa ra
+một lớp dự đoán. Mỗi lớp thuộc về đúng một tác vụ, nên \textbf{bản thân lớp được
+dự đoán cũng là một phiếu bầu cho tác vụ}.
+
+\begin{itemize}
+\item \textbf{DRM} (Direct Re-Matching) dùng luôn lớp dự đoán đó để định tuyến
+      lại: nếu LoRA của tác vụ 3 lại dự đoán ra một lớp thuộc tác vụ 7, thì có lẽ
+      nên thử LoRA của tác vụ 7.
+\item \textbf{CRM} (Confidence Re-Matching) chỉ kích hoạt việc định tuyến lại khi
+      độ tin cậy thấp, đo bằng chính hàm GEN. Dự đoán đã chắc chắn thì để yên.
+\end{itemize}
+
+Đây là lý do HRM-PET tốn trung bình \textbf{1.83 lượt gọi LoRA cho mỗi ảnh} trên
+ImageNet-R chứ không phải 1.0: một số ảnh phải chạy lại lần hai.
+
+\paragraph{Bước 4 -- Phân lớp.}
+Đưa đặc trưng cuối vào một \textbf{đầu phân lớp dùng chung}, trải trên
+\emph{toàn bộ} các lớp đã gặp từ đầu đến giờ.
+
+\begin{luuy}
+\textbf{Ghi nhớ chi tiết này.} Đầu phân lớp là \textbf{dùng chung cho mọi tác
+vụ}, không phải mỗi tác vụ một đầu riêng. Toàn bộ Mục \ref{sec:phat-hien-2} xoay
+quanh hệ quả của nó.
+\end{luuy}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  font=\small, >={Stealth[length=2mm]},
+  box/.style={draw, minimum height=8mm, minimum width=3.4cm, align=center},
+  lbl/.style={font=\footnotesize, align=left}
+]
+\node[box] (tii) at (0,0)    {TII: đoán tác vụ};
+\node[box] (lo)  at (0,-1.5) {Chọn LoRA};
+\node[box] (drm) at (0,-3.0) {DRM / CRM};
+\node[box] (cl)  at (0,-4.5) {Đầu phân lớp chung};
+\node[box] (out) at (0,-6.0) {Dự đoán};
+
+\draw[->] (tii) -- (lo);
+\draw[->] (lo)  -- (drm);
+\draw[->] (drm) -- (cl);
+\draw[->] (cl)  -- (out);
+
+\node[lbl, right=6mm of tii] {đo năng lượng prompt};
+\node[lbl, right=6mm of lo]  {nạp bộ điều hợp của tác vụ đó};
+\node[lbl, right=6mm of drm] {dùng lớp dự đoán để định tuyến lại\\nếu chưa chắc chắn};
+\node[lbl, right=6mm of cl]  {trải trên MỌI lớp đã gặp};
+
+\node[left=8mm of tii] (in) {ảnh vào};
+\draw[->] (in) -- (tii);
+\end{tikzpicture}
+\caption{Quy trình gốc của HRM-PET.}
+\label{fig:goc}
+\end{figure}
+
+% =====================================================================
+\section{Ba phát hiện dẫn tới đề xuất}
+
+\subsection{Phát hiện 1 -- TII không phải tín hiệu định tuyến tốt nhất}
+
+Chúng ta thử một cách đoán tác vụ hoàn toàn khác, gọi là \textbf{đầu RP} (mô tả
+kỹ ở Mục \ref{sec:dau-rp}). Nó không dùng prompt, không dùng năng lượng, mà dùng
+đặc trưng ảnh và một phép hồi quy tuyến tính.
+
+\begin{table}[htbp]
+\centering
+\caption{Độ chính xác đoán tác vụ (\%), seed 42.}
+\label{tab:routing}
+\begin{tabular}{lrrr}
+\toprule
+Cách đoán tác vụ & ImageNet-R & CIFAR-100 & CUB-200 \\
+\midrule
+TII (bài báo gốc, bước 1)  & 63.80 & 81.21 & 92.96 \\
+HRM-PET sau khi có DRM/CRM & 77.79 & 89.82 & 93.21 \\
+Đầu RP                     & 77.12 & 89.51 & 94.02 \\
+\midrule
+Hợp của TII và đầu RP      & \textbf{82.99} & \textbf{92.86} & \textbf{96.26} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Hàng cuối cần giải thích. Đó \textbf{không phải} một phương pháp, mà là phép đo
+``nếu có một vị thần biết chọn giữa hai câu trả lời thì đúng được bao nhiêu'':
+tỉ lệ ảnh mà \emph{ít nhất một} trong hai cách đoán ra kết quả đúng.
+
+Con số 82.99 so với 77.79 nói lên điều then chốt: \textbf{hai cách đoán sai ở
+những ảnh khác nhau}. Trên ImageNet-R, đầu RP đoán đúng $19.2\,\%$ số ảnh mà TII
+đoán sai. Đây là điều kiện bắt buộc để việc kết hợp có ý nghĩa; nếu hai nguồn
+cùng sai ở cùng những ảnh thì gộp lại chẳng thêm được gì.
+
+\subsection{Phát hiện 2 -- định tuyến tốt hơn không tự động thành phân lớp tốt hơn}
+\label{sec:phat-hien-2}
+
+Sau khi cải thiện định tuyến, chúng ta gặp một điều bất ngờ: \textbf{định tuyến
+tăng hơn 2 điểm, nhưng độ chính xác phân lớp chỉ tăng 0.29 điểm.} Trên CUB-200
+còn tệ hơn: định tuyến tăng 1.13 điểm mà phân lớp \emph{giảm} 0.05 điểm.
+
+Nguyên nhân nằm ở chi tiết đã đánh dấu: \textbf{đầu phân lớp dùng chung}.
+
+Giả sử một ảnh thuộc tác vụ 3 nhưng bị định tuyến nhầm sang LoRA của tác vụ 7.
+LoRA số 7 vẫn là một bộ điều hợp nhỏ gắn trên cùng mạng xương sống, nên đặc trưng
+nó tạo ra không quá khác biệt. Đầu phân lớp lại nhìn thấy \emph{tất cả} 200 lớp,
+nên nó hoàn toàn có thể vẫn chọn đúng lớp thuộc tác vụ 3. Từ đó suy ra hai điều:
+
+\begin{itemize}
+\item Sửa đường định tuyến cho ảnh đó \textbf{không mua được gì}, nó vốn đã đúng.
+\item Ngược lại, định tuyến lại một ảnh vốn đã đúng \textbf{có thể làm nó sai đi}.
+\end{itemize}
+
+Đó là lý do phần lợi ích bị thất thoát. Muốn độ chính xác phân lớp tăng thật thì
+phải can thiệp vào chính bước phân lớp, không chỉ bước định tuyến.
+
+\subsection{Phát hiện 3 -- đầu RP còn là một bộ phân lớp bị bỏ phí}
+
+Đầu RP không chỉ đoán tác vụ. Bản thân nó là \textbf{một bộ phân lớp hoàn chỉnh},
+cho điểm số cho từng lớp cụ thể chứ không chỉ từng tác vụ. Chúng ta đang dùng nó
+để đoán tác vụ rồi vứt phần còn lại đi.
+
+\begin{table}[htbp]
+\centering
+\caption{Mức bổ trợ ở cấp phân lớp (\%), seed 42. Cột cuối là tỉ lệ ảnh mà đầu
+phân lớp chính sai còn đầu RP đúng.}
+\label{tab:cls}
+\begin{tabular}{lrrrr}
+\toprule
+Bộ dữ liệu & Đầu phân lớp chính & Đầu RP & Hợp & Đầu RP cứu riêng \\
+\midrule
+ImageNet-R & 74.31 & 70.08 & 78.89 & $+4.58$ \\
+CIFAR-100  & 89.97 & 88.76 & 92.40 & $+2.43$ \\
+CUB-200    & 86.48 & \textbf{87.50} & 90.35 & $+3.87$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Điểm đáng chú ý: trên ImageNet-R đầu RP yếu hơn tới 4 điểm về tổng thể (70.08 so
+với 74.31), \textbf{nhưng nó vẫn đúng ở $4.58\,\%$ số ảnh mà đầu chính bỏ lỡ}.
+Một bộ phân lớp yếu hơn vẫn có giá trị nếu nó sai ở chỗ khác. Trên CUB-200 thì
+đầu RP còn mạnh hơn cả đầu chính.
+
+% =====================================================================
+\section{Thành phần thứ nhất: đầu RP}
+\label{sec:dau-rp}
+
+\subsection{Ý tưởng}
+
+Đầu RP là phiên bản của kỹ thuật trong bài báo \textbf{RanPAC}. Ý tưởng nghe hơi
+phản trực giác nhưng rất hiệu quả: chiếu đặc trưng lên một không gian ngẫu nhiên
+có số chiều rất lớn, rồi giải một bài toán hồi quy tuyến tính trong không gian
+đó.
+
+\begin{align}
+h &= \mathrm{ReLU}(f W), &&\text{$W$ đóng băng, sinh lại từ seed}\\
+G &= \sum_n h_n h_n^{\top}, \qquad
+C = \sum_n h_n\,\mathrm{onehot}(y_n)^{\top},
+&&\text{cộng dồn qua mọi ảnh đã thấy}\\
+s &= h^{\top} (G + \lambda I)^{-1} C
+&&\text{điểm số cho từng lớp}
+\end{align}
+
+Cụ thể ba bước. \emph{Một}, nhân đặc trưng 768 chiều với ma trận ngẫu nhiên $W$
+để ra 10\,000 chiều rồi cho qua ReLU; $W$ được sinh một lần từ seed cố định và
+\textbf{không bao giờ được huấn luyện}. \emph{Hai}, với mỗi ảnh huấn luyện, cộng
+dồn vào ma trận Gram $G$ (ghi lại các chiều nào hay xuất hiện cùng nhau) và ma
+trận tương quan lớp $C$ (ghi lại chiều nào ứng với lớp nào). \emph{Ba}, trọng số
+phân lớp là nghiệm hồi quy ridge $(G+\lambda I)^{-1}C$.
+
+\subsection{Vì sao cách này hợp với học liên tục}
+
+\paragraph{Nó tuân thủ ràng buộc không lưu mẫu.}
+$G$ và $C$ là \emph{tổng cộng dồn}. Khi tác vụ mới đến, chỉ cần cộng thêm vào,
+không cần xem lại dữ liệu cũ. Ma trận $W$ sinh lại được từ seed nên cũng không
+cần lưu. Không có ảnh nào, không có đặc trưng riêng lẻ nào được giữ.
+
+\paragraph{Nó không hề quên.}
+Không có bước huấn luyện lặp nào để ghi đè kiến thức cũ. Nghiệm hồi quy trên $G$
+và $C$ đầy đủ tương đương với việc huấn luyện tuyến tính trên toàn bộ dữ liệu
+cùng lúc.
+
+\paragraph{Nó không tốn gì thêm.}
+Toàn bộ phép tính là cộng ma trận và một lần giải hệ tuyến tính ở cuối mỗi tác vụ.
+
+\subsection{Một chi tiết dễ sai}
+
+Đặc trưng $f$ phải lấy từ \textbf{một bộ LoRA cố định duy nhất} (cờ
+\texttt{-{}-rp\_lora\_task 0}, luôn dùng LoRA của tác vụ đầu tiên), chứ không
+phải mỗi tác vụ dùng LoRA riêng của nó.
+
+Lý do: $G$ và $C$ cộng dồn qua mọi tác vụ. Nếu mỗi tác vụ dùng một LoRA khác, các
+đặc trưng sẽ nằm ở những không gian khác nhau và việc cộng dồn trở nên vô nghĩa.
+Dùng một LoRA cố định chính là vai trò \textbf{thích nghi phiên đầu}
+(first-session adaptation) trong RanPAC, chỉ khác là ở đây nó có sẵn từ HRM-PET
+nên không phải huấn luyện thêm.
+
+\subsection{Thêm vào đâu trong mã nguồn}
+
+\begin{table}[htbp]
+\centering
+\caption{Vị trí của đầu RP trong mã nguồn.}
+\begin{tabular}{lL}
+\toprule
+Việc & Vị trí \\
+\midrule
+Toàn bộ đầu RP        & \texttt{engines/random\_projection\_head.py} (file mới) \\
+Sinh ma trận chiếu    & \texttt{\_ensure\_projection}, dòng 72 \\
+Cộng dồn $G$ và $C$   & \texttt{accumulate\_rp\_statistics}, dòng 115 \\
+Giải hồi quy ridge    & \texttt{solve\_rp\_head}, dòng 135 \\
+Gọi ở cuối mỗi tác vụ & \texttt{trainers/lora\_trainer.py}, dòng 312--321 \\
+Trích đặc trưng       & \texttt{pin\_rp\_extractor} / \texttt{rp\_extractor},
+                        engine dòng 690 và 711 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Cờ bật:
+\texttt{-{}-rp\_head -{}-rp\_dim 10000 -{}-rp\_lambda 1e4}
+\texttt{-{}-rp\_feature\_source lora -{}-rp\_lora\_task 0}
+
+% =====================================================================
+\section{Thành phần thứ hai: hợp nhất định tuyến}
+
+\subsection{Làm gì}
+
+Thay vì để TII một mình quyết định tác vụ, ta trộn điểm số của TII với điểm số
+của đầu RP:
+\begin{equation}
+\mathrm{fused} = w\, z(\ell^{\mathrm{TII}}) + (1-w)\, z(s^{\mathrm{RP}}),
+\qquad w = 0.7 .
+\label{eq:route}
+\end{equation}
+
+Tác vụ có điểm cao nhất được chọn, rồi \textbf{giao cho DRM/CRM và đầu phân lớp
+của HRM-PET xử lý tiếp như bình thường}.
+
+Điểm quan trọng: chúng ta \textbf{không bỏ đi thành phần nào của HRM-PET}. DRM,
+CRM, đầu phân lớp chung, cơ chế CRCT, tất cả giữ nguyên. Chỉ bước 1 (TII đơn độc)
+được thay bằng bước 1 mới (TII kết hợp đầu RP).
+
+\subsection{Ký hiệu $z$ là gì và tại sao bắt buộc phải có}
+
+$z(\cdot)$ là phép \textbf{chuẩn hóa theo từng ảnh}: trừ đi trung bình rồi chia
+cho độ lệch chuẩn, tính riêng trên tập tác vụ đã thấy của chính ảnh đó.
+
+Bỏ bước này đi thì phương pháp hỏng hoàn toàn, và đây là lỗi chúng ta thực sự đã
+mắc phải. Logit của TII có biên độ rất rộng, ví dụ trải từ $-20$ đến $+15$, trong
+khi điểm số hồi quy ridge của đầu RP có biên độ hẹp, ví dụ từ $-0.3$ đến $+0.8$.
+Cộng thẳng hai đại lượng này thì TII át hoàn toàn ở \emph{mọi} giá trị $w$, kể cả
+$w = 0.1$.
+
+Khi chưa sửa, độ chính xác định tuyến rơi xuống \textbf{68.24}, thấp hơn cả mức
+77.12 của riêng đầu RP. Trộn hai nguồn mà lại tệ hơn từng nguồn riêng lẻ chính là
+dấu hiệu của lỗi thang đo. Sau khi chuẩn hóa, cả hai về cùng thang và $w$ mới
+thực sự mang nghĩa ``trọng số''.
+
+\subsection{Thêm vào đâu}
+
+\begin{table}[htbp]
+\centering
+\caption{Vị trí của tầng hợp nhất định tuyến.}
+\begin{tabular}{lL}
+\toprule
+Việc & Vị trí \\
+\midrule
+Hàm hợp nhất & \texttt{fuse\_routers}, engine dòng 763 \\
+Phép chuẩn hóa $z$ & hàm \texttt{standardize} bên trong \texttt{fuse\_routers} \\
+Đổi điểm lớp thành điểm tác vụ
+  & \texttt{\_task\_scores\_from\_class\_scores}, dòng 719 \\
+Tiêm kết quả vào luồng DRM
+  & engine dòng 2006, ngay trước \texttt{id\_logits = F.softmax(...)} ở dòng 2015 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Vị trí tiêm là chỗ đáng chú ý nhất. Chúng ta chèn đúng vào \textbf{trước} khi
+HRM-PET chuẩn hóa điểm định tuyến thành xác suất, nên toàn bộ DRM/CRM phía sau
+vẫn chạy bình thường trên đường định tuyến mới. Không dòng nào của HRM-PET phải
+sửa.
+
+\noindent Cờ bật:
+\texttt{-{}-rp\_route\_fusion\_drm -{}-rp\_route\_fusion\_weight 0.7}
+
+% =====================================================================
+\section{Thành phần thứ ba: hợp nhất phân lớp có cổng}
+
+\subsection{Phiên bản đầu tiên và lỗi của nó}
+
+Từ phát hiện 3, ý tưởng hiển nhiên là trộn luôn hai bộ phân lớp với một trọng số
+$\beta$ cố định. Kết quả: độ chính xác phân lớp tăng đáng kể trên cả ba bộ dữ
+liệu ($+1.40$, $+0.76$, $+1.61$). Nhưng xuất hiện một vấn đề dai dẳng:
+\textbf{hàm mất mát trên CIFAR-100 xấu đi $+0.019 \pm 0.003$.}
+
+Con số này nhỏ nhưng phải xử lý, vì độ lệch chuẩn $0.003$ chỉ bằng một phần sáu
+giá trị trung bình, nghĩa là nó \textbf{lặp lại y hệt trên mọi seed}. Đó là lỗi
+hệ thống, không phải nhiễu ngẫu nhiên. Đối chiếu: chỉ số Backward có độ lệch
+chuẩn \emph{lớn hơn} trung bình nhiều lần, và đó mới là nhiễu thật.
+
+\subsection{Truy nguyên}
+
+Trọng số cố định đối xử \textbf{như nhau} với hai loại ảnh có bản chất hoàn toàn
+khác: ảnh mà đầu phân lớp chính đã trả lời chắc nịch với xác suất $0.97$, và ảnh
+mà nó đang phân vân giữa hai lớp $0.35$ với $0.30$.
+
+Trên CIFAR-100, loại thứ nhất chiếm đa số áp đảo vì mô hình vốn đã đúng gần
+$90\,\%$. Dành $30\,\%$ quyền quyết định cho ý kiến thứ hai trên chính những ảnh
+đó chỉ \textbf{làm phẳng một đỉnh xác suất vốn đã đúng}. Hàm mất mát phạt ngay
+lập tức, trong khi dự đoán cuối cùng chẳng đổi.
+
+Nói ngắn gọn: ta đang trả giá ở $90\,\%$ số ảnh để mua lợi ích ở $10\,\%$ còn lại.
+
+\subsection{Cách sửa: cơ chế cổng theo biên top-2}
+
+Cho $\beta$ thay đổi theo từng ảnh, tỉ lệ nghịch với mức độ chắc chắn của đầu
+phân lớp chính. Gọi $p_{(1)}$ và $p_{(2)}$ là hai xác suất cao nhất mà đầu phân
+lớp chính đưa ra:
+\begin{equation}
+\beta_i = \beta \left( 1 - \frac{p_{(1)} - p_{(2)}}{p_{(1)} + p_{(2)}} \right),
+\qquad \beta = 0.5 .
+\label{eq:gate}
+\end{equation}
+
+\begin{luuy}
+\textbf{Vì sao chọn biên giữa hai lớp cao nhất, chứ không phải entropy hay xác
+suất cao nhất?} Lập luận rất cụ thể: việc trộn chỉ có thể thay đổi dự đoán bằng
+cách hất lớp đang đứng đầu xuống. Mà ứng viên khả dĩ nhất để thay thế nó chính là
+lớp đứng thứ hai. Vậy đại lượng cần đo là khoảng cách giữa đúng hai lớp đó.
+\end{luuy}
+
+\begin{table}[htbp]
+\centering
+\caption{Cơ chế cổng chạy thực tế.}
+\label{tab:gate}
+\begin{tabular}{lrrrl}
+\toprule
+Tình huống & $p_{(1)}$ & $p_{(2)}$ & $\beta_i$ & Hệ quả \\
+\midrule
+Mô hình rất chắc chắn & 0.90 & 0.02 & $\approx 0.007$ & gần như không đụng tới \\
+Mô hình đang phân vân & 0.35 & 0.30 & $\approx 0.28$  & trộn gần hết công suất \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Đúng như mong muốn: giữ nguyên chỗ mô hình đã đúng, can thiệp mạnh chỗ nó đang
+lung lay. Vì cơ chế cổng kéo trọng số hiệu dụng xuống rất nhiều, $\beta$ danh
+nghĩa phải nâng từ $0.3$ lên $\mathbf{0.5}$. Chúng ta có thử $0.8$ nhưng lúc đó
+trộn quá mạnh và ImageNet-R hỏng cả ba chỉ số Loss, Forgetting, Backward.
+
+Kết quả sau khi thêm cổng: hàm mất mát trên CIFAR-100 đi từ
+$\mathbf{+0.019 \pm 0.003}$ về $\mathbf{-0.000 \pm 0.001}$. Suy giảm hệ thống
+biến mất hoàn toàn.
+
+\subsection{Bước cuối: đưa về lại thang đo cũ}
+
+Sau khi trộn, kết quả nằm ở thang ``trung bình 0, phương sai 1'', không phải
+thang của logit ban đầu. Đưa nó về:
+\begin{align}
+m_i &= (1 - \beta_i)\, z(\ell_i) + \beta_i\, z(s_i),\\
+\hat{\ell}_i &= m_i \cdot \mathrm{std}(\ell_i) + \mathrm{mean}(\ell_i).
+\label{eq:affine}
+\end{align}
+
+Đây là \textbf{biến đổi affine theo từng ảnh}, tức là đơn điệu, nên \textbf{thứ
+tự xếp hạng giữa các lớp không đổi} và mọi chỉ số độ chính xác giữ nguyên đến
+từng bit. Nó chỉ đưa thang đo về mức so sánh được với baseline khi tính hàm mất
+mát.
+
+\subsection{Thêm vào đâu}
+
+\begin{table}[htbp]
+\centering
+\caption{Vị trí của tầng hợp nhất phân lớp.}
+\begin{tabular}{lL}
+\toprule
+Việc & Vị trí \\
+\midrule
+Hàm trộn phân lớp & \texttt{fuse\_class\_scores}, engine dòng 854 \\
+Cơ chế cổng & \texttt{\_fusion\_gate}, dòng 824 \\
+Chuẩn hóa trên lớp hợp lệ
+  & \texttt{\_valid\_moments} dòng 808, \texttt{\_standardize\_valid} dòng 818 \\
+Nơi gọi & engine dòng 2178--2179, ngay sau khi đã có \texttt{logits} và trước
+          khi tính hàm mất mát \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Cờ bật:
+\texttt{-{}-rp\_class\_fusion\_weight 0.5 -{}-rp\_class\_fusion\_gate margin}
+
+\begin{luuy}
+\textbf{Chi phí bằng không.} Điểm số của đầu RP đã được tính ở tầng định tuyến
+rồi; tầng này chỉ dùng lại. Toàn bộ phần tăng thêm của hệ thống là đúng
+\emph{một} lượt chạy mạng cho đầu RP.
+\end{luuy}
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\footnotesize, >={Stealth[length=2mm]},
+  box/.style={draw, minimum height=8mm, minimum width=1.6cm, inner xsep=4pt, align=center},
+  hl/.style={box, very thick, fill=black!8}
+]
+\node[box] (in) at (0.0, 0.0)    {Ảnh vào};
+\node[box] (tii) at (2.7, 0.85)  {TII};
+\node[box] (rp) at (2.7, -0.85)  {Đầu RP};
+\node[hl]  (f1) at (5.9, 0.0)    {Tầng 1\\Hợp nhất định tuyến};
+\node[box] (lo) at (8.9, 0.0)    {Chọn LoRA};
+\node[box] (dr) at (11.3, 0.0)   {DRM / CRM};
+\node[box] (cl) at (13.9, 0.0)   {Đầu phân lớp};
+\node[hl]  (f2) at (13.9, -2.1)  {Tầng 2\\Hợp nhất phân lớp};
+\node[box] (out) at (13.9, -3.7) {Dự đoán};
+
+\draw[->] (in) -- (tii);
+\draw[->] (in) -- (rp);
+\draw[->] (tii) -- (f1);
+\draw[->] (rp) -- (f1);
+\draw[->] (f1) -- (lo);
+\draw[->] (lo) -- (dr);
+\draw[->] (dr) -- (cl);
+\draw[->] (cl) -- (f2);
+\draw[->] (f2) -- (out);
+\draw[->, dashed] (rp.south) |- node[pos=0.75, above, font=\scriptsize]
+      {điểm số theo lớp của đầu RP} (f2.west);
+\end{tikzpicture}}
+\caption{Quy trình sau khi bổ sung. Hai khối viền đậm là thành phần được thêm.
+Đầu RP được tính \emph{một lần duy nhất} và cung cấp tín hiệu cho cả hai tầng:
+điểm số theo tác vụ cho tầng thứ nhất, điểm số theo lớp cho tầng thứ hai (đường
+nét đứt). So sánh với Hình \ref{fig:goc} để thấy chính xác phần được thêm.}
+\label{fig:moi}
+\end{figure}
+
+% =====================================================================
+\section{Bốn cạm bẫy đã gặp}
+
+Ghi lại để người sau không mất công lặp lại.
+
+\subsection{Lệch thang đo khi trộn}
+
+Dấu hiệu nhận biết: \textbf{kết quả trộn tệ hơn từng nguồn riêng lẻ}. Nếu gặp lại
+triệu chứng này ở bất kỳ phép trộn nào, hãy nghi ngờ thang đo trước tiên.
+
+Cách kiểm chứng đã dùng: đặt $w = 1.0$ phải tái lập baseline \textbf{chính xác
+đến từng chữ số}. Chúng ta xác nhận được $77.7914$, $74.0191$, $1.2305$ trên ba
+bộ dữ liệu, không sai khác ở chữ số thập phân thứ tư.
+
+\subsection{Lỗi chuẩn hóa ảnh đầu vào -- lỗi thật của repo}
+
+Hàm \texttt{build\_transform} trong \texttt{datasets.py} dòng 347 gọi
+\texttt{ToTensor()} mà \textbf{không} gọi \texttt{Normalize()}. Ảnh do đó nằm
+trong khoảng $[0,1]$, trong khi checkpoint ViT-B/16 của ImageNet-21K mong đợi
+khoảng $[-1,1]$.
+
+HRM-PET miễn nhiễm với lỗi này vì nó \emph{huấn luyện} trên chính những đặc trưng
+bị lệch đó. Nhưng một đầu phân lớp không huấn luyện như đầu RP thì không miễn
+nhiễm. Sửa lại đúng khoảng giá trị đem lại \textbf{$+2.7$ điểm} trên đặc trưng
+đóng băng của CUB-200.
+
+Cảnh báo kèm theo: \texttt{build\_cifar\_transform} (dòng 397) \emph{có} gọi
+\texttt{Normalize} với thống kê CIFAR. Chồng thêm phép chuẩn hóa lên đó làm CIFAR
+sập xuống 50.42. Vì vậy có hai chế độ riêng, \texttt{half} và
+\texttt{cifar\_half}.
+
+\subsection{Lệnh chạy nền tự tìm thấy chính nó}
+
+Vòng lặp chờ GPU ban đầu viết là \texttt{pgrep -f "\#\#\# SURVEY"} đặt ngay trong
+chuỗi \texttt{bash -c}. Nhưng \texttt{pgrep -f} so khớp với \textbf{toàn bộ dòng
+lệnh} của mọi tiến trình, và dòng lệnh của chính tiến trình đó chứa nguyên văn
+chuỗi đang tìm. Nó tự tìm thấy mình và chờ vĩnh viễn.
+
+Cách sửa: đưa mẫu tìm kiếm vào một file script riêng để nó không còn nằm trên
+dòng lệnh của bên gọi. Xem \texttt{training\_scripts/wait\_for\_gpu.sh}.
+
+\subsection{\texttt{grep} tự đọc và ghi cùng một file}
+
+Có lần lệnh viết dạng \texttt{nohup bash -c '\ldots; grep \ldots{} \textasciitilde/cost.log'
+> \textasciitilde/cost.log}. Lệnh \texttt{grep} vừa đọc vừa ghi cùng một file, sinh
+vòng lặp vô hạn và \textbf{lấp đầy ổ đĩa đến $99\,\%$}. Quy tắc rút ra: không bao
+giờ grep chính file mà lệnh đang ghi vào.
+
+% =====================================================================
+\section{Kết quả và cách đọc chúng}
+
+\subsection{Sáu chỉ số nghĩa là gì}
+
+\begin{table}[htbp]
+\centering
+\caption{Ý nghĩa các chỉ số.}
+\begin{tabular}{llc}
+\toprule
+Chỉ số & Nghĩa & Chiều tốt \\
+\midrule
+Acc@task   & tỉ lệ ảnh được gán đúng \emph{tác vụ} & cao \\
+Acc@1      & tỉ lệ ảnh được gán đúng \emph{lớp} -- quan trọng nhất & cao \\
+Acc@5      & tỉ lệ ảnh có lớp đúng nằm trong 5 lớp dẫn đầu & cao \\
+Loss       & hàm mất mát, đo cả độ chắc chắn chứ không chỉ đúng/sai & thấp \\
+Forgetting & mức tụt so với đỉnh của chính tác vụ đó & thấp \\
+Backward   & chênh lệch giữa độ chính xác cuối và ngay sau khi học & cao \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Hai chỉ số cuối cần đọc cẩn thận: chúng so một tác vụ \textbf{với chính nó ở thời
+điểm trước}, chứ không so giữa các phương pháp. Đặc điểm này sẽ quay lại ở Mục
+\ref{sec:ramp}.
+
+\subsection{Bảng kết quả, bốn seed}
+
+\begin{table}[htbp]
+\centering
+\caption{Kết quả trên ba bộ dữ liệu, trung bình $\pm$ độ lệch chuẩn trên bốn seed
+42, 43, 44, 45.}
+\label{tab:main}
+\begin{tabular}{@{}p{0.4cm}lRRR@{}}
+\toprule
+\multicolumn{2}{@{}l}{Bộ dữ liệu và chỉ số} & HRM-PET & Đề xuất & Thay đổi \\
+\midrule
+\multicolumn{5}{l}{\emph{Split-ImageNet-R}}\\
+& Acc@task   & $77.58 \pm 0.33$  & $79.85 \pm 0.18$  & $+2.264 \pm 0.158$ \\
+& Acc@1      & $73.94 \pm 0.48$  & $75.18 \pm 0.24$  & $+1.236 \pm 0.416$ \\
+& Acc@5      & $86.71 \pm 0.21$  & $88.02 \pm 0.17$  & $+1.312 \pm 0.148$ \\
+& Loss       & $1.23 \pm 0.01$   & $1.19 \pm 0.01$   & $-0.040 \pm 0.002$ \\
+& Forgetting & $3.36 \pm 0.56$   & $3.30 \pm 0.35$   & $-0.056 \pm 0.334$ \\
+& Backward   & $-3.16 \pm 0.61$  & $-3.20 \pm 0.42$  & $-0.047 \pm 0.282$ \\
+\addlinespace
+\multicolumn{5}{l}{\emph{Split-CIFAR100}}\\
+& Acc@task   & $89.77 \pm 0.11$  & $90.87 \pm 0.09$  & $+1.103 \pm 0.066$ \\
+& Acc@1      & $89.78 \pm 0.03$  & $90.47 \pm 0.05$  & $+0.690 \pm 0.063$ \\
+& Acc@5      & $98.65 \pm 0.03$  & $98.86 \pm 0.07$  & $+0.217 \pm 0.057$ \\
+& Loss       & $0.39 \pm 0.00$   & $0.39 \pm 0.00$   & $-0.000 \pm 0.001$ \\
+& Forgetting & $3.89 \pm 0.08$   & $3.74 \pm 0.12$   & $-0.156 \pm 0.098$ \\
+& Backward   & $-3.87 \pm 0.07$  & $-3.73 \pm 0.11$  & $+0.142 \pm 0.097$ \\
+\addlinespace
+\multicolumn{5}{l}{\emph{Split-CUB200}}\\
+& Acc@task   & $93.12 \pm 0.14$  & $94.34 \pm 0.10$  & $+1.226 \pm 0.149$ \\
+& Acc@1      & $86.38 \pm 0.25$  & $87.88 \pm 0.27$  & $+1.495 \pm 0.353$ \\
+& Acc@5      & $97.04 \pm 0.10$  & $97.44 \pm 0.13$  & $+0.400 \pm 0.103$ \\
+& Loss       & $0.57 \pm 0.00$   & $0.53 \pm 0.01$   & $-0.036 \pm 0.004$ \\
+& Forgetting & $2.54 \pm 0.35$   & $2.18 \pm 0.12$   & $-0.359 \pm 0.325$ \\
+& Backward   & $-2.42 \pm 0.39$  & $-2.14 \pm 0.13$  & $+0.279 \pm 0.391$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Cách đọc cột ``Thay đổi''}
+
+Cột này \textbf{không phải} hiệu của hai cột bên trái. Nó được tính theo cặp: với
+từng seed, lấy kết quả đề xuất trừ kết quả baseline, rồi mới lấy trung bình của
+bốn hiệu đó.
+
+Khác biệt nằm ở độ lệch chuẩn. Có seed dễ có seed khó; nếu lấy hiệu của hai trung
+bình, độ biến thiên do độ khó của seed sẽ trộn lẫn vào. Tính theo cặp thì độ khó
+của seed triệt tiêu, và độ lệch chuẩn còn lại \textbf{chỉ phản ánh độ ổn định của
+chính mức cải thiện}. Quy tắc đọc:
+
+\begin{itemize}
+\item \textbf{Độ lệch chuẩn nhỏ hơn trung bình nhiều lần} $\rightarrow$ cải thiện
+      thật, lặp lại được. Ví dụ Acc@task trên CIFAR-100: $+1.103 \pm 0.066$, tỉ
+      lệ 17 lần.
+\item \textbf{Độ lệch chuẩn lớn hơn trung bình} $\rightarrow$ không kết luận được
+      gì. Ví dụ Backward trên ImageNet-R: $-0.047 \pm 0.282$, độ lệch gấp sáu lần
+      trị tuyệt đối của trung bình. Đây là ô duy nhất không dương trong toàn bộ
+      18 phép so sánh, \textbf{và nó không phải suy giảm, nó là nhiễu}.
+\end{itemize}
+
+\subsection{Chi phí}
+
+\begin{table}[htbp]
+\centering
+\caption{Số lượt gọi LoRA trung bình cho mỗi ảnh.}
+\begin{tabular}{lrrr}
+\toprule
+Bộ dữ liệu & HRM-PET & Đề xuất & Tăng thêm \\
+\midrule
+ImageNet-R & 1.83 & 2.85 & $+1.02$ \\
+CIFAR-100  & 1.40 & 2.41 & $+1.01$ \\
+CUB-200    & 1.60 & 2.60 & $+1.00$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Mức tăng đúng bằng \emph{một} lượt, chính là lượt chạy cho đầu RP. Tầng hợp nhất
+phân lớp không tốn thêm gì. Bộ nhớ tăng thêm gồm một ma trận Gram, một ma trận
+tương quan lớp và một seed.
+
+% =====================================================================
+\section{Cách chạy lại toàn bộ}
+
+\subsection{Cấu hình đã chốt}
+
+\begin{table}[htbp]
+\centering
+\caption{Cấu hình cuối cùng.}
+\begin{tabular}{lll}
+\toprule
+Biến & Giá trị & Ý nghĩa \\
+\midrule
+\texttt{RP\_SOURCE}   & \texttt{lora}   & đặc trưng lấy từ LoRA, không phải mạng đóng băng \\
+\texttt{RP\_INORM}    & \texttt{none}   & không đổi khoảng giá trị đầu vào \\
+\texttt{RP\_FUSE}     & \texttt{1}      & bật hợp nhất định tuyến \\
+\texttt{RP\_FUSE\_DRM}& \texttt{1}      & tiêm kết quả vào luồng DRM/CRM \\
+\texttt{RP\_FUSE\_W}  & \texttt{0.7}    & trọng số trên TII \\
+\texttt{RP\_CLS\_W}   & \texttt{0.5}    & trọng số danh nghĩa của hợp nhất phân lớp \\
+\texttt{RP\_CLS\_GATE}& \texttt{margin} & cơ chế cổng theo biên top-2 \\
+\texttt{RP\_RAMP}     & \texttt{0.0}    & tắt cơ chế tăng dần, xem Mục \ref{sec:ramp} \\
+\texttt{CALIBRATE}    & \texttt{0}      & không hiệu chỉnh nhiệt độ \\
+\texttt{RP\_DIM}      & \texttt{10000}  & số chiều phép chiếu ngẫu nhiên \\
+\texttt{RP\_LAMBDA}   & \texttt{10000}  & hệ số điều chuẩn của hồi quy ridge \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Chạy đánh giá cho một seed}
+
+\begin{footnotesize}
+\begin{verbatim}
+cd ~/Documents/truongnguyen/Hybrid_ReMatching && nohup bash -c \
+  'bash training_scripts/wait_for_gpu.sh 12000 120; \
+   RP_SOURCE=lora RP_INORM=none RP_FUSE=1 RP_FUSE_DRM=1 RP_FUSE_W=0.7 \
+   RP_CLS_W=0.5 RP_CLS_GATE=margin CALIBRATE=0 RP_DIM=10000 RP_LAMBDA=10000 \
+   bash training_scripts/rollout_hybrid_4090.sh 42' \
+  > ~/run.log 2>&1 & tail -F --pid=$! ~/run.log
+\end{verbatim}
+\end{footnotesize}
+
+\subsection{Lấy bảng kết quả}
+
+\begin{footnotesize}
+\begin{verbatim}
+cd ~/Documents/truongnguyen/Hybrid_ReMatching && \
+  ./.venv/bin/python training_scripts/summarize_hybrid_multiseed.py \
+  ~/Documents/truongnguyen/hrm-pet-output \
+  "_eval_rp_lora_*f1d1w0p7*cw0p5sh1p0m1gmargin.log"
+\end{verbatim}
+\end{footnotesize}
+
+\subsection{File nào làm gì}
+
+\begin{table}[htbp]
+\centering
+\caption{Bản đồ mã nguồn.}
+\begin{tabular}{lL}
+\toprule
+File & Vai trò \\
+\midrule
+\texttt{engines/random\_projection\_head.py}
+  & toàn bộ đầu RP: chiếu, tích lũy, giải ridge \\
+\texttt{engines/hrm\_lora\_wtp\_and\_tap\_engine.py}
+  & hai tầng hợp nhất và điểm tiêm vào HRM-PET \\
+\texttt{trainers/lora\_trainer.py}
+  & gọi tích lũy và giải đầu RP sau mỗi tác vụ \\
+\texttt{configs/imr\_lora.py}
+  & khai báo cờ cho ImageNet-R và CUB-200 \\
+\texttt{configs/cifar100\_lora.py}
+  & khai báo cờ cho CIFAR-100 \\
+\texttt{training\_scripts/eval\_rp\_head\_any\_4090.sh}
+  & chạy đánh giá cho một bộ dữ liệu \\
+\texttt{training\_scripts/rollout\_hybrid\_4090.sh}
+  & chạy cả ba bộ dữ liệu cho một seed \\
+\texttt{training\_scripts/summarize\_hybrid\_multiseed.py}
+  & bảng trung bình $\pm$ độ lệch chuẩn \\
+\texttt{training\_scripts/incremental\_accuracy.py}
+  & độ chính xác theo từng giai đoạn \\
+\texttt{training\_scripts/wait\_for\_gpu.sh}
+  & chờ GPU trống rồi mới chạy \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% =====================================================================
+\section{Những hướng đã thử và đã đóng}
+
+Phần này quan trọng không kém phần thành công. Ghi lại để không ai mất công làm
+lại.
+
+\subsection{Re-matching vét cạn}
+
+Thử mọi LoRA cho mọi ảnh rồi chọn kết quả tốt nhất. Kết quả \textbf{không vượt
+được baseline}, dù tốn gấp 10 lần. Nguyên nhân: đầu phân lớp dùng chung khiến
+LoRA của tác vụ khác vẫn có thể tạo ra điểm số cao cho lớp không thuộc nó, hiện
+tượng ``chiếm quyền'' giữa các tác vụ.
+
+\subsection{Tái chấm điểm bằng Gaussian hoặc Mahalanobis}
+
+Mô hình hóa đặc trưng 768 chiều của mỗi tác vụ bằng một Gaussian rồi định tuyến
+theo khoảng cách Mahalanobis. Định tuyến rơi xuống \textbf{84.3 so với 93.21}.
+Thử cả hiệp phương sai riêng lẫn hiệp phương sai chung, đều hỏng.
+
+Nguyên nhân cấu trúc: LoRA gắn trên mạng đóng băng làm đặc trưng thay đổi
+\emph{quá ít} để tạo được tín hiệu phân biệt trong ngoài phân bố.
+
+\subsection{Tăng hạng LoRA từ 8 lên 16}
+
+Độ chính xác gần như không đổi (86.46 so với 86.53). Kết luận: \textbf{đây không
+phải vấn đề dung lượng mô hình}, nên tăng tham số không giúp gì.
+
+\subsection{Đầu RP dùng một mình, bỏ hẳn định tuyến}
+
+Thắng trên CUB-200 (87.96 so với 86.53) nhưng thua nặng trên ImageNet-R (70.08 so
+với 74.02). Lý do rất rõ: CUB-200 là ảnh chim, mà ImageNet-21K vốn giàu lớp chim,
+nên đặc trưng đóng băng đã đủ tốt. ImageNet-R là ảnh phong cách hóa, xa phân bố
+tiền huấn luyện, nên \textbf{bắt buộc phải có thích nghi theo tác vụ}, và đó
+chính là thứ các LoRA của HRM-PET cung cấp.
+
+Bài học: hai bên bổ trợ nhau, không thay thế nhau.
+
+\subsection{Thống kê theo tầng, lấy từ bài báo PMI-CFS}
+
+Đọc kỹ cả phụ lục, chỉ có \emph{một} thành phần khả dụng: thống kê kích hoạt theo
+tầng làm bộ định tuyến thứ ba. Đã cài ở
+\texttt{engines/layer\_stat\_router.py} nhưng chưa chạy hoàn chỉnh; hướng này đã
+dừng.
+
+Ba thành phần còn lại không áp dụng được. PMI cần sinh ảnh giả, mà HRM-PET phát
+lại ở không gian đặc trưng nên không cần. CFS đã có sẵn trong repo và cho kết quả
+\emph{thấp hơn} baseline. Phép chiếu ngữ nghĩa cần bộ mã hóa văn bản CLIP mà kiến
+trúc của ta không có.
+
+\subsection{Trọng số tăng dần theo giai đoạn -- đã cài, đã đo, đã loại}
+\label{sec:ramp}
+
+Đây là ví dụ đáng học nhất về việc \textbf{một cải tiến có vẻ hoàn hảo lại phải
+bị loại}.
+
+Xuất phát từ một quan sát đúng: Forgetting và Backward gần như không nhúc nhích.
+Lý do là cả hai đều so một tác vụ với đỉnh của chính nó, nên một hiệu chỉnh áp
+dụng đồng đều ở mọi giai đoạn sẽ \textbf{triệt tiêu khỏi cả hai}.
+
+Giải pháp thử nghiệm: cho trọng số trộn tăng dần theo số tác vụ đã thấy, dạng
+$(\text{số tác vụ đã thấy}/T)^{\gamma}$. Vì hệ số này đạt $1.0$ ở giai đoạn cuối
+nên hàng kết quả cuối cùng \textbf{không đổi một chữ số nào}, chỉ hai chỉ số ma
+trận mới thay đổi.
+
+Và nó chạy đúng như thiết kế. Với $\gamma = 2$, Forgetting cải thiện lên $-0.415$,
+$-0.433$, $-0.462$ và Backward lên $+0.357$, $+0.411$, $+0.462$ trên ba bộ dữ
+liệu.
+
+\begin{luuy}
+\textbf{Nhưng chính điều đó tố cáo nó.} Nếu trạng thái cuối không đổi mà hai chỉ
+số so-với-đỉnh lại cải thiện, thì mức cải thiện đó chỉ có thể đến từ việc mô hình
+\emph{kém đi ở các giai đoạn giữa}. Đo độ chính xác trung bình qua cả mười giai
+đoạn xác nhận đúng như vậy: trên CUB-200 nó tụt từ $88.35$ xuống $88.16$ rồi
+$87.91$. Cải thiện chỉ số ghi nhớ bằng cách hạ thấp đường đi thì không phải cải
+tiến, và phản biện sẽ chỉ ra ngay.
+\end{luuy}
+
+Cơ chế vẫn còn trong mã (\texttt{-{}-rp\_fusion\_ramp}) làm dòng ablation, nhưng
+\textbf{mặc định tắt}. Hai điều có giá trị vẫn thu được:
+
+\begin{enumerate}
+\item Hợp nhất phân lớp \emph{thực sự} gây hại ở giai đoạn đầu: ImageNet-R chỉ
+      đạt $86.0$ so với $87.5$ của baseline ở tác vụ đầu tiên, đúng như dự đoán
+      rằng ước lượng ma trận Gram cần đủ số lớp mới đáng tin.
+\item Nhưng cùng đầu RP đó lại là \emph{bộ định tuyến mạnh ngay từ đầu}. Nên giảm
+      trọng số định tuyến ở giai đoạn sớm chỉ làm mất độ chính xác định tuyến mà
+      không được gì bù lại.
+\end{enumerate}
+
+\subsection{Bài học về phương pháp}
+
+Trước khi chạy thí nghiệm ramp, chúng ta \textbf{ghi trước ba điều kiện nghiệm
+thu}. Kết quả: một điều kiện đạt, một điều kiện trượt, và một điều kiện hóa ra
+không phải phép thử (chỉ số Backward trên seed 42 vốn đã dương sẵn nên không kiểm
+chứng được gì).
+
+Nếu không ghi trước, thí nghiệm này sẽ trông như một thắng lợi sạch trên mọi chỉ
+số của bảng tổng kết. Việc ghi trước là thứ đã bắt được nó.
+
+% =====================================================================
+\section*{Trạng thái hiện tại}
+\addcontentsline{toc}{section}{Trạng thái hiện tại}
+
+\begin{itemize}
+\item Cấu hình đã chốt, đủ bốn seed trên cả ba bộ dữ liệu, \textbf{17 trong 18
+      phép so sánh cải thiện}.
+\item Báo cáo kỹ thuật ở \texttt{reports/bao\_cao\_fusion.tex}.
+\item Việc còn lại đáng làm nhất: bổ sung \textbf{ImageNet-A} làm bộ dữ liệu thứ
+      tư. Phần mã đã sẵn sàng -- lớp nạp dữ liệu ở
+      \texttt{continual\_datasets/continual\_datasets.py} dòng 712 và cấu hình ở
+      \texttt{configs/ima\_lora.py}. Thứ duy nhất còn thiếu là bản thân dữ liệu,
+      phải tải thủ công về \texttt{datasets/imagenet-a/}.
+\end{itemize}
+
+\end{document}
