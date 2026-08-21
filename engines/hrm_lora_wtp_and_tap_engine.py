@@ -742,6 +742,16 @@ def _stage_ramp(seen_tasks, total_tasks, gamma):
 
     gamma = 0 reproduces the constant weight exactly, and the ramp reaches 1.0
     at the final stage, so the reported final row is untouched either way.
+
+    Which fusion to ramp is not a free choice, and ramping both was wrong.
+    Per-stage accuracy on seed 42 shows the RP head hurting the *classifier* at
+    stage 1 (ImageNet-R 86.0 against the baseline's 87.5) exactly as the Gram
+    argument predicts, so ramping the class blend recovers real accuracy. But
+    the same head is the *better router* from the first stage (77.1 against
+    TII's 63.8), so ramping the route weight only threw routing away: average
+    incremental Acc@task fell on all three datasets (86.30 -> 85.66 on
+    ImageNet-R at gamma=2). Hence the scope flag, and hence 'class' rather than
+    'both'.
     """
     if gamma <= 0.0:
         return 1.0
@@ -762,9 +772,10 @@ def fuse_routers(rp_scores, tii_logits, class_mask, seen_task_count, args,
     """
     weight = float(getattr(args, 'rp_route_fusion_weight', 0.5))
     # Weight sits on TII, so the RP share is 1 - weight; ramp that share.
-    weight = 1.0 - (1.0 - weight) * _stage_ramp(
-        seen_task_count, getattr(args, 'num_tasks', seen_task_count),
-        getattr(args, 'rp_fusion_ramp', 0.0))
+    if getattr(args, 'rp_fusion_ramp_scope', 'both') in ('both', 'route'):
+        weight = 1.0 - (1.0 - weight) * _stage_ramp(
+            seen_task_count, getattr(args, 'num_tasks', seen_task_count),
+            getattr(args, 'rp_fusion_ramp', 0.0))
     rp_task = _task_scores_from_class_scores(
         torch.nan_to_num(rp_scores.float(), neginf=-1e4),
         class_mask, seen_task_count, device)
@@ -856,7 +867,9 @@ def fuse_class_scores(routed_logits, rp_scores, weight, seen_tasks=None):
     """
     valid = torch.isfinite(routed_logits)
     routed = routed_logits.float()
-    if seen_tasks is not None:
+    if (seen_tasks is not None
+            and getattr(args_ref[0], 'rp_fusion_ramp_scope', 'both')
+            in ('both', 'class')):
         weight = weight * _stage_ramp(
             seen_tasks, getattr(args_ref[0], 'num_tasks', seen_tasks),
             getattr(args_ref[0], 'rp_fusion_ramp', 0.0))
