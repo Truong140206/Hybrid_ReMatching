@@ -28,8 +28,8 @@
 \captionsetup[table]{skip=6pt}
 \newcolumntype{R}{>{\raggedleft\arraybackslash}p{2.9cm}}
 
-\title{\bfseries Fusion hai tầng cho HRM-PET:\\
-hợp nhất định tuyến và hợp nhất phân lớp có điều tiết}
+\title{\bfseries Hợp nhất hai tầng cho HRM-PET:\\
+định tuyến đa nguồn và phân lớp bổ sung với cơ chế cổng theo biên}
 \author{Nguyễn Thiện Trường}
 \date{Tháng 8, 2026}
 
@@ -37,81 +37,92 @@ hợp nhất định tuyến và hợp nhất phân lớp có điều tiết}
 \maketitle
 
 \begin{abstract}
-Chúng tôi thay bộ định tuyến một nguồn của HRM-PET bằng phép hợp nhất hai nguồn,
-rồi dùng chính nguồn thứ hai đó làm bộ phân lớp bổ sung có điều tiết theo từng
-mẫu. Nguồn thứ hai là một đầu chiếu ngẫu nhiên bậc hai kiểu RanPAC, dựng trên
-chính đặc trưng LoRA mà HRM-PET đã huấn luyện, nên không cần huấn luyện thêm
-tham số nào và không vi phạm giao thức không lưu mẫu. Trên ba bộ dữ liệu học
-liên tục và bốn seed, phương pháp cải thiện 17 trên 18 ô chỉ số, với mức tăng
-độ chính xác định tuyến từ $+1.10$ đến $+2.26$ điểm và độ chính xác phân lớp từ
-$+0.69$ đến $+1.50$ điểm. Chi phí tăng thêm đúng bằng một lượt forward mỗi mẫu.
+Chúng tôi thay bộ định tuyến đơn nguồn của HRM-PET bằng một phép hợp nhất
+(fusion) hai nguồn tín hiệu, sau đó sử dụng chính nguồn thứ hai làm bộ phân lớp
+bổ sung với trọng số được điều khiển bởi một cơ chế cổng (gating) theo từng mẫu.
+Nguồn thứ hai là một đầu phân lớp dựa trên phép chiếu ngẫu nhiên bậc hai theo
+kiểu RanPAC, xây dựng trực tiếp trên đặc trưng LoRA mà HRM-PET đã huấn luyện.
+Do đó phương pháp không cần huấn luyện thêm tham số nào và vẫn tuân thủ giao
+thức không lưu mẫu (exemplar-free). Trên ba bộ dữ liệu học liên tục và bốn seed,
+phương pháp cải thiện 17 trên 18 ô chỉ số: độ chính xác định tuyến tăng từ
+$+1.10$ đến $+2.26$ điểm và độ chính xác phân lớp tăng từ $+0.69$ đến $+1.50$
+điểm. Chi phí tính toán tăng thêm đúng bằng một lượt truyền xuôi (forward pass)
+trên mỗi mẫu.
 \end{abstract}
 
 \section{Đặt vấn đề}
 
-HRM-PET suy luận danh tính nhiệm vụ (task-identity inference, TII) từ năng lượng
-prompt, định tuyến tới bộ LoRA đông cứng tương ứng, tinh chỉnh bằng DRM/CRM rồi
-phân lớp bằng một đầu dùng chung. Toàn bộ chất lượng của chuỗi này phụ thuộc vào
-một tín hiệu định tuyến duy nhất.
+HRM-PET hoạt động theo bốn bước. Trước hết, mô hình suy luận danh tính tác vụ
+(task-identity inference, TII) dựa trên năng lượng prompt. Tiếp đó, mô hình định
+tuyến mẫu đầu vào tới bộ tham số LoRA đã đóng băng tương ứng với tác vụ được
+chọn. Kết quả định tuyến được tinh chỉnh bằng hai cơ chế DRM và CRM, rồi cuối
+cùng mẫu được phân lớp bởi một đầu phân lớp dùng chung cho mọi tác vụ.
 
-Bài báo cáo này chỉ ra rằng tín hiệu đó không phải tín hiệu tốt nhất sẵn có, và
-rằng việc sửa nó chỉ giải quyết được một nửa vấn đề. Chúng tôi đóng góp hai
-thành phần bổ sung cho nhau, cùng nằm ở khâu suy luận nên không đòi huấn luyện
-lại: hợp nhất ở cấp định tuyến, và hợp nhất ở cấp phân lớp với trọng số điều
-tiết theo mức lưỡng lự của mô hình gốc.
+Chất lượng của toàn bộ chuỗi xử lý này phụ thuộc vào một tín hiệu định tuyến duy
+nhất. Báo cáo chỉ ra hai điểm: tín hiệu đó không phải là tín hiệu tốt nhất có
+thể khai thác, và việc cải thiện riêng nó chỉ giải quyết được một nửa vấn đề.
 
-\section{Chẩn đoán}
+Chúng tôi đề xuất hai thành phần bổ sung cho nhau, cùng đặt ở giai đoạn suy luận
+nên không yêu cầu huấn luyện lại: hợp nhất ở cấp định tuyến, và hợp nhất ở cấp
+phân lớp với trọng số thay đổi theo mức độ chắc chắn của mô hình gốc.
+
+\section{Phân tích dư địa cải thiện}
 
 \subsection{Dư địa ở cấp định tuyến}
 
-Một đầu chiếu ngẫu nhiên bậc hai (viết tắt là đầu RP), dựng trên chính đặc trưng
-LoRA của HRM-PET, định tuyến tốt hơn TII thô ở cả ba bộ dữ liệu. Quan trọng hơn,
+Chúng tôi xây dựng một đầu phân lớp dựa trên phép chiếu ngẫu nhiên (random
+projection, viết tắt là đầu RP) trên chính đặc trưng LoRA của HRM-PET. Đầu RP
+cho độ chính xác định tuyến cao hơn TII ở cả ba bộ dữ liệu. Quan trọng hơn,
 \emph{hợp} của hai bộ định tuyến vượt xa kết quả mà HRM-PET đạt được sau khi đã
-tinh chỉnh bằng DRM/CRM.
+tinh chỉnh bằng DRM và CRM.
 
 \begin{table}[htbp]
 \centering
-\caption{Độ chính xác định tuyến (\%), seed 42. Hàng cuối là tỉ lệ mẫu mà ít
-nhất một trong hai bộ định tuyến chọn đúng.}
+\caption{Độ chính xác định tuyến (\%), seed 42. Hàng cuối biểu thị tỉ lệ mẫu mà
+ít nhất một trong hai bộ định tuyến cho kết quả đúng.}
 \label{tab:routing}
 \begin{tabular}{lrrr}
 \toprule
 Nguồn định tuyến & ImageNet-R & CIFAR-100 & CUB-200 \\
 \midrule
-TII thô                    & 63.80 & 81.21 & 92.96 \\
-HRM-PET sau DRM/CRM        & 77.79 & 89.82 & 93.21 \\
-Đầu chiếu ngẫu nhiên (RP)  & 77.12 & 89.51 & 94.02 \\
+TII                        & 63.80 & 81.21 & 92.96 \\
+HRM-PET sau DRM và CRM     & 77.79 & 89.82 & 93.21 \\
+Đầu RP                     & 77.12 & 89.51 & 94.02 \\
 \midrule
-Hợp của TII và RP          & \textbf{82.99} & \textbf{92.86} & \textbf{96.26} \\
+Hợp của TII và đầu RP      & \textbf{82.99} & \textbf{92.86} & \textbf{96.26} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Hai bộ định tuyến sai ở những mẫu khác nhau. Trên ImageNet-R, đầu RP chọn đúng ở
-19.2\,\% số mẫu mà TII định tuyến sai. Đây là điều kiện cần để việc gộp có ý
-nghĩa: nếu hai nguồn sai ở cùng những chỗ thì hợp của chúng không cao hơn nguồn
-mạnh hơn.
+Hai bộ định tuyến cho kết quả sai trên những tập mẫu khác nhau. Trên ImageNet-R,
+đầu RP định tuyến đúng $19.2\,\%$ số mẫu mà TII định tuyến sai. Tính bổ sung này
+là điều kiện cần để việc hợp nhất có ý nghĩa: nếu hai nguồn cùng sai trên một
+tập mẫu, hợp của chúng sẽ không cao hơn nguồn mạnh hơn.
 
 \subsection{Dư địa ở cấp phân lớp}
 
-Sau khi tầng định tuyến được sửa, một hiện tượng khác lộ ra: mức tăng định tuyến
-chuyển thành độ chính xác phân lớp rất kém, chỉ 14--21\,\%, và trên CUB-200 thì
-bằng không. Nguyên nhân nằm ở kiến trúc. Đầu phân lớp dùng chung trải trên
-\emph{mọi} lớp đã thấy, nên một mẫu bị định tuyến sai vẫn thường được phân lớp
-đúng; sửa đường định tuyến của nó không mua được gì, trong khi định tuyến lại
-một mẫu vốn đã đúng có thể làm nó sai đi.
+Sau khi cải thiện tầng định tuyến, một hiện tượng khác xuất hiện: mức tăng của
+độ chính xác định tuyến chỉ chuyển hóa thành độ chính xác phân lớp với tỉ lệ
+$14$--$21\,\%$, và trên CUB-200 thì hoàn toàn không chuyển hóa.
 
-Nhưng đầu RP không chỉ là bộ định tuyến. Nó là một bộ phân lớp đầy đủ mà tầng
-định tuyến đang vứt bỏ.
+Nguyên nhân nằm ở kiến trúc. Đầu phân lớp dùng chung trải trên \emph{toàn bộ}
+các lớp đã quan sát, nên một mẫu bị định tuyến sai vẫn thường được phân lớp
+đúng. Trong trường hợp đó, việc sửa lại đường định tuyến không đem lại lợi ích
+nào, trong khi định tuyến lại một mẫu vốn đã được phân lớp đúng có thể làm kết
+quả trở nên sai.
+
+Tuy nhiên, đầu RP không chỉ là một bộ định tuyến. Bản thân nó là một bộ phân lớp
+hoàn chỉnh mà tầng định tuyến đã bỏ qua. Bảng \ref{tab:cls} đo mức bổ sung giữa
+hai bộ phân lớp.
 
 \begin{table}[htbp]
 \centering
-\caption{Bổ trợ ở cấp phân lớp (\%), seed 42. Cột cuối là tỉ lệ mẫu mà đầu định
-tuyến sai còn đầu RP đúng.}
+\caption{Tính bổ sung ở cấp phân lớp (\%), seed 42. Cột cuối biểu thị tỉ lệ mẫu
+mà đầu phân lớp sau định tuyến cho kết quả sai còn đầu RP cho kết quả đúng.}
 \label{tab:cls}
 \begin{tabular}{lrrrr}
 \toprule
-Bộ dữ liệu & Đầu định tuyến & Đầu RP & Hợp & RP cứu riêng \\
+Bộ dữ liệu & Đầu sau định tuyến & Đầu RP & Hợp & Phần đầu RP bổ sung \\
 \midrule
 ImageNet-R & 74.31 & 70.08 & 78.89 & $+4.58$ \\
 CIFAR-100  & 89.97 & 88.76 & 92.40 & $+2.43$ \\
@@ -120,108 +131,124 @@ CUB-200    & 86.48 & 87.50 & 90.35 & $+3.87$ \\
 \end{tabular}
 \end{table}
 
-Ngay cả trên ImageNet-R, nơi đầu RP yếu hơn 4 điểm về tổng thể, nó vẫn đúng ở
-4.58\,\% số mẫu mà đầu kia bỏ lỡ.
+Ngay trên ImageNet-R, nơi đầu RP có độ chính xác tổng thể thấp hơn $4$ điểm, nó
+vẫn phân lớp đúng $4.58\,\%$ số mẫu mà đầu phân lớp chính bỏ sót.
 
-\section{Phương pháp}
+\section{Phương pháp đề xuất}
 
-\subsection{Nguồn ý kiến thứ hai}
+\subsection{Nguồn tín hiệu thứ hai}
 
-Một phép chiếu ngẫu nhiên đông cứng sinh từ hạt giống, theo sau là phi tuyến
-ReLU và một nghiệm ridge trên ma trận Gram tích lũy. Không có tham số nào được
-huấn luyện. Đặc trưng $f$ lấy từ \emph{một} bộ LoRA cố định của HRM-PET, đóng
-vai trò thích nghi phiên đầu:
+Nguồn tín hiệu thứ hai gồm một phép chiếu ngẫu nhiên đóng băng, sinh lại được từ
+một seed cố định, theo sau là hàm phi tuyến ReLU và một lời giải hồi quy ridge
+trên ma trận Gram tích lũy. Không có tham số nào được huấn luyện. Đặc trưng $f$
+được trích từ \emph{một} bộ tham số LoRA cố định của HRM-PET, đóng vai trò thích
+nghi phiên đầu (first-session adaptation):
 \begin{align}
-h &= \mathrm{ReLU}(f W), \qquad W \text{ đông cứng, sinh lại từ hạt giống},\\
+h &= \mathrm{ReLU}(f W), \qquad W \text{ đóng băng, sinh lại từ seed},\\
 G &= \sum_n h_n h_n^{\top}, \qquad
 C = \sum_n h_n\,\mathrm{onehot}(y_n)^{\top},\\
 s &= h^{\top} (G + \lambda I)^{-1} C .
 \end{align}
-Chỉ hai đại lượng tổng hợp $G$ và $C$ được lưu; phép chiếu $W$ sinh lại từ hạt
-giống. Không lưu đặc trưng theo từng mẫu, không phát lại ảnh cũ, nên giao thức
-không lưu mẫu nghiêm ngặt được giữ nguyên.
 
-\subsection{Tầng một: hợp nhất định tuyến}
+Hệ thống chỉ lưu hai đại lượng tổng hợp $G$ và $C$; ma trận chiếu $W$ được sinh
+lại từ seed. Không có đặc trưng của từng mẫu hay ảnh của các tác vụ trước được
+lưu trữ, nên giao thức không lưu mẫu vẫn được bảo toàn.
 
-Gọi $z(\cdot)$ là phép quy chuẩn về trung bình $0$ và phương sai $1$ tính riêng
-cho từng mẫu trên các nhiệm vụ đã thấy. Điểm số nhiệm vụ của hai nguồn được trộn
-tuyến tính, lấy $\arg\max$, rồi giao đường định tuyến đó cho DRM/CRM và đầu phân
-lớp sẵn có của HRM-PET:
+\subsection{Tầng thứ nhất: hợp nhất ở cấp định tuyến}
+
+Ký hiệu $z(\cdot)$ là phép chuẩn hóa về trung bình $0$ và phương sai $1$, tính
+riêng cho từng mẫu trên tập các tác vụ đã quan sát. Điểm số theo tác vụ của hai
+nguồn được kết hợp tuyến tính; tác vụ có điểm cao nhất được chọn, và kết quả
+định tuyến này được đưa vào các cơ chế DRM, CRM cùng đầu phân lớp sẵn có của
+HRM-PET:
 \begin{equation}
 \mathrm{fused} = w\, z(\ell^{\mathrm{TII}}) + (1-w)\, z(s^{\mathrm{RP}}),
 \qquad w = 0.7 .
 \label{eq:route}
 \end{equation}
 
-Phép quy chuẩn là bắt buộc chứ không phải tùy chọn. Hàm $\log\mathrm{softmax}$
-giữ nguyên độ trải của đầu vào, mà logit của TII trải rộng hơn điểm ridge rất
-nhiều. Trộn trực tiếp khiến TII áp đảo ở mọi trọng số, và độ chính xác định
-tuyến rơi xuống \emph{dưới} mức của riêng đầu RP: 68.24 so với 77.12.
+Phép chuẩn hóa ở đây là bắt buộc. Hàm $\log\mathrm{softmax}$ bảo toàn độ phân
+tán của đầu vào, trong khi logit của TII có độ phân tán lớn hơn nhiều so với
+điểm số hồi quy ridge. Nếu kết hợp trực tiếp, TII sẽ chi phối kết quả ở mọi giá
+trị trọng số, và độ chính xác định tuyến giảm xuống \emph{thấp hơn} cả mức của
+riêng đầu RP: $68.24$ so với $77.12$.
 
-\subsection{Tầng hai: hợp nhất phân lớp có điều tiết}
+\subsection{Tầng thứ hai: hợp nhất ở cấp phân lớp với cơ chế cổng}
 
-Phiên bản đầu tiên trộn hai bộ phân lớp với một trọng số $\beta$ cố định cho mọi
-mẫu. Nó tạo ra một suy giảm có hệ thống: Loss trên CIFAR-100 xấu đi
-$+0.019 \pm 0.003$ dù độ chính xác vẫn tăng.
+Phiên bản đầu tiên kết hợp hai bộ phân lớp bằng một trọng số $\beta$ cố định cho
+mọi mẫu. Cách làm này gây ra một suy giảm có tính hệ thống: giá trị hàm mất mát
+entropy chéo (cross-entropy) trên CIFAR-100 tăng $+0.019 \pm 0.003$, dù độ chính
+xác vẫn được cải thiện.
 
-Nguyên nhân là trọng số cố định đối xử với một mẫu mà đầu định tuyến gọi tên ở
-$p = 0.97$ y hệt một mẫu nó đang phân vân. Trên CIFAR-100 loại thứ nhất chiếm áp
-đảo, và trả $30\%$ quyết định cho ý kiến thứ hai ở đúng những mẫu đó chỉ làm bẹt
-một đỉnh vốn đã đúng: cross-entropy phạt ngay, còn $\arg\max$ không đổi.
+Nguyên nhân là trọng số cố định xử lý như nhau hai loại mẫu có bản chất khác
+hẳn: mẫu mà đầu phân lớp chính dự đoán với xác suất $p = 0.97$, và mẫu mà nó còn
+lưỡng lự. Trên CIFAR-100, loại thứ nhất chiếm đa số. Việc dành $30\,\%$ trọng số
+quyết định cho nguồn thứ hai trên chính những mẫu đó chỉ làm phẳng phân bố xác
+suất tại một dự đoán vốn đã đúng: cross-entropy tăng ngay, trong khi kết quả
+$\arg\max$ không thay đổi.
 
-Cách sửa là cho $\beta$ phụ thuộc từng mẫu, điều tiết theo mức lưỡng lự của đầu
-định tuyến giữa hai lớp cao nhất của \emph{chính nó}. Fusion chỉ có thể đổi dự
-đoán bằng cách hất lớp đứng đầu xuống, và kẻ thách thức khả dĩ nhất luôn là á
-quân, nên biên top-2 là đại lượng đáng dùng. Gọi $p_{(1)}$ và $p_{(2)}$ là hai
-xác suất lớn nhất của đầu đã định tuyến:
+Giải pháp là cho $\beta$ thay đổi theo từng mẫu, tỉ lệ với mức độ lưỡng lự của
+đầu phân lớp chính giữa hai lớp có điểm cao nhất của chính nó. Cơ sở của lựa
+chọn này: việc hợp nhất chỉ có thể thay đổi dự đoán bằng cách thay thế lớp xếp
+thứ nhất, và ứng viên thay thế khả dĩ nhất là lớp xếp thứ hai; do đó biên
+(margin) giữa hai lớp dẫn đầu là đại lượng phù hợp để điều khiển. Gọi $p_{(1)}$
+và $p_{(2)}$ là hai xác suất lớn nhất của đầu phân lớp sau định tuyến:
 \begin{equation}
 \beta_i = \beta \left( 1 - \frac{p_{(1)} - p_{(2)}}{p_{(1)} + p_{(2)}} \right),
 \qquad \beta = 0.5 .
 \label{eq:gate}
 \end{equation}
-Điểm số cuối cùng được trộn rồi đưa về lại thang đo của logit gốc:
+Điểm số cuối cùng được kết hợp rồi đưa trở lại thang đo của logit ban đầu:
 \begin{align}
 m_i &= (1 - \beta_i)\, z(\ell_i) + \beta_i\, z(s_i),\\
 \hat{\ell}_i &= m_i \cdot \mathrm{std}(\ell_i) + \mathrm{mean}(\ell_i).
 \label{eq:affine}
 \end{align}
 
-Mẫu có $p_{(1)} = 0.90$ và $p_{(2)} = 0.02$ nhận $\beta_i \approx 0.007$, gần
-như không bị đụng tới. Mẫu có $p_{(1)} = 0.35$ và $p_{(2)} = 0.30$ nhận
-$\beta_i \approx 0.28$, fusion chạy gần hết công suất. Không có siêu tham số nào
-được thêm vào, và một quy tắc duy nhất dùng chung cho cả ba bộ dữ liệu.
+Với mẫu có $p_{(1)} = 0.90$ và $p_{(2)} = 0.02$, trọng số hiệu dụng
+$\beta_i \approx 0.007$, tức là dự đoán gần như được giữ nguyên. Với mẫu có
+$p_{(1)} = 0.35$ và $p_{(2)} = 0.30$, trọng số $\beta_i \approx 0.28$ và cơ chế
+hợp nhất phát huy gần như tối đa. Cơ chế cổng không đưa thêm siêu tham số nào và
+áp dụng một quy tắc duy nhất cho cả ba bộ dữ liệu.
 
-Phép biến đổi \eqref{eq:affine} là affine theo từng mẫu nên đơn điệu: thứ hạng
-các lớp không đổi, do đó mọi chỉ số độ chính xác không đổi. Nó chỉ đưa thang đo
-dùng cho cross-entropy về mức so sánh được với baseline.
+Phép biến đổi \eqref{eq:affine} là biến đổi affine theo từng mẫu, do đó đơn
+điệu: thứ tự xếp hạng giữa các lớp được bảo toàn và mọi chỉ số độ chính xác
+không thay đổi. Vai trò duy nhất của nó là đưa thang đo của logit về mức so sánh
+được với baseline khi tính cross-entropy.
 
 \section{Thiết lập thí nghiệm}
 
-Xương sống ViT-B/16 tiền huấn luyện trên ImageNet-21K; thích nghi bằng LoRA rank
-8; chuỗi 10 nhiệm vụ; bốn seed 42, 43, 44, 45. Mọi checkpoint LoRA và TII được
-huấn luyện lại từ đầu cho từng seed. Đánh giá dùng cùng bộ checkpoint cho cả
-baseline lẫn phương pháp đề xuất, nên chênh lệch phản ánh đúng phần suy luận chứ
-không lẫn nhiễu huấn luyện. Siêu tham số của đầu RP: số chiều chiếu $10^4$, phi
-tuyến ReLU, hệ số ridge $\lambda = 10^4$; không hiệu chỉnh nhiệt độ.
+Mạng xương sống (backbone) là ViT-B/16 tiền huấn luyện trên ImageNet-21K, thích
+nghi bằng LoRA với hạng $8$. Mỗi bộ dữ liệu được chia thành chuỗi $10$ tác vụ và
+thí nghiệm được lặp trên bốn seed $42$, $43$, $44$, $45$. Toàn bộ checkpoint của
+LoRA và TII được huấn luyện lại từ đầu cho từng seed. Khâu đánh giá sử dụng cùng
+một bộ checkpoint cho cả baseline lẫn phương pháp đề xuất, nên chênh lệch quan
+sát được phản ánh đúng phần thay đổi ở giai đoạn suy luận, không lẫn nhiễu do
+huấn luyện.
 
-Ký hiệu $a_{i,t}$ là độ chính xác trên nhiệm vụ $i$ đo ở giai đoạn $t$, và $T$
-là số nhiệm vụ. Các chỉ số báo cáo gồm Acc@task (độ chính xác định tuyến), Acc@1
-và Acc@5 (độ chính xác phân lớp), Loss (cross-entropy), cùng hai chỉ số tính
-trên toàn ma trận:
+Siêu tham số của đầu RP: số chiều chiếu $10^4$, hàm phi tuyến ReLU, hệ số điều
+chuẩn $\lambda = 10^4$. Không áp dụng hiệu chỉnh nhiệt độ (temperature scaling).
+
+Ký hiệu $a_{i,t}$ là độ chính xác trên tác vụ $i$ đo tại giai đoạn $t$, và $T$
+là tổng số tác vụ. Các chỉ số được báo cáo gồm Acc@task (độ chính xác định
+tuyến), Acc@1 và Acc@5 (độ chính xác phân lớp), Loss (cross-entropy), cùng hai
+chỉ số tính trên toàn bộ ma trận kết quả:
 \begin{equation}
 \mathrm{Forgetting} = \frac{1}{T}\sum_{i=1}^{T}
 \Big( \max_{t} a_{i,t} - a_{i,T} \Big),
 \qquad
 \mathrm{Backward} = \frac{1}{T}\sum_{i=1}^{T} \big( a_{i,T} - a_{i,i} \big).
 \end{equation}
-Loss và Forgetting càng thấp càng tốt; bốn chỉ số còn lại càng cao càng tốt.
+Với Loss và Forgetting, giá trị càng thấp càng tốt; với bốn chỉ số còn lại, giá
+trị càng cao càng tốt.
 
 \section{Kết quả}
 
-Bảng \ref{tab:imr}--\ref{tab:cub} báo cáo trung bình $\pm$ độ lệch chuẩn trên
-bốn seed. Cột \emph{Thay đổi} là chênh lệch tính riêng cho từng seed rồi mới lấy
-trung bình, nên độ lệch chuẩn của nó phản ánh độ ổn định của chính mức cải
-thiện, không bị nhiễu bởi việc các seed khó dễ khác nhau.
+Các bảng \ref{tab:imr}--\ref{tab:cub} báo cáo giá trị trung bình $\pm$ độ lệch
+chuẩn trên bốn seed. Cột \emph{Thay đổi} được tính theo cặp: chênh lệch giữa
+phương pháp đề xuất và baseline được tính riêng cho từng seed, sau đó mới lấy
+trung bình. Nhờ vậy, độ lệch chuẩn của cột này phản ánh độ ổn định của chính mức
+cải thiện, không bị ảnh hưởng bởi độ khó khác nhau giữa các seed.
 
 \begin{table}[htbp]
 \centering
@@ -229,7 +256,7 @@ thiện, không bị nhiễu bởi việc các seed khó dễ khác nhau.
 \label{tab:imr}
 \begin{tabular}{lRRR}
 \toprule
-Chỉ số & HRM-PET & Hybrid & Thay đổi \\
+Chỉ số & HRM-PET & Đề xuất & Thay đổi \\
 \midrule
 Acc@task   & $77.58 \pm 0.33$  & $79.85 \pm 0.18$  & $+2.264 \pm 0.158$ \\
 Acc@1      & $73.94 \pm 0.48$  & $75.18 \pm 0.24$  & $+1.236 \pm 0.416$ \\
@@ -247,7 +274,7 @@ Backward   & $-3.16 \pm 0.61$  & $-3.20 \pm 0.42$  & $-0.047 \pm 0.282$ \\
 \label{tab:cifar}
 \begin{tabular}{lRRR}
 \toprule
-Chỉ số & HRM-PET & Hybrid & Thay đổi \\
+Chỉ số & HRM-PET & Đề xuất & Thay đổi \\
 \midrule
 Acc@task   & $89.77 \pm 0.11$  & $90.87 \pm 0.09$  & $+1.103 \pm 0.066$ \\
 Acc@1      & $89.78 \pm 0.03$  & $90.47 \pm 0.05$  & $+0.690 \pm 0.063$ \\
@@ -265,7 +292,7 @@ Backward   & $-3.87 \pm 0.07$  & $-3.73 \pm 0.11$  & $+0.142 \pm 0.097$ \\
 \label{tab:cub}
 \begin{tabular}{lRRR}
 \toprule
-Chỉ số & HRM-PET & Hybrid & Thay đổi \\
+Chỉ số & HRM-PET & Đề xuất & Thay đổi \\
 \midrule
 Acc@task   & $93.12 \pm 0.14$  & $94.34 \pm 0.10$  & $+1.226 \pm 0.149$ \\
 Acc@1      & $86.38 \pm 0.25$  & $87.88 \pm 0.27$  & $+1.495 \pm 0.353$ \\
@@ -277,93 +304,99 @@ Backward   & $-2.42 \pm 0.39$  & $-2.14 \pm 0.13$  & $+0.279 \pm 0.391$ \\
 \end{tabular}
 \end{table}
 
-Trên tổng số 18 ô, 17 ô cải thiện. Ô còn lại là Backward trên ImageNet-R, với
-$-0.047 \pm 0.282$: độ lệch chuẩn gấp sáu lần trị tuyệt đối của trung bình, nên
-đại lượng này không phân biệt được với $0$. Đây là nhiễu giữa các seed chứ không
-phải suy giảm có hệ thống.
+Trong tổng số $18$ ô chỉ số, $17$ ô được cải thiện. Ô còn lại là Backward trên
+ImageNet-R với giá trị $-0.047 \pm 0.282$. Ở đây độ lệch chuẩn lớn gấp sáu lần
+trị tuyệt đối của trung bình, nên đại lượng này không phân biệt được với $0$;
+đây là dao động giữa các seed chứ không phải suy giảm có tính hệ thống.
 
-Hai hàng đáng tin nhất là Acc@task và Acc@5, nơi độ lệch chuẩn của mức thay đổi
-nhỏ hơn chính mức thay đổi khoảng mười đến mười lăm lần. CUB-200 vốn là điểm yếu
-của phiên bản chỉ có tầng định tuyến, khi mức tăng định tuyến không chuyển thành
-Acc@1 mà dừng ở $-0.03$; với tầng phân lớp bổ sung, nó trở thành bộ dữ liệu có
-Acc@1 tăng mạnh nhất.
+Hai chỉ số đáng tin cậy nhất là Acc@task và Acc@5, với độ lệch chuẩn của mức
+thay đổi nhỏ hơn chính mức thay đổi khoảng mười đến mười lăm lần. CUB-200 vốn là
+điểm yếu của phiên bản chỉ có tầng định tuyến, khi mức tăng độ chính xác định
+tuyến không chuyển hóa thành Acc@1 mà dừng ở $-0.03$; sau khi bổ sung tầng phân
+lớp, đây trở thành bộ dữ liệu có Acc@1 tăng mạnh nhất.
 
-\section{Kiểm chứng cài đặt}
+\section{Kiểm chứng tính đúng đắn của cài đặt}
 \label{sec:sanity}
 
-Đặt $w = 1.0$ trong \eqref{eq:route} sẽ dồn toàn bộ trọng số về TII, tức là tắt
-hẳn nguồn thứ hai. Khi đó phương pháp tái lập baseline HRM-PET chính xác đến
-từng chữ số trên cả ba bộ dữ liệu: 77.7914, 74.0191, 1.2305 và các con số còn
-lại, không sai khác ở chữ số thập phân thứ tư.
+Đặt $w = 1.0$ trong \eqref{eq:route} sẽ dồn toàn bộ trọng số về TII, tương đương
+với việc vô hiệu hóa nguồn tín hiệu thứ hai. Ở cấu hình này, phương pháp tái lập
+chính xác baseline HRM-PET đến từng chữ số trên cả ba bộ dữ liệu: $77.7914$,
+$74.0191$, $1.2305$ và các giá trị còn lại, không sai khác tại chữ số thập phân
+thứ tư.
 
-Điều này có hai hệ quả. Thứ nhất, mọi chênh lệch báo cáo ở trên đến từ đúng phần
-được thêm vào, không phải từ khác biệt ngẫu nhiên trong đường dẫn đánh giá. Thứ
-hai, $w$ là một núm xoay liên tục quay ngược về baseline, nên nó cho luôn một
-trục ablation chính xác thay vì một so sánh nhị phân.
+Kết quả này có hai hệ quả. Thứ nhất, mọi chênh lệch báo cáo ở trên đến từ đúng
+các thành phần được bổ sung, không phải từ khác biệt ngẫu nhiên trong quy trình
+đánh giá. Thứ hai, $w$ là một tham số liên tục nội suy giữa phương pháp đề xuất
+và baseline, do đó cung cấp sẵn một trục khảo sát loại bỏ thành phần (ablation)
+liên tục thay vì chỉ một so sánh nhị phân.
 
-\section{Ablation}
+\section{Khảo sát loại bỏ thành phần}
 
-\subsection{Trọng số hợp nhất phân lớp}
+\subsection{Trọng số hợp nhất ở cấp phân lớp}
 
 \begin{table}[htbp]
 \centering
-\caption{Ảnh hưởng của $\beta$ và cơ chế điều tiết. Hai hàng đầu đo trên ba
-seed, hàng cuối trên seed 42.}
+\caption{Ảnh hưởng của $\beta$ và của cơ chế cổng. Hai hàng đầu đo trên ba seed,
+hàng cuối đo trên seed 42.}
 \label{tab:beta}
 \begin{tabular}{lrrl}
 \toprule
-Cấu hình & CIFAR-100 Loss & ImageNet-R Backward & Kết luận \\
+Cấu hình & Loss trên CIFAR-100 & Backward trên ImageNet-R & Nhận xét \\
 \midrule
-$\beta = 0.3$, không điều tiết & $+0.019 \pm 0.003$ & $-0.298 \pm 0.391$ & suy giảm có hệ thống \\
-$\beta = 0.5$, biên top-2      & $-0.000 \pm 0.001$ & $-0.047 \pm 0.282$ & cấu hình chốt \\
-$\beta = 0.8$, biên top-2      & $+0.029$           & $-0.462$           & trộn quá tay \\
+$\beta = 0.3$, không có cổng & $+0.019 \pm 0.003$ & $-0.298 \pm 0.391$ & suy giảm hệ thống \\
+$\beta = 0.5$, cổng theo biên & $-0.000 \pm 0.001$ & $-0.047 \pm 0.282$ & cấu hình được chọn \\
+$\beta = 0.8$, cổng theo biên & $+0.029$           & $-0.462$           & hợp nhất quá mức \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Ở $\beta = 0.3$ độ lệch chuẩn của Loss chỉ bằng một phần sáu trị trung bình, tức
-là suy giảm thật và tái lập được ở mọi seed. Đây là điểm khác biệt cốt lõi so
-với Backward, nơi độ lệch chuẩn lớn hơn trung bình nhiều lần và do đó không kết
-luận được gì.
+Ở cấu hình $\beta = 0.3$, độ lệch chuẩn của Loss chỉ bằng một phần sáu giá trị
+trung bình, cho thấy đây là suy giảm thực và tái lập được trên mọi seed. Đặc
+điểm này khác hẳn chỉ số Backward, nơi độ lệch chuẩn lớn hơn trung bình nhiều
+lần và do đó không cho phép kết luận về dấu.
 
-Vì cơ chế điều tiết làm $\beta$ hiệu dụng nhỏ đi đáng kể, $\beta$ danh nghĩa
-phải nâng từ $0.3$ lên $0.5$. Đẩy tiếp lên $0.8$ thì fusion lấn át và ImageNet-R
-mất cả Loss, Forgetting lẫn Backward. Điểm tối ưu nằm ở giữa chứ không ở biên.
+Do cơ chế cổng làm giảm đáng kể trọng số hiệu dụng, giá trị $\beta$ danh nghĩa
+cần tăng từ $0.3$ lên $0.5$. Khi tăng tiếp lên $0.8$, mức hợp nhất trở nên quá
+lớn và ImageNet-R suy giảm đồng thời ở Loss, Forgetting và Backward. Giá trị tối
+ưu do đó nằm trong khoảng giữa chứ không ở biên của dải khảo sát.
 
-\subsection{Ramp theo giai đoạn: đã cài đặt, đã đo, đã loại}
+\subsection{Trọng số tăng dần theo giai đoạn: đã cài đặt, đã đo và đã loại bỏ}
 
-Forgetting và Backward đều so một nhiệm vụ với đỉnh của chính nó, nên một hiệu
-chỉnh áp dụng đồng đều ở mọi giai đoạn sẽ triệt tiêu khỏi cả hai. Điều này giải
-thích vì sao hai chỉ số đó gần như đứng yên, và gợi ý cho trọng số fusion tăng
-dần theo số nhiệm vụ đã thấy, dạng $(\text{đã thấy}/T)^{\gamma}$.
+Cả Forgetting và Backward đều so sánh một tác vụ với đỉnh hiệu năng của chính
+nó. Vì vậy, một hiệu chỉnh áp dụng đồng đều ở mọi giai đoạn sẽ triệt tiêu khỏi
+cả hai chỉ số. Điều này giải thích tại sao hai chỉ số đó gần như không thay đổi,
+đồng thời gợi ý cho trọng số hợp nhất tăng dần theo số tác vụ đã quan sát, theo
+dạng $(\text{số tác vụ đã quan sát}/T)^{\gamma}$.
 
 Cơ chế này hoạt động đúng như thiết kế. Với $\gamma = 2$, Forgetting cải thiện
 lên $-0.415$, $-0.433$, $-0.462$ và Backward lên $+0.357$, $+0.411$, $+0.462$
-trên ba bộ dữ liệu, trong khi hàng tổng kết không đổi một chữ số nào, vì hệ số
-ramp đạt $1.0$ ở giai đoạn cuối.
+trên ba bộ dữ liệu, trong khi hàng kết quả cuối cùng không thay đổi một chữ số
+nào, do hệ số nhân đạt giá trị $1.0$ tại giai đoạn cuối.
 
-Và chính điều đó là lý do để loại nó. Nếu trạng thái cuối không đổi mà hai chỉ
-số so-với-đỉnh lại đẹp lên, thì mức đẹp đó chỉ có thể đến từ việc mô hình kém đi
-ở các giai đoạn giữa. Độ chính xác trung bình qua cả mười giai đoạn xác nhận
-điều này: trên CUB-200 nó tụt từ $88.35$ xuống $88.16$ rồi $87.91$. Mua chỉ số
-ghi nhớ bằng một đường học tệ hơn không phải là cải tiến.
+Chính đặc điểm sau cùng lại là lý do để loại bỏ cơ chế này. Nếu trạng thái cuối
+không đổi mà hai chỉ số so với đỉnh vẫn cải thiện, thì mức cải thiện đó chỉ có
+thể đến từ việc hiệu năng của mô hình giảm ở các giai đoạn trung gian. Độ chính
+xác trung bình tính trên cả mười giai đoạn xác nhận điều này: trên CUB-200, giá
+trị giảm từ $88.35$ xuống $88.16$ rồi $87.91$. Cải thiện chỉ số ghi nhớ bằng
+cách hạ thấp đường cong học tập không phải là một cải tiến thực chất.
 
-Hai phát hiện thật vẫn còn lại từ thí nghiệm này. Thứ nhất, hợp nhất phân lớp
-thực sự gây hại ở giai đoạn đầu, khi ImageNet-R chỉ đạt $86.0$ so với $87.5$ của
-baseline ở nhiệm vụ thứ nhất, đúng như lập luận rằng ước lượng ma trận Gram cần
-đủ lớp mới đáng tin. Thứ hai, cùng đầu RP đó lại là bộ định tuyến mạnh ngay từ
-giai đoạn đầu, nên ramp trọng số định tuyến chỉ làm mất độ chính xác định tuyến
-trung bình ở cả ba bộ dữ liệu mà không đổi lại được gì.
+Hai kết quả có giá trị vẫn thu được từ thí nghiệm này. Thứ nhất, cơ chế hợp nhất
+ở cấp phân lớp \emph{thực sự} gây hại tại giai đoạn đầu: trên ImageNet-R, độ
+chính xác ở tác vụ thứ nhất là $86.0$ so với $87.5$ của baseline, phù hợp với
+lập luận rằng ước lượng ma trận Gram cần đủ số lớp mới đáng tin cậy. Thứ hai,
+cũng chính đầu RP đó lại là bộ định tuyến mạnh ngay từ giai đoạn đầu, nên việc
+giảm trọng số định tuyến ở các giai đoạn sớm chỉ làm giảm độ chính xác định
+tuyến trung bình trên cả ba bộ dữ liệu mà không đem lại lợi ích bù lại.
 
-\section{Chi phí suy luận}
+\section{Chi phí tính toán}
 
 \begin{table}[htbp]
 \centering
-\caption{Số lượt gọi LoRA trên mỗi mẫu.}
+\caption{Số lượt gọi LoRA trung bình trên mỗi mẫu.}
 \label{tab:cost}
 \begin{tabular}{lrrr}
 \toprule
-Bộ dữ liệu & HRM-PET & Hybrid & Thay đổi \\
+Bộ dữ liệu & HRM-PET & Đề xuất & Thay đổi \\
 \midrule
 ImageNet-R & 1.83 & 2.85 & $+1.02$ \\
 CIFAR-100  & 1.40 & 2.41 & $+1.01$ \\
@@ -372,39 +405,44 @@ CUB-200    & 1.60 & 2.60 & $+1.00$ \\
 \end{tabular}
 \end{table}
 
-Chi phí tăng thêm đúng bằng một lượt forward cho đầu RP, không hơn. Tầng hợp
-nhất phân lớp không tốn thêm gì vì nó dùng lại chính điểm số đã tính cho tầng
-định tuyến. Bộ nhớ tăng thêm là một ma trận Gram và một ma trận tương quan lớp,
-cộng với một hạt giống để sinh lại phép chiếu.
+Chi phí tăng thêm đúng bằng một lượt truyền xuôi cho đầu RP. Tầng hợp nhất ở cấp
+phân lớp không phát sinh chi phí bổ sung, vì nó sử dụng lại chính điểm số đã
+được tính cho tầng định tuyến. Chi phí bộ nhớ tăng thêm gồm một ma trận Gram,
+một ma trận tương quan lớp và một seed để sinh lại ma trận chiếu.
 
-\section{Giới hạn}
+\section{Hạn chế}
 
-\textbf{Backward trên ImageNet-R.} Giá trị $-0.047 \pm 0.282$ không phân biệt
-được với $0$. Cần nhiều seed hơn mới kết luận được dấu, nhưng chắc chắn đây
-không phải suy giảm có hệ thống.
+\textbf{Chỉ số Backward trên ImageNet-R.} Giá trị $-0.047 \pm 0.282$ không phân
+biệt được với $0$. Cần thêm số lượng seed để kết luận về dấu, tuy nhiên có thể
+khẳng định đây không phải suy giảm có tính hệ thống.
 
-\textbf{Loss khó tăng thêm.} Đây là số học chứ không phải thiếu sót.
-Cross-entropy quanh $1.23$ với Acc@1 tăng $1.24$ điểm chỉ đáng khoảng
-$0.01$--$0.04$ nats, đúng bằng mức đã đạt. Muốn hơn thì phải hiệu chỉnh nhiệt
-độ, mà hiệu chỉnh cho phương pháp mới trong khi để baseline nguyên là một so
-sánh không sòng phẳng; hiệu chỉnh cả hai thì chênh lệch trở lại như cũ.
+\textbf{Giới hạn cải thiện của Loss.} Đây là hệ quả số học chứ không phải thiếu
+sót của phương pháp. Với cross-entropy quanh mức $1.23$, mức tăng $1.24$ điểm
+của Acc@1 chỉ tương ứng khoảng $0.01$--$0.04$ nats, đúng bằng mức đã đạt được.
+Muốn cải thiện thêm thì phải áp dụng hiệu chỉnh nhiệt độ, nhưng hiệu chỉnh cho
+phương pháp đề xuất trong khi giữ nguyên baseline là một so sánh không công
+bằng; nếu hiệu chỉnh cho cả hai thì chênh lệch trở lại như cũ.
 
-\textbf{Chọn siêu tham số.} Giá trị $\beta$ được chọn trên seed 42 và dùng chung
-cho cả ba bộ dữ liệu, sau đó xác nhận lại trên ba seed còn lại. Không đặt siêu
-tham số riêng cho từng bộ dữ liệu.
+\textbf{Cách chọn siêu tham số.} Giá trị $\beta$ được chọn trên seed 42 và dùng
+chung cho cả ba bộ dữ liệu, sau đó được kiểm chứng lại trên ba seed còn lại.
+Chúng tôi không đặt siêu tham số riêng cho từng bộ dữ liệu.
 
-\textbf{Phạm vi đánh giá.} Ba bộ dữ liệu, chưa phải bốn. Bộ nạp dữ liệu cho
-ImageNet-A đã có sẵn trong mã nguồn nhưng dữ liệu cần tải thủ công.
+\textbf{Phạm vi đánh giá.} Thí nghiệm được thực hiện trên ba bộ dữ liệu. Mã
+nguồn đã có sẵn bộ nạp dữ liệu cho ImageNet-A, nhưng dữ liệu cần được tải thủ
+công nên bộ này chưa được đưa vào đánh giá.
 
 \section{Kết luận}
 
-Hai tầng hợp nhất, cùng đặt ở khâu suy luận và không đòi huấn luyện lại, cải
-thiện 17 trên 18 ô chỉ số trên ba bộ dữ liệu và bốn seed. Tầng định tuyến khai
-thác việc hai nguồn tín hiệu sai ở những mẫu khác nhau; tầng phân lớp khai thác
-việc nguồn thứ hai vốn là một bộ phân lớp đầy đủ mà kiến trúc gốc đang vứt bỏ.
-Cơ chế điều tiết theo biên top-2 là thành phần khiến tầng thứ hai không phải trả
-giá ở những mẫu mà mô hình gốc đã chắc chắn, và nó loại bỏ suy giảm Loss duy
-nhất có hệ thống mà chúng tôi quan sát được, không thêm siêu tham số nào.
+Hai tầng hợp nhất, cùng đặt ở giai đoạn suy luận và không yêu cầu huấn luyện
+lại, cải thiện $17$ trên $18$ ô chỉ số trên ba bộ dữ liệu và bốn seed. Tầng định
+tuyến khai thác tính bổ sung giữa hai nguồn tín hiệu vốn cho kết quả sai trên
+những tập mẫu khác nhau. Tầng phân lớp khai thác thực tế rằng nguồn thứ hai bản
+thân nó đã là một bộ phân lớp hoàn chỉnh nhưng bị kiến trúc gốc bỏ qua.
+
+Cơ chế cổng theo biên là thành phần giúp tầng thứ hai không phải trả giá trên
+những mẫu mà mô hình gốc vốn đã dự đoán chắc chắn. Cơ chế này loại bỏ suy giảm
+có tính hệ thống duy nhất mà chúng tôi quan sát được, và không đưa thêm siêu
+tham số nào vào phương pháp.
 
 % Truoc khi nop: bo sung trich dan cho HRM-PET va RanPAC.
 
