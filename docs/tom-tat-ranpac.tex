@@ -30,7 +30,7 @@
 \renewcommand{\refname}{Tài liệu tham khảo}
 
 \captionsetup[table]{skip=6pt}
-\captionsetup[figure]{skip=8pt}
+\captionsetup[figure]{skip=10pt}
 \setlist[itemize]{itemsep=3pt, topsep=4pt}
 \setlist[enumerate]{itemsep=4pt, topsep=4pt}
 
@@ -48,8 +48,8 @@
 \noindent
 Tài liệu này diễn giải bài báo RanPAC \cite{ranpac} cho người mới bắt đầu: bài
 giải quyết vấn đề gì, ý tưởng cốt lõi là gì, từng thành phần hoạt động ra sao, và
-vì sao nó liên quan tới đề tài của chúng ta. Mọi số liệu trích dẫn đều lấy trực
-tiếp từ bài báo, có ghi rõ nguồn là bảng nào.
+vì sao nó liên quan tới đề tài của chúng ta. Mọi số liệu đều lấy trực tiếp từ bài
+báo, có ghi rõ nguồn là bảng nào.
 
 \tableofcontents
 \bigskip
@@ -57,10 +57,31 @@ tiếp từ bài báo, có ghi rõ nguồn là bảng nào.
 % =====================================================================
 \section{Bài báo giải quyết vấn đề gì}
 
+\subsection{Học liên tục và quên thảm khốc}
+
 Bối cảnh là \textbf{học liên tục} (continual learning): dữ liệu đến theo từng
 đợt, mô hình phải học đợt mới mà không được xem lại đợt cũ, và không được lưu ảnh
-cũ. Trở ngại trung tâm là \textbf{quên thảm khốc} -- cập nhật trọng số cho dữ
-liệu mới sẽ ghi đè lên những gì đã học.
+cũ. Trở ngại trung tâm là \textbf{quên thảm khốc} -- việc cập nhật trọng số cho
+dữ liệu mới sẽ ghi đè lên những gì đã học trước đó.
+
+\subsection{Hai giao thức: CIL và DIL}
+
+Bài báo làm việc với hai kịch bản khác nhau, và cần phân biệt rõ vì kết quả được
+báo cáo riêng cho từng loại.
+
+\begin{itemize}[leftmargin=*]
+\item \textbf{Class-Incremental Learning (CIL).} Mỗi đợt dạy một tập lớp
+      \emph{khác nhau}, không giao nhau. Ví dụ đợt 1 học lớp 0--9, đợt 2 học lớp
+      10--19. Điểm khó: lúc kiểm tra, mô hình \emph{không được biết} ảnh thuộc
+      đợt nào, phải chọn đúng lớp trong toàn bộ các lớp đã gặp.
+\item \textbf{Domain-Incremental Learning (DIL).} Mọi đợt dùng \emph{cùng một tập
+      lớp}, nhưng dữ liệu mỗi đợt đến từ một miền khác nhau. Ví dụ đợt 1 là ảnh
+      chụp, đợt 2 là tranh vẽ, đợt 3 là ảnh phác thảo.
+\end{itemize}
+
+Đề tài của chúng ta thuộc loại thứ nhất, CIL.
+
+\subsection{Ba hướng khai thác mô hình tiền huấn luyện}
 
 Từ khi có các mô hình nền tảng lớn được tiền huấn luyện sẵn, lĩnh vực này tách
 thành ba hướng.
@@ -108,7 +129,7 @@ bị dồn về cùng một hướng}. Prototype của hai lớp hoàn toàn kh�
 giống nhau một cách bất thường.
 
 Hậu quả đo được ngay trên histogram độ tương đồng: phân bố ``giống lớp đúng của
-mình'' và ``giống 199 lớp sai'' chồng lấn nặng.
+mình'' và ``giống các lớp sai'' chồng lấn nặng.
 
 \begin{table}[htbp]
 \centering
@@ -119,12 +140,12 @@ Con số cho thấy vấn đề nằm ở cách chấm điểm, không ở bản
 \toprule
 Cách chấm điểm & Độ chính xác huấn luyện \\
 \midrule
-Class-prototype + cosine (NCM)              & 64\,\% \\
-Class-prototype + nghịch đảo Gram, công thức \eqref{eq:gram}
-                                            & 75\,\% \\
+Class-prototype kèm cosine (NCM)              & 64\,\% \\
+Class-prototype kèm nghịch đảo Gram, công thức \eqref{eq:gram}
+                                              & 75\,\% \\
 Linear probe huấn luyện chung trên cả 200 lớp & 82\,\% \\
 Công thức \eqref{eq:gram} kèm chiếu ngẫu nhiên, $M = 2000$
-                                            & \textbf{87\,\%} \\
+                                              & \textbf{87\,\%} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -191,8 +212,8 @@ giản hơn vì không phải trừ trung bình.
 \paragraph{Liên hệ với ZCA whitening.}
 Nếu tất cả các lớp có xác suất tiên nghiệm bằng nhau, phân loại LDA tương đương
 với việc tẩy trắng ZCA rồi tìm khoảng cách Euclid nhỏ nhất. Công thức
-\eqref{eq:gram} là cùng một tinh thần, chỉ khác ở chỗ đưa ma trận Gram về đơn vị
-thay vì đưa hiệp phương sai về đơn vị.
+\eqref{eq:gram} cùng tinh thần đó, chỉ khác ở chỗ đưa ma trận Gram về đơn vị thay
+vì đưa hiệp phương sai về đơn vị.
 
 % =====================================================================
 \section{Ý tưởng thứ hai: chiếu ngẫu nhiên kèm phi tuyến}
@@ -230,8 +251,18 @@ tuyến là \textbf{cách rẻ để lấy gần hết lợi ích đó}.
 
 \subsection{Vì sao phải mở rộng chiều chứ không nén}
 
-Vì $W$ là ngẫu nhiên chứ không được học, nên cần dư thừa để bù lại. Bài thử nén
-từ 768 xuống 500 chiều và kết quả \emph{thấp hơn cả} phương án không dùng chiếu.
+Có hai lý do, một thực nghiệm và một hình học.
+
+\emph{Thực nghiệm:} vì $W$ là ngẫu nhiên chứ không được học, nên cần dư thừa để
+bù lại. Bài thử nén từ 768 xuống 500 chiều và kết quả \emph{thấp hơn cả} phương
+án không dùng chiếu.
+
+\emph{Hình học:} Phụ lục B.1 và B.2 dùng bất đẳng thức Chernoff để chỉ ra rằng
+khi $M$ tăng, chuẩn của các vector đã chiếu càng tập trung quanh kỳ vọng, tức là
+phân bố càng tiến gần một Gaussian đẳng hướng. Điều đó quan trọng vì công thức
+\eqref{eq:gram} ngầm giả định dữ liệu có dạng Gaussian. Đồng thời, $M$ càng lớn
+thì tích vô hướng giữa hai mẫu bất kỳ càng dễ khác biệt nhau -- nghĩa là các lớp
+càng dễ tách.
 
 \begin{table}[htbp]
 \centering
@@ -247,7 +278,27 @@ $M$ & 100 & 400 & 1250 & 2500 & 5000 & 10000 & 15000 \\
 \end{tabular}
 \end{table}
 
-Mức tăng bão hòa dần sau khoảng $M = 5000$.
+Mức tăng bão hòa dần sau khoảng $M = 5000$. Bài cũng lưu ý rằng $M$ phải lớn hơn
+khoảng $1250$ thì mới vượt được phương án không dùng chiếu.
+
+\subsection{Bản thân ý tưởng chiếu ngẫu nhiên không mới}
+
+Cần nói rõ điều này để đánh giá đúng đóng góp. Chiếu ngẫu nhiên đóng băng kèm phi
+tuyến đã được đề xuất và dùng nhiều lần từ những năm 1990 trong dòng nghiên cứu
+về mạng nơ-ron ngẫu nhiên, nhưng luôn ở vai trò \emph{bộ học độc lập, không liên
+tục}.
+
+Đóng góp thật của RanPAC nằm ở hai quan sát nối chúng lại với học liên tục:
+
+\begin{enumerate}[leftmargin=*]
+\item Các chiến lược class-prototype hiện có cho học liên tục \emph{tương đương}
+      với các mô hình tuyến tính học sau phép chiếu ngẫu nhiên trong dòng nghiên
+      cứu cũ.
+\item Trọng số đóng băng và không được huấn luyện thì \emph{không thể gây quên}.
+\end{enumerate}
+
+Nói cách khác, RanPAC không phát minh cơ chế mới; nó nhận ra một cơ chế cũ có
+đúng tính chất mà học liên tục cần.
 
 % =====================================================================
 \section{Vì sao cách này hợp với học liên tục đến mức hoàn hảo}
@@ -277,22 +328,48 @@ Toàn bộ ``huấn luyện'' của Phase 2 chỉ là cộng ma trận.
 không đến từ một cơ chế chống quên nào cả, mà đến từ việc \textbf{chọn một dạng
 bài toán vốn không có chỗ cho việc quên xảy ra}.
 
+Một hệ quả thú vị được xác nhận ở Phụ lục F: khi bỏ Phase 1, kết quả cuối cùng
+gần như \emph{không dao động} dù đổi cách gán ngẫu nhiên lớp vào tác vụ. Khi có
+Phase 1, dao động tăng lên rõ rệt -- vì Phase 1 dùng SGD, và SGD thì có ngẫu
+nhiên.
+
 % =====================================================================
 \section{Phase 1: vá khoảng cách miền}
+
+\subsection{Lý do tồn tại}
 
 Vẫn còn một vấn đề. Đặc trưng đóng băng có thể không hợp với miền dữ liệu mới --
 ảnh phong cách hóa, ảnh y tế, ảnh vệ tinh.
 
 Phase 1 xử lý bằng cách huấn luyện một bộ \textbf{PETL} (Parameter-Efficient
-Transfer Learning: AdaptFormer, SSF, hoặc VPT, mỗi bộ vài trăm nghìn tham số)
-\textbf{chỉ trên tác vụ đầu tiên} $D_1$, rồi đóng băng vĩnh viễn. Đầu phân lớp
-tạm dùng để huấn luyện nó bị vứt bỏ trước khi vào Phase 2.
+Transfer Learning) \textbf{chỉ trên tác vụ đầu tiên} $D_1$, rồi đóng băng vĩnh
+viễn. Đầu phân lớp tạm dùng để huấn luyện nó bị vứt bỏ trước khi vào Phase 2.
 
-Logic của lựa chọn này gồm hai vế. Thứ nhất, chỉ huấn luyện ở một tác vụ duy nhất
-thì không có cơ hội để quên tích lũy. Thứ hai, dữ liệu tác vụ 1 dù ít vẫn đại
-diện cho miền mới tốt hơn nhiều so với ImageNet-21K.
+Logic gồm hai vế. Thứ nhất, chỉ huấn luyện ở một tác vụ duy nhất thì không có cơ
+hội để quên tích lũy. Thứ hai, dữ liệu tác vụ 1 dù ít vẫn đại diện cho miền mới
+tốt hơn nhiều so với ImageNet-21K.
 
-Chi tiết huấn luyện: SGD, batch 48, tốc độ học 0.01, weight decay 0.0005,
+\subsection{Ba phương pháp PETL được thử}
+
+Cả ba đều \textbf{không đụng vào một trọng số nào của mạng gốc}, chỉ thêm tham số
+mới rất nhỏ.
+
+\begin{itemize}[leftmargin=*]
+\item \textbf{VPT} (Visual Prompt Tuning): thêm một số token ``prompt'' học được
+      vào đầu vào của các tầng transformer. Bài dùng bản \emph{deep}, tức là chèn
+      prompt ở mọi tầng, với độ dài prompt bằng 5.
+\item \textbf{AdaptFormer}: chèn một khối MLP cổ chai nhỏ song song với khối MLP
+      sẵn có của transformer -- chiếu xuống chiều thấp, qua phi tuyến, rồi chiếu
+      ngược lên. Bài dùng chiều chiếu bằng 64.
+\item \textbf{SSF} (Scaling and Shifting Features): học một hệ số nhân và một hệ
+      số cộng cho từng kênh đặc trưng. Đây là phương pháp ít tham số nhất trong
+      ba.
+\end{itemize}
+
+Phụ lục F.6 cho thấy phương pháp nào tốt nhất \emph{thay đổi theo bộ dữ liệu và
+theo backbone}, không có lựa chọn thắng tuyệt đối.
+
+Chi tiết huấn luyện chung: SGD, batch 48, tốc độ học 0.01, weight decay 0.0005,
 momentum 0.9, 20 epoch, lịch cosine annealing.
 
 % =====================================================================
@@ -302,41 +379,41 @@ momentum 0.9, 20 epoch, lịch cosine annealing.
 \centering
 \resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
-  font=\footnotesize, >={Stealth[length=2mm]},
-  box/.style={draw, minimum height=8mm, minimum width=2.0cm, inner xsep=4pt, align=center},
+  font=\footnotesize,
+  >={Stealth[length=2.2mm]},
+  box/.style={draw, align=center, text width=3.0cm, minimum height=15mm,
+              inner sep=4pt},
   frz/.style={box, fill=black!8},
-  lbl/.style={font=\scriptsize, align=center}
+  ttl/.style={font=\footnotesize\bfseries, anchor=south west}
 ]
-% Phase 1
-\node[lbl, anchor=west] at (-0.6, 1.9) {\textbf{Phase 1} — chỉ chạy trên tác vụ đầu tiên};
-\node[box] (d1)  at (0.9, 1.0)  {Dữ liệu $D_1$};
-\node[box] (petl) at (4.2, 1.0) {Backbone đóng băng\\ + tham số PETL};
-\node[box] (tmp) at (7.8, 1.0)  {Đầu phân lớp tạm\\ (vứt bỏ sau đó)};
-\draw[->] (d1) -- (petl);
+% ---------- Phase 1 ----------
+\node[box] (d1) at (0,0) {Dữ liệu\\tác vụ đầu tiên};
+\node[box, right=12mm of d1]   (petl) {Backbone\\ + tham số PETL};
+\node[box, right=12mm of petl] (tmp)  {Đầu phân lớp tạm\\ (vứt bỏ sau đó)};
+\draw[->] (d1)   -- (petl);
 \draw[->] (petl) -- (tmp);
+\node[ttl, yshift=3mm] at (d1.north west) {Phase 1 — thích nghi phiên đầu};
 
-% Phase 2
-\node[lbl, anchor=west] at (-0.6, -0.5) {\textbf{Phase 2} — chạy trên toàn bộ chuỗi $D_1 \ldots D_T$};
-\node[box] (dt)  at (0.9, -1.6)  {Dữ liệu $D_t$};
-\node[frz] (bb)  at (4.2, -1.6)  {Backbone đã thích nghi\\ (đóng băng)};
-\node[frz] (rp)  at (7.8, -1.6)  {Chiếu ngẫu nhiên $W$\\ (đóng băng)};
-\node[box] (act) at (10.9, -1.6) {ReLU};
-\node[box] (acc) at (14.0, -1.6) {Cộng dồn\\ $G$ và $C$};
-\node[box] (sol) at (14.0, -3.4) {$W_o = (G+\lambda I)^{-1}C$};
-\node[box] (out) at (10.4, -3.4) {Dự đoán lớp};
+% ---------- Phase 2 ----------
+\node[box, below=34mm of d1]  (dt)  {Dữ liệu\\mọi tác vụ};
+\node[frz, right=12mm of dt]  (bb)  {Backbone\\đã thích nghi\\(đóng băng)};
+\node[frz, right=12mm of bb]  (rp)  {Chiếu ngẫu nhiên\\rồi ReLU\\(đóng băng)};
+\node[box, right=12mm of rp]  (acc) {Cộng dồn\\$G$ và $C$};
+\node[box, right=12mm of acc] (sol) {Giải ridge\\$(G+\lambda I)^{-1}C$};
+\draw[->] (dt)  -- (bb);
+\draw[->] (bb)  -- (rp);
+\draw[->] (rp)  -- (acc);
+\draw[->] (acc) -- (sol);
+\node[ttl, yshift=3mm] at (dt.north west) {Phase 2 — học liên tục};
 
-\draw[->] (dt) -- (bb);
-\draw[->] (bb) -- node[lbl, above] {$f$, 768 chiều} (rp);
-\draw[->] (rp) -- (act);
-\draw[->] (act) -- node[lbl, above] {$h$, 10000 chiều} (acc);
-\draw[->] (acc) -- node[lbl, right] {cuối mỗi tác vụ} (sol);
-\draw[->] (sol) -- (out);
-
-\draw[->, dashed] (petl.south) -- node[lbl, right] {tham số PETL, đóng băng} (bb.north);
+% ---------- noi hai pha ----------
+\draw[->, dashed] (petl) -- (bb);
 \end{tikzpicture}}
 \caption{Hai pha của RanPAC. Các khối tô xám là thành phần đóng băng, không có
-tham số nào được huấn luyện. Toàn bộ ``huấn luyện'' của Phase 2 chỉ là cộng dồn
-hai ma trận rồi giải một hệ tuyến tính.}
+tham số nào được huấn luyện trong đó. Mũi tên nét đứt là tham số PETL học được ở
+Phase 1 rồi đóng băng và dùng lại cho Phase 2. Đặc trưng ra khỏi backbone có 768
+chiều; sau khi chiếu và kích hoạt thì có $10\,000$ chiều. Toàn bộ ``huấn luyện''
+của Phase 2 chỉ là cộng dồn hai ma trận rồi giải một hệ tuyến tính.}
 \label{fig:ranpac}
 \end{figure}
 
@@ -379,11 +456,13 @@ với khi được xem toàn bộ dữ liệu.
 Chỉ số báo cáo là $A_T = \frac{1}{T}\sum_{i=1}^{T} R_{T,i}$ -- trung bình độ
 chính xác trên mọi tác vụ, đo ở giai đoạn cuối cùng.
 
+\subsection{Class-incremental}
+
 \begin{table}[htbp]
 \centering
-\caption{Kết quả và khảo sát loại bỏ thành phần, $T = 10$ (Bảng 1 và Bảng 2 của
-bài báo). Hai hàng in nghiêng là mốc tham chiếu, không phải phương pháp học liên
-tục.}
+\caption{Kết quả và khảo sát loại bỏ thành phần cho CIL, $T = 10$ (Bảng 1 và
+Bảng 2 của bài báo). Hai hàng in nghiêng là mốc tham chiếu, không phải phương
+pháp học liên tục.}
 \label{tab:ketqua}
 \begin{tabular}{lrrrr}
 \toprule
@@ -397,7 +476,7 @@ Gram kèm Phase 1, không chiếu       & 90.6 & 73.9 & 57.7 & 86.6 \\
 \midrule
 \textbf{RanPAC đầy đủ}              & \textbf{92.2} & \textbf{77.9} & \textbf{62.4} & \textbf{90.3} \\
 \midrule
-\emph{Linear probe huấn luyện chung}      & \emph{87.9} & \emph{72.0} & \emph{56.6} & \emph{88.7} \\
+\emph{Linear probe huấn luyện chung}       & \emph{87.9} & \emph{72.0} & \emph{56.6} & \emph{88.7} \\
 \emph{Fine-tune toàn bộ, huấn luyện chung} & \emph{93.8} & \emph{86.6} & \emph{70.8} & \emph{90.5} \\
 \bottomrule
 \end{tabular}
@@ -412,15 +491,50 @@ Ba điều đọc ra được:
 \item \textbf{RanPAC vượt cả linear probe được huấn luyện chung} ở cả bảy bộ dữ
       liệu trong bài. Đây là điều đáng ngạc nhiên: một phương pháp học tuần tự
       lại hơn một mô hình được xem toàn bộ dữ liệu cùng lúc. Lý do là linear probe
-      làm việc trên 768 chiều, còn RanPAC làm việc trên 10\,000 chiều có tương
+      làm việc trên 768 chiều, còn RanPAC làm việc trên $10\,000$ chiều có tương
       tác phi tuyến.
 \item \textbf{Khoảng cách tới cận trên rất hẹp trên một số tập.} Trên CIFAR100 nó
       chỉ kém fine-tune toàn bộ 1.6 điểm, trên CUB kém 0.2 điểm. Khoảng cách lớn
       chỉ còn ở hai biến thể ImageNet.
 \end{enumerate}
 
-Bài cũng chạy trên ba bộ domain-incremental (CORe50, CDDB-Hard, DomainNet) với
-cùng xu hướng, và kiểm chứng thêm với backbone ResNet và CLIP.
+\subsection{Domain-incremental}
+
+\begin{table}[htbp]
+\centering
+\caption{Kết quả cho DIL (Bảng 3 của bài báo). CORe50 có 8 giai đoạn, CDDB-Hard
+có 5, DomainNet có 6.}
+\label{tab:dil}
+\begin{tabular}{lrrr}
+\toprule
+Cấu hình & CORe50 & CDDB-Hard & DomainNet \\
+\midrule
+L2P                                & 78.3 & 61.3 & 40.2 \\
+S-iPrompts                         & 83.1 & 74.5 & 50.6 \\
+ADaM                               & 92.0 & 70.7 & 50.3 \\
+\midrule
+\textbf{RanPAC đầy đủ}             & \textbf{96.7} & \textbf{86.2} & \textbf{66.6} \\
+\midrule
+NCM đơn thuần                      & 80.4 & 69.8 & 46.4 \\
+Gram, không chiếu, không Phase 1   & 92.4 & 80.7 & 54.1 \\
+Gram kèm chiếu, không Phase 1      & 94.3 & 81.6 & 64.7 \\
+Gram kèm Phase 1, không chiếu      & 94.8 & 84.2 & 55.2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Xu hướng giống hệt CIL, nhưng có một khác biệt đáng chú ý: trên DomainNet, phép
+chiếu ngẫu nhiên đóng góp rất lớn còn Phase 1 gần như không thêm gì (64.7 lên
+66.6). Điều này hợp lý với bản chất của DIL -- Phase 1 chỉ được huấn luyện trên
+miền đầu tiên, nên nó không giúp gì cho các miền sau vốn khác hẳn.
+
+\subsection{Tính bền vững}
+
+Phụ lục F kiểm chứng thêm ba điều: phương pháp chạy được với backbone ResNet và
+CLIP chứ không riêng ViT; nó áp dụng được cho học liên tục \emph{không có ranh
+giới tác vụ} (task-agnostic, dùng giao thức Gaussian-scheduled CIFAR100); và kết
+quả ổn định qua các seed, đặc biệt là gần như bất biến khi bỏ Phase 1, đúng như
+tính chất đại số ở Mục \ref{sec:coloi}.
 
 % =====================================================================
 \section{Cái giá phải trả}
@@ -443,7 +557,9 @@ cùng xu hướng, và kiểm chứng thêm với backbone ResNet và CLIP.
 \end{itemize}
 
 % =====================================================================
-\section{Hạn chế mà chính tác giả thừa nhận}
+\section{Hạn chế và hướng mở rộng}
+
+\subsection{Hạn chế mà chính tác giả thừa nhận}
 
 Toàn bộ giá trị của phương pháp \textbf{phụ thuộc hoàn toàn vào chất lượng của bộ
 trích đặc trưng có sẵn}. Nó không học biểu diễn, nó chỉ khai thác biểu diễn. Vì
@@ -452,6 +568,20 @@ vậy nó khó có thể mạnh tương đương trong các thiết lập phải
 
 Ngoài ra nó dùng nhiều tham số hơn các phương pháp prompting, dù tác giả cho rằng
 đánh đổi này xứng đáng với sự đơn giản khi cài đặt.
+
+\subsection{Hướng mở rộng tác giả đề xuất}
+
+\begin{itemize}[leftmargin=*]
+\item Học liên tục \textbf{không có ranh giới tác vụ}, tức là dữ liệu trôi dần
+      chứ không chia thành đợt rõ ràng.
+\item Dùng mục tiêu \textbf{không phải one-hot}, ví dụ nhúng ngôn ngữ của CLIP.
+      Thí nghiệm sơ bộ cho $77.5\,\%$ với $M = 5000$, so với $68.6\,\%$ của CLIP
+      zero-shot và $71.4\,\%$ khi không dùng chiếu.
+\item Mở rộng sang \textbf{bài toán hồi quy}, khi đó khái niệm class-prototype
+      phải tổng quát hóa thành feature-prototype.
+\item Kết hợp với các phương pháp prompting, và thử huấn luyện PETL vượt quá
+      phiên đầu tiên.
+\end{itemize}
 
 % =====================================================================
 \section{Tóm tắt và liên hệ với đề tài của chúng ta}
@@ -470,7 +600,7 @@ và nghiệm ridge. Chúng ta \textbf{không} cài Phase 1, mà thay bằng bộ
 0 mà HRM-PET vốn đã huấn luyện sẵn -- nhờ vậy không phải huấn luyện thêm một tham
 số nào.
 
-Hai điểm khác biệt cần nhớ khi đối chiếu số liệu:
+Ba điểm cần nhớ khi đối chiếu số liệu:
 
 \begin{itemize}[leftmargin=*]
 \item RanPAC \textbf{không có bước định tuyến}. Nó là phương pháp một đầu phân
@@ -481,6 +611,10 @@ Hai điểm khác biệt cần nhớ khi đối chiếu số liệu:
       quả của chúng ta, nên hai bên so sánh được về mặt chỉ số. Tuy nhiên seed và
       cách chia lớp khác nhau, và chúng ta chưa từng tự chạy RanPAC, nên chưa thể
       coi là so sánh trực tiếp.
+\item Bảng 1 và Bảng 2 của bài báo cho \textbf{số hơi khác nhau} cho cùng một
+      phương pháp (ImageNet-R là 77.9 và 78.1; ImageNet-A là 62.4 và 61.8), nhiều
+      khả năng vì Bảng 2 chọn backbone tốt nhất cho từng bộ dữ liệu. Khi trích số
+      vào báo cáo cần ghi rõ lấy từ bảng nào.
 \end{itemize}
 
 \begin{thebibliography}{9}
