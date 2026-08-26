@@ -133,9 +133,6 @@ chất lượng định tuyến. Mục \ref{sec:analysis} trình bày số liệ
       với mức độ chắc chắn của đầu phân lớp chính. Cơ chế cổng loại bỏ hoàn toàn
       suy giảm hàm mất mát mà phiên bản dùng trọng số cố định gây ra
       (Mục \ref{sec:stage2}).
-\item \textbf{Một trục kiểm chứng chính xác.} Tham số $w$ của tầng thứ nhất nội
-      suy liên tục về HRM-PET gốc; tại $w = 1.0$, phương pháp tái lập baseline
-      đến từng chữ số (Mục \ref{sec:sanity}).
 \end{enumerate}
 
 Cả hai thành phần đều đặt ở giai đoạn suy luận nên không yêu cầu huấn luyện lại
@@ -421,9 +418,15 @@ do để chúng cùng thất bại trên một tập mẫu.
 Cả hai nguồn đều xuất ra điểm số theo \emph{lớp}. Để dùng cho định tuyến, điểm số
 của một tác vụ được lấy bằng giá trị lớn nhất trong các lớp thuộc tác vụ đó:
 \begin{equation}
+\ell^{\mathrm{task}}_t = \max_{c \,\in\, \mathcal{C}_t} \ell_c ,
+\qquad
 s^{\mathrm{task}}_t = \max_{c \,\in\, \mathcal{C}_t} s_c ,
+\label{eq:taskscore}
 \end{equation}
-với $\mathcal{C}_t$ là tập lớp của tác vụ $t$. Phép lấy cực đại phù hợp với câu
+với $\mathcal{C}_t$ là tập lớp của tác vụ $t$, $\ell$ là logit theo lớp của TII
+và $s$ là điểm số theo lớp của đầu RP. Cùng một phép rút gọn được áp dụng cho cả
+hai nguồn; hai vector thu được chính là $\ell^{\mathrm{TII}}$ và
+$s^{\mathrm{RP}}$ xuất hiện trong \eqref{eq:route}. Phép lấy cực đại phù hợp với câu
 hỏi cần trả lời --- \emph{tác vụ này có chứa lớp đúng hay không} --- trong khi
 phép lấy tổng hoặc trung bình sẽ ưu tiên những tác vụ có nhiều lớp cùng đạt mức
 tương đồng trung bình hơn là một lớp đạt mức tương đồng cao.
