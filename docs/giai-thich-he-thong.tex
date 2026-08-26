@@ -480,22 +480,65 @@ $\vdots$         & $\vdots$                      & \textbf{vẫn LoRA-0} \\
 \end{tabular}
 \end{table}
 
-\paragraph{Vì sao chọn LoRA-0 chứ không phải mạng trần.}
-Đã đo cả hai. Trên ImageNet-R, đầu RP trên đặc trưng đóng băng thuần chỉ đạt
-$55.79$, còn trên LoRA-0 đạt $70.08$ (phân lớp) và $77.12$ (định tuyến). Lý do:
-ImageNet-R là ảnh phong cách hóa, xa phân bố ImageNet-21K, nên đặc trưng đóng
-băng không đủ tốt. Chỉ cần \emph{một} lần thích nghi vào miền dữ liệu là đủ, và
-LoRA-0 làm đúng việc đó. Đây chính là \textbf{thích nghi phiên đầu} của RanPAC,
-khác ở chỗ ta không phải huấn luyện thêm gì -- HRM-PET vốn đã sinh ra LoRA-0
-trong quy trình bình thường của nó.
+\paragraph{Vì sao chọn LoRA-0 chứ không phải bộ trích khác.}
+Ứng viên còn lại là bộ trích của mô hình TII. Trên ImageNet-R, đầu RP đặt trên
+đặc trưng của mô hình TII ghim ở tác vụ 1 chỉ đạt $56.36$, còn trên LoRA-0 đạt
+$70.08$ (phân lớp) và $77.12$ (định tuyến). Lý do được cho là: ImageNet-R là ảnh
+phong cách hóa, xa phân bố ImageNet-21K, nên bộ trích nào thích nghi kém hơn với
+miền dữ liệu sẽ hụt rõ. LoRA-0 đóng vai trò \textbf{thích nghi phiên đầu} của
+RanPAC, khác ở chỗ ta không phải huấn luyện thêm gì --- HRM-PET vốn đã sinh ra
+LoRA-0 trong quy trình bình thường của nó.
 
 \begin{luuy}
-\textbf{Một cảnh báo về con số 55.79.} Nó thấp hơn nhiều so với ablation ``No
-Phase 1'' của RanPAC ($71.8$ trên cùng ImageNet-R). Chênh lệch 16 điểm này
-\textbf{chưa được giải thích} -- có thể do khác biệt tiền xử lý ảnh, có thể là
-lỗi. \emph{Chiều} của kết luận (LoRA-0 tốt hơn mạng trần) thì cả hai bên đồng ý,
-nhưng \emph{độ lớn} thì đừng trích dẫn con số này khi chưa truy xong.
+\textbf{Cảnh báo quan trọng: điều kiện ``không thích nghi'' chưa từng được đo.}
+
+Cờ \texttt{-{}-rp\_feature\_source original} nghe như ``mạng tiền huấn luyện
+nguyên vẹn'', nhưng \emph{không phải}. Đối tượng \texttt{original\_model} bị nạp
+đè \textbf{toàn bộ trọng số} từ checkpoint TII
+(\texttt{trainers/lora\_trainer.py} dòng 171), tức nó là một ViT \emph{đã huấn
+luyện trên chuỗi tác vụ} rồi bị ghim ở tác vụ 1.
+
+Hệ quả thứ nhất: con số $56.36$ \textbf{không so được} với mốc ``No Phase 1''
+$71.8$ của RanPAC, vì mốc đó dùng ViT-B/16 ImageNet-21K chưa động vào. Hai điều
+kiện khác nhau, nên chênh lệch 15 điểm không nói lên điều gì về phương pháp.
+
+Hệ quả thứ hai, nghiêm trọng hơn: phép so ở đoạn trên là \emph{giữa hai bộ trích
+đều đã thích nghi}, chứ không phải ``có thích nghi so với không thích nghi''.
+Nên nó \textbf{chưa chứng minh được} rằng LoRA-0 là cần thiết --- nó mới chỉ cho
+thấy LoRA-0 hợp với đầu RP hơn bộ trích của mô hình TII.
+
+Cờ \texttt{-{}-rp\_bare\_extractor} được thêm vào để đo cho đúng điều kiện còn
+thiếu. Chừng nào chưa có số, \textbf{đừng khẳng định LoRA-0 hơn mạng trần}.
 \end{luuy}
+
+\begin{table}[htbp]
+\centering
+\caption{Đầu RP trên đặc trưng của mô hình TII ghim ở tác vụ 1, seed 42. Cột
+cuối để tham khảo chứ \emph{không phải} phép so cùng điều kiện --- RanPAC dùng
+mạng tiền huấn luyện nguyên vẹn, ta thì không.}
+\label{tab:chan-doan-dong-bang}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Bộ dữ liệu & Cờ tiền xử lý & Acc@1 & RanPAC ``No Phase 1'' \\
+\midrule
+CUB-200    & \texttt{half}       & 87.96 & $\sim$90 \\
+CIFAR-100  & \texttt{cifar\_half} & 85.40 & 89.0 \\
+ImageNet-R & \texttt{half}       & 56.36 & 71.8 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Hai hàng đầu lệch $2$ đến $4$ điểm --- mức hợp lý, giải thích được bằng việc
+$\lambda$ của ta cố định $10^4$ chứ không chọn theo từng phiên như RanPAC, cộng
+khác biệt nhỏ về resize và crop. Riêng ImageNet-R lệch thêm khoảng 12 điểm nữa.
+Bộ dữ liệu đã được kiểm và \emph{đủ}: 200 lớp, 24\,000 ảnh huấn luyện và
+6\,000 ảnh kiểm tra, khớp chính xác với RanPAC.
+
+Vì $G$ và $C$ là tổng cộng dồn nên nghiệm sau tác vụ cuối bằng đúng nghiệm huấn
+luyện chung trên toàn bộ dữ liệu. Suy ra khoảng cách đó \textbf{không thể là hiện
+tượng của học liên tục}; nó nằm ở đặc trưng hoặc ở dữ liệu. Giả thuyết hiện tại,
+chưa kiểm chứng: fine-tune một ViT trên vỏn vẹn 20 lớp của tác vụ 1 làm méo đặc
+trưng tổng quát, và méo mạnh nhất ở bộ dữ liệu xa phân bố tiền huấn luyện nhất.
 
 \paragraph{Hỏng thế nào nếu mỗi tác vụ dùng LoRA riêng.}
 Giả sử lúc cộng dồn, tác vụ 3 dùng LoRA-3. Vậy cột của $C$ ứng với lớp $c$ của
@@ -1819,10 +1862,15 @@ phải vấn đề dung lượng mô hình}, nên tăng tham số không giúp g
 \subsection{Đầu RP dùng một mình, bỏ hẳn định tuyến}
 
 Thắng trên CUB-200 (87.96 so với 86.53) nhưng thua nặng trên ImageNet-R (70.08 so
-với 74.02). Lý do rất rõ: CUB-200 là ảnh chim, mà ImageNet-21K vốn giàu lớp chim,
-nên đặc trưng đóng băng đã đủ tốt. ImageNet-R là ảnh phong cách hóa, xa phân bố
-tiền huấn luyện, nên \textbf{bắt buộc phải có thích nghi theo tác vụ}, và đó
-chính là thứ các LoRA của HRM-PET cung cấp.
+với 74.02). Hai con số này còn đến từ hai bộ trích khác nhau: CUB-200 đạt 87.96
+với bộ trích của mô hình TII, còn ImageNet-R đạt 70.08 với LoRA-0.
+
+Lý do được cho là: CUB-200 là ảnh chim, mà ImageNet-21K vốn giàu lớp chim, nên
+một bộ trích cố định đã đủ tốt. ImageNet-R là ảnh phong cách hóa, xa phân bố tiền
+huấn luyện, nên \textbf{cần thích nghi mạnh hơn theo miền dữ liệu}, và đó là thứ
+các LoRA của HRM-PET cung cấp. Xem cảnh báo ở Mục \ref{sec:lora0}: cả hai bộ
+trích đều \emph{đã} thích nghi, nên đây không phải bằng chứng cho ``có thích nghi
+hơn không thích nghi''.
 
 Bài học: hai bên bổ trợ nhau, không thay thế nhau.
 
@@ -1896,6 +1944,11 @@ số của bảng tổng kết. Việc ghi trước là thứ đã bắt đượ
 \item Cấu hình đã chốt, đủ bốn seed trên cả ba bộ dữ liệu, \textbf{17 trong 18
       phép so sánh cải thiện}.
 \item Báo cáo kỹ thuật ở \texttt{reports/bao\_cao\_fusion.tex}.
+\item \textbf{Ưu tiên cao nhất:} chạy \texttt{-{}-rp\_bare\_extractor}
+      để đo điều kiện \emph{không thích nghi} trên ImageNet-R và
+      CIFAR-100. Đây là tiền đề còn thiếu của lập luận biện minh cho
+      LoRA-0 (Mục \ref{sec:lora0}). Chỉ tốn hai lượt đánh giá, không
+      phải huấn luyện lại.
 \item Chưa khảo sát lại trọng số định tuyến $w$ sau khi có thành phần
       thứ ba. Quét $w \in \{0.6,\, 0.65,\, 0.75,\, 0.8\}$ với cấu hình
       đầy đủ, chỉ tốn vài lượt đánh giá (Mục \ref{sec:tang1-w}).
