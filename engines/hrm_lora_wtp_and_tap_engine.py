@@ -688,19 +688,38 @@ def _rp_inputs(inputs, args):
 
 
 def pin_rp_extractor(original_model, args):
-    """Snapshot the task-1 TII model as a fixed feature extractor.
+    """Snapshot a fixed feature extractor for the RP head.
 
-    The TII model always applies its prompts, and evaluation reloads its
-    checkpoint for every task, so accumulating the Gram matrix straight from
-    `original_model` mixes ten different extractors. Pinning the first-task
-    snapshot makes the feature space constant, which is also exactly the
-    first-session adaptation the RP head expects.
+    Default: the task-1 TII model. Evaluation reloads the TII checkpoint for
+    every task, so accumulating the Gram matrix straight from `original_model`
+    would mix ten different extractors; pinning the first-task snapshot keeps
+    the feature space constant.
+
+    With --rp_bare_extractor the snapshot is a freshly created *pretrained*
+    backbone that has never seen the task sequence. This is the only way to
+    measure RanPAC's "no first-session adaptation" condition here, because
+    `original_model` is NOT the raw pretrained ViT: its weights are overwritten
+    wholesale from the TII checkpoint (trainers/lora_trainer.py:171). So a run
+    with rp_feature_source=original still reads features off an *adapted*
+    backbone, which is why our 56.36 on ImageNet-R was never comparable to
+    RanPAC's 71.8 for that ablation.
     """
     if not bool(getattr(args, 'rp_pin_extractor', False)):
         return None
     if _rp_frozen_extractor['model'] is None:
-        import copy
-        snapshot = copy.deepcopy(original_model)
+        if bool(getattr(args, 'rp_bare_extractor', False)):
+            from timm.models import create_model
+            snapshot = create_model(
+                args.original_model,
+                pretrained=True,
+                num_classes=args.nb_classes,
+                mlp_structure=args.original_model_mlp_structure,
+            )
+            snapshot.to(next(original_model.parameters()).device)
+            print('RP head: BARE pretrained extractor -- the TII checkpoint is '
+                  'deliberately NOT loaded into this snapshot.')
+        else:
+            snapshot = copy.deepcopy(original_model)
         snapshot.eval()
         for parameter in snapshot.parameters():
             parameter.requires_grad = False
