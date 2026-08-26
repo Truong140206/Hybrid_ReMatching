@@ -532,7 +532,7 @@ ImageNet-R & \texttt{half}        & 56.36 & \textbf{71.8} \\
 theo từng phiên như RanPAC, cộng khác biệt nhỏ về resize và crop. Riêng
 ImageNet-R lệch thêm khoảng 12 điểm nữa, gấp bốn lần mức nền.
 
-Những gì đã loại trừ được:
+Những gì đã loại trừ được, mỗi cái bằng một phép thử:
 \begin{itemize}
 \item \emph{Dữ liệu thiếu} --- đã đếm, đủ 200 lớp, 24\,000 ảnh huấn luyện và
       6\,000 ảnh kiểm tra, khớp chính xác với RanPAC.
@@ -543,15 +543,24 @@ Những gì đã loại trừ được:
       liệu. Khoảng cách này không thể sinh ra từ trình tự học.
 \item \emph{Sai khoảng giá trị đầu vào} --- CUB-200 dùng chung đường tiền xử lý
       \texttt{half} với ImageNet-R mà chỉ lệch 2 điểm.
+\item \emph{Hệ số điều chuẩn} $\lambda$ --- đã quét
+      $\{10^2, 10^3, 10^4, 10^5, 10^6\}$, được cực đại nội tại $10^5$ với
+      $58.10$ (so với $56.36$ ở $10^4$). Mua thêm $+1.74$, vẫn thiếu $13.7$.
+\item \emph{Tăng cường dữ liệu làm nhiễu thống kê} --- không phải:
+      \texttt{dataloader\_per\_cls} xây từ \texttt{dataset\_train\_mean}, mà
+      đối tượng này dùng \texttt{transform\_val} (\texttt{datasets.py} dòng 65),
+      tức biến đổi tất định, không cắt ngẫu nhiên.
 \end{itemize}
 
-Ứng viên còn lại đáng thử nhất là \textbf{hệ số điều chuẩn} $\lambda$: RanPAC
-chọn chéo nó theo từng phiên, còn ta cố định $10^4$ --- giá trị từng quét trên
-CUB-200 chứ chưa bao giờ quét trên ImageNet-R.
+Sáu giả thuyết, sáu lần loại bằng phép thử trực tiếp chứ không phải suy đoán.
+Ứng viên còn lại là \textbf{nguồn gốc checkpoint mạng xương sống}: ta nạp
+\texttt{imagenet21k/ViT-B\_16.npz}, còn mã của RanPAC lấy trọng số qua timm.
+Nếu hai bộ trọng số khác nhau thì chênh lệch là chuyện của checkpoint chứ không
+phải của phương pháp. Chưa kiểm.
 
-Chừng nào chưa truy xong, \textbf{đừng dùng con số $56.36$ như một phát biểu về
-chất lượng phương pháp}. Chiều của kết luận (LoRA-0 hơn mạng trần trên ImageNet-R)
-thì vững, vì cả hai đo trên cùng đường dẫn của ta.
+Chừng nào chưa truy xong, \textbf{đừng dùng con số $56.36$ hay $58.10$ như một
+phát biểu về chất lượng phương pháp}. Chiều của kết luận (LoRA-0 hơn mạng trần
+trên ImageNet-R) thì vững, vì cả hai đo trên cùng đường dẫn của ta.
 \end{luuy}
 
 \paragraph{Hỏng thế nào nếu mỗi tác vụ dùng LoRA riêng.}
@@ -1958,8 +1967,9 @@ số của bảng tổng kết. Việc ghi trước là thứ đã bắt đượ
 \item Báo cáo kỹ thuật ở \texttt{reports/bao\_cao\_fusion.tex}.
 \item Bất thường ImageNet-R vẫn để ngỏ: đầu RP trên mạng trần đạt 56.36
       so với 71.8 của RanPAC. Đã loại được bốn giả thuyết (Mục
-      \ref{sec:lora0}); ứng viên còn lại là hệ số $\lambda$, chưa bao giờ
-      quét trên ImageNet-R. Chỉ tốn vài lượt đánh giá.
+      \ref{sec:lora0}); đã loại sáu giả thuyết (Mục
+      \ref{sec:lora0}). Ứng viên còn lại: nguồn gốc checkpoint mạng xương
+      sống. Không ảnh hưởng kết quả chính.
 \item Chưa khảo sát lại trọng số định tuyến $w$ sau khi có thành phần
       thứ ba. Quét $w \in \{0.6,\, 0.65,\, 0.75,\, 0.8\}$ với cấu hình
       đầy đủ, chỉ tốn vài lượt đánh giá (Mục \ref{sec:tang1-w}).
