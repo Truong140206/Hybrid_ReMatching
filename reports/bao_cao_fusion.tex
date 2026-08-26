@@ -20,7 +20,7 @@
 \usepackage{microtype}
 \usepackage{enumitem}
 \usepackage{tikz}
-\usetikzlibrary{arrows.meta}
+\usetikzlibrary{arrows.meta, positioning}
 \usepackage[hidelinks]{hyperref}
 
 \renewcommand{\tablename}{Bảng}
@@ -78,6 +78,39 @@ HRM-PET xử lý mỗi mẫu đầu vào qua bốn bước:
 
 Toàn bộ chất lượng của chuỗi xử lý này phụ thuộc vào một tín hiệu định tuyến duy
 nhất, sinh ra ở bước 1.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  font=\small, >={Stealth[length=2mm]},
+  box/.style={draw, minimum height=9mm, text width=3.6cm, align=center},
+  lbl/.style={font=\footnotesize, align=left}
+]
+\node[box] (tii) at (0,0)    {TII: suy luận danh tính tác vụ};
+\node[box] (lo)  at (0,-1.7) {Chọn bộ tham số LoRA};
+\node[box] (drm) at (0,-3.4) {DRM và CRM};
+\node[box] (cl)  at (0,-5.1) {Đầu phân lớp dùng chung};
+\node[box] (out) at (0,-6.8) {Dự đoán};
+
+\draw[->] (tii) -- (lo);
+\draw[->] (lo)  -- (drm);
+\draw[->] (drm) -- (cl);
+\draw[->] (cl)  -- (out);
+
+\node[lbl, right=7mm of tii] {dựa trên năng lượng prompt};
+\node[lbl, right=7mm of lo]  {nạp bộ điều hợp đã đóng băng};
+\node[lbl, right=7mm of drm] {định tuyến lại theo lớp được dự đoán,\\chỉ khi độ tin cậy thấp};
+\node[lbl, right=7mm of cl]  {trải trên toàn bộ các lớp đã quan sát};
+
+\node[left=8mm of tii] (in) {Ảnh vào};
+\draw[->] (in) -- (tii);
+\end{tikzpicture}
+\caption{Quy trình gốc của HRM-PET. Toàn bộ chuỗi xử lý phụ thuộc vào một tín
+hiệu định tuyến duy nhất, sinh ra tại khối đầu tiên. Khối cuối cùng là đầu phân
+lớp dùng chung; đặc điểm này là nguyên nhân của hạn chế thứ hai được phân tích ở
+Mục \ref{sec:analysis}.}
+\label{fig:hrmpet}
+\end{figure}
 
 \subsection{Hai hạn chế}
 
@@ -158,6 +191,43 @@ tinh chỉnh bằng DRM và CRM.
 
 \begin{table}[htbp]
 \centering
+\caption{Đối chiếu hai bộ định tuyến. Hai nguồn khai thác hai loại bằng chứng
+khác nhau về cùng một câu hỏi, đây là cơ sở để kỳ vọng chúng cho kết quả sai trên
+những tập mẫu khác nhau.}
+\label{tab:tii-vs-rp}
+\begin{tabular}{@{}p{3.3cm}p{4.9cm}p{5.2cm}@{}}
+\toprule
+ & TII & Đầu RP \\
+\midrule
+Bằng chứng sử dụng
+  & prompt của từng tác vụ
+  & đặc trưng ảnh $768$ chiều \\
+Đại lượng đo
+  & độ bất định của mô hình khi gắn từng bộ prompt
+  & mức tương đồng giữa đặc trưng và nguyên mẫu lớp \\
+Cách xác định tham số
+  & lan truyền ngược qua nhiều epoch
+  & lời giải dạng đóng, một bước \\
+Tham số được huấn luyện
+  & có
+  & không \\
+Chịu ảnh hưởng của quên
+  & có
+  & không, do tính bất biến thứ tự \\
+Acc@task, ImageNet-R
+  & $63.80$
+  & $77.12$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Điểm khác biệt cốt lõi nằm ở hàng thứ hai: TII đánh giá mức độ tự tin của mô hình
+khi gắn từng bộ prompt, còn đầu RP đánh giá mức tương đồng giữa đặc trưng của mẫu
+và nguyên mẫu của từng lớp. Hai tiêu chí khác nhau về bản chất, nên không có lý
+do để chúng cùng thất bại trên một tập mẫu.
+
+\begin{table}[htbp]
+\centering
 \caption{Độ chính xác định tuyến (\%), seed 42. Hàng cuối biểu thị tỉ lệ mẫu mà
 ít nhất một trong hai bộ định tuyến cho kết quả đúng, tức là giới hạn trên có
 thể đạt được khi kết hợp hai nguồn.}
@@ -219,6 +289,21 @@ vẫn phân lớp đúng $4.58\,\%$ số mẫu mà đầu phân lớp chính kh�
 
 \subsection{Nguồn tín hiệu thứ hai}
 
+\subsubsection{Ý tưởng}
+
+Ý tưởng nền tảng là mở rộng không gian biểu diễn trước khi phân lớp tuyến tính.
+Trong không gian đặc trưng $768$ chiều, các lớp chồng lấn nhau tới mức một siêu
+phẳng không tách được chúng. Sau khi chiếu lên không gian $10^4$ chiều và áp một
+hàm phi tuyến, các lớp có thêm không gian để tách rời, và một bộ phân lớp tuyến
+tính trong không gian mới trở nên đủ mạnh.
+
+Ma trận chiếu hoàn toàn ngẫu nhiên và không được huấn luyện. Đây không phải một
+sự đánh đổi mà là điều kiện cần: bất kỳ tham số nào được cập nhật bằng gradient
+qua chuỗi tác vụ đều có thể bị ghi đè bởi tác vụ sau, trong khi một ma trận đóng
+băng sinh từ seed cố định không bao giờ thay đổi và cũng không cần lưu trữ. Việc
+loại bỏ hoàn toàn tham số huấn luyện là tiền đề cho tính chất bất biến thứ tự
+trình bày ở Mục \ref{sec:order}.
+
 Nguồn tín hiệu thứ hai gồm một phép chiếu ngẫu nhiên đóng băng, sinh lại được từ
 một seed cố định, theo sau là hàm phi tuyến ReLU và một lời giải hồi quy ridge
 trên ma trận Gram tích lũy. Không có tham số nào được huấn luyện. Đặc trưng $f$
@@ -235,6 +320,37 @@ s &= h^{\top} (G + \lambda I)^{-1} C .
 Hệ thống chỉ lưu hai đại lượng tổng hợp $G$ và $C$; ma trận chiếu $W$ được sinh
 lại từ seed. Không có đặc trưng của từng mẫu hay ảnh của các tác vụ trước được
 lưu trữ, nên giao thức không lưu mẫu vẫn được bảo toàn.
+
+\begin{table}[htbp]
+\centering
+\caption{Ký hiệu trong ba phương trình ở trên. Kích thước ghi theo cấu hình dùng
+trong báo cáo: $L = 768$ là số chiều đặc trưng, $M = 10^4$ là số chiều sau khi
+chiếu, $K$ là số lớp đã quan sát, $n$ là chỉ số chạy trên các mẫu huấn luyện.}
+\label{tab:notation}
+\begin{tabular}{@{}llp{7.4cm}@{}}
+\toprule
+Ký hiệu & Kích thước & Ý nghĩa \\
+\midrule
+$f$        & $L$          & đặc trưng ảnh, trích từ một bộ tham số LoRA cố định \\
+$W$        & $L \times M$ & ma trận chiếu ngẫu nhiên, đóng băng, sinh lại được từ seed \\
+$h$        & $M$          & biểu diễn sau khi chiếu và áp ReLU \\
+$y_n$      & ---          & nhãn của mẫu thứ $n$ \\
+$G$        & $M \times M$ & ma trận Gram, cộng dồn qua mọi mẫu đã quan sát \\
+$C$        & $M \times K$ & ma trận tương quan giữa chiều biểu diễn và lớp \\
+$\lambda$  & vô hướng     & hệ số điều chuẩn của hồi quy ridge \\
+$I$        & $M \times M$ & ma trận đơn vị \\
+$s$        & $K$          & điểm số cho từng lớp, đầu ra của nguồn tín hiệu thứ hai \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Ba phương trình tương ứng với ba bước. Phương trình thứ nhất chiếu đặc trưng lên
+không gian $M$ chiều rồi áp hàm phi tuyến. Phương trình thứ hai cộng dồn hai đại
+lượng thống kê bậc hai: $G$ ghi lại mức đồng xuất hiện giữa các chiều biểu diễn,
+$C$ ghi lại liên hệ giữa chiều biểu diễn và lớp. Cả hai được cập nhật ngay khi
+mỗi tác vụ được học và không bao giờ cần đọc lại dữ liệu cũ. Phương trình thứ ba
+giải hồi quy ridge, cho ma trận trọng số $W_o = (G + \lambda I)^{-1} C$ và điểm
+số $s = h^{\top} W_o$; bước này chỉ thực hiện một lần vào cuối mỗi tác vụ.
 
 \subsubsection{Vai trò bắt buộc của hàm phi tuyến}
 
@@ -260,6 +376,7 @@ lẫn hiệp phương sai chung, cho độ chính xác định tuyến $84.3$ so
 baseline trên CUB-200.
 
 \subsubsection{Tính bất biến thứ tự và hệ quả về quên thảm khốc}
+\label{sec:order}
 
 Cả $G$ và $C$ đều là tổng cộng dồn qua các mẫu, và phép cộng có tính giao hoán.
 Do đó
@@ -417,28 +534,12 @@ mẫu đã được dự đoán chắc chắn, nguồn thứ hai chỉ giữ kho
 định; trên các mẫu chưa phân định, tỉ lệ này lên tới $46\,\%$. Cơ chế cổng không
 đưa thêm siêu tham số nào và áp dụng một quy tắc duy nhất cho cả ba bộ dữ liệu.
 
-\subsubsection{Vì sao phép affine sử dụng mô-men của $\ell$}
-
 Phép biến đổi \eqref{eq:affine} là biến đổi affine theo từng mẫu với hệ số nhân
-dương, do đó đơn điệu tăng: thứ tự xếp hạng giữa các lớp được bảo toàn và mọi chỉ
-số độ chính xác không thay đổi. Vai trò duy nhất của nó là đưa thang đo của logit
-về mức so sánh được với baseline khi tính cross-entropy.
-
-Việc chọn mô-men của $\ell$ làm mốc không tùy tiện. Thay $\beta_i = 0$ vào
-\eqref{eq:affine} ta được
-\begin{equation}
-\hat{\ell} = z(\ell) \cdot \mathrm{std}(\ell) + \mathrm{mean}(\ell) = \ell ,
-\end{equation}
-tức phương pháp trả về đúng logit gốc. Chỉ với mốc này thì $\beta$ mới là một
-tham số liên tục nội suy về baseline, tương tự vai trò của $w$ ở tầng thứ nhất
-(Mục \ref{sec:sanity}). Ngoài ra, giữa hai nguồn chỉ có $\ell$ mang thang đo có ý
-nghĩa xác suất, vì nó là đầu ra của một bộ phân lớp huấn luyện bằng cross-entropy,
-trong khi $s$ là giá trị hồi quy chưa chuẩn hóa.
-
-Một hệ quả của thiết kế này: phép chuẩn hóa $z(\cdot)$ bất biến với mọi biến đổi
-affine dương của đầu vào, nên $z(as + b) = z(s)$ với mọi $a > 0$. Mọi hệ số nhiệt
-độ vô hướng áp lên $s$ đều bị triệt tiêu, và đó là lý do chúng tôi không áp dụng
-hiệu chỉnh nhiệt độ cho nguồn thứ hai.
+dương, do đó đơn điệu tăng: thứ tự xếp hạng giữa các lớp được bảo toàn và mọi
+chỉ số độ chính xác không thay đổi. Vai trò duy nhất của nó là đưa thang đo của
+logit về mức so sánh được với baseline khi tính cross-entropy. Việc chọn mô-men
+của $\ell$ làm mốc còn bảo đảm rằng tại $\beta_i = 0$, phương pháp trả về đúng
+logit gốc.
 
 \section{Thiết lập thí nghiệm}
 
@@ -544,40 +645,6 @@ seed.
 tầng định tuyến: mức tăng độ chính xác định tuyến không chuyển hóa thành Acc@1
 mà dừng ở $-0.03$. Sau khi bổ sung tầng phân lớp, đây trở thành bộ dữ liệu có
 Acc@1 tăng mạnh nhất, đúng như phân tích ở Mục \ref{sec:analysis}.
-
-\subsection{Phân tách đóng góp của hai tầng}
-\label{sec:two-channels}
-
-Nguồn tín hiệu thứ hai tác động lên kết quả cuối cùng qua hai đường khác nhau.
-Tầng thứ nhất tác động \emph{gián tiếp}: nó thay đổi bộ tham số LoRA được nạp,
-do đó thay đổi đặc trưng đưa vào đầu phân lớp. Tầng thứ hai tác động
-\emph{trực tiếp}: điểm số $s$ được trộn thẳng vào logit. Bảng \ref{tab:channels}
-tách riêng hai đóng góp này.
-
-\begin{table}[htbp]
-\centering
-\caption{Đóng góp của từng tầng, đo bằng Acc@1 trên ImageNet-R, seed 42. Cấu hình
-ở hàng giữa tương ứng với $\beta = 0$, tại đó $\hat{\ell} = \ell$ và tầng thứ hai
-bị vô hiệu hóa hoàn toàn.}
-\label{tab:channels}
-\begin{tabular}{@{}lrl@{}}
-\toprule
-Cấu hình & Acc@1 & Đường tác động \\
-\midrule
-HRM-PET & 74.02 & --- \\
-Chỉ hợp nhất định tuyến & 74.31 & gián tiếp, $+0.29$ \\
-Bổ sung hợp nhất phân lớp & \textbf{75.42} & cả hai, $+1.40$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Đường gián tiếp chỉ đóng góp $+0.29$ điểm, trong khi đường trực tiếp bổ sung thêm
-$+1.11$ điểm. Đây là dạng định lượng của hạn chế thứ hai đã phân tích ở Mục
-\ref{sec:analysis}: do đầu phân lớp dùng chung trải trên toàn bộ các lớp đã quan
-sát, một phần lớn thông tin đưa vào qua đường định tuyến bị hấp thụ mà không
-chuyển hóa thành độ chính xác. Kết quả này là cơ sở thực nghiệm cho việc bổ sung
-tầng thứ hai thay vì chỉ tinh chỉnh tầng thứ nhất.
-
 
 \section{Kiểm chứng tính đúng đắn của cài đặt}
 \label{sec:sanity}
