@@ -434,7 +434,7 @@ momentum 0.9, 20 epoch, lịch cosine annealing.
 \node[box, right=12mm of petl] (tmp)  {Đầu phân lớp tạm\\ (vứt bỏ sau đó)};
 \draw[->] (d1)   -- (petl);
 \draw[->] (petl) -- (tmp);
-\node[ttl, yshift=3mm] at (d1.north west) {Phase 1 — thích nghi phiên đầu};
+\node[ttl, yshift=3mm] at (d1.north west) {Phase 1 --- thích nghi phiên đầu};
 
 % ---------- Phase 2 ----------
 \node[box, below=34mm of d1]  (dt)  {Dữ liệu\\mọi tác vụ};
@@ -446,7 +446,7 @@ momentum 0.9, 20 epoch, lịch cosine annealing.
 \draw[->] (bb)  -- (rp);
 \draw[->] (rp)  -- (acc);
 \draw[->] (acc) -- (sol);
-\node[ttl, yshift=3mm] at (dt.north west) {Phase 2 — học liên tục};
+\node[ttl, yshift=3mm] at (dt.north west) {Phase 2 --- học liên tục};
 
 % ---------- noi hai pha ----------
 \draw[->, dashed] (petl) -- (bb);

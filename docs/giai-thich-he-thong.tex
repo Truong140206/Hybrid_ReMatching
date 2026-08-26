@@ -237,17 +237,81 @@ Sau khi cải thiện định tuyến, chúng ta gặp một điều bất ngờ
 tăng hơn 2 điểm, nhưng độ chính xác phân lớp chỉ tăng 0.29 điểm.} Trên CUB-200
 còn tệ hơn: định tuyến tăng 1.13 điểm mà phân lớp \emph{giảm} 0.05 điểm.
 
-Nguyên nhân nằm ở chi tiết đã đánh dấu: \textbf{đầu phân lớp dùng chung}.
+\paragraph{Trước hết phải hỏi: 2 điểm đó nằm ở những ảnh nào?}
+Đây là câu hỏi mở khóa toàn bộ mục này. Ảnh vốn đã được định tuyến đúng thì không
+còn gì để cải thiện, nên chúng không đóng góp gì vào mức tăng. Suy ra toàn bộ
+phần tăng thêm đó \textbf{đúng bằng nhóm ảnh trước đây bị định tuyến nhầm, nay
+được định tuyến đúng} -- và đó là nhóm ảnh \emph{duy nhất} mà việc cải thiện định
+tuyến có thể chạm tới.
 
-Giả sử một ảnh thuộc tác vụ 3 nhưng bị định tuyến nhầm sang LoRA của tác vụ 7.
-LoRA số 7 vẫn là một bộ điều hợp nhỏ gắn trên cùng mạng xương sống, nên đặc trưng
-nó tạo ra không quá khác biệt. Đầu phân lớp lại nhìn thấy \emph{tất cả} 200 lớp,
-nên nó hoàn toàn có thể vẫn chọn đúng lớp thuộc tác vụ 3. Từ đó suy ra hai điều:
+Vậy muốn biết 2 điểm ấy có biến thành độ chính xác phân lớp hay không, ta bắt
+buộc phải soi vào nhóm đó và hỏi: \textbf{trước đây, khi còn bị định tuyến nhầm,
+những ảnh này bị phân lớp ra sao?} Đó là lý do ví dụ ngay dưới xuất phát từ một
+ảnh bị nhầm. Chữ ``giả sử'' ở đây \textbf{không} có nghĩa là phương pháp mới gây
+ra nhầm lẫn; nó đang mô tả \emph{trạng thái cũ} của chính những ảnh mà phương
+pháp mới sắp sửa lại.
+
+\paragraph{Câu trả lời nằm ở chi tiết đã đánh dấu: đầu phân lớp dùng chung.}
+Giả sử một ảnh thuộc tác vụ 3 nhưng theo cách cũ bị định tuyến nhầm sang LoRA của
+tác vụ 7. LoRA số 7 vẫn là một bộ điều hợp nhỏ gắn trên cùng mạng xương sống, nên
+đặc trưng nó tạo ra không quá khác biệt. Đầu phân lớp lại nhìn thấy \emph{tất cả}
+200 lớp chứ không bị giới hạn trong các lớp của tác vụ 7, nên nó hoàn toàn có thể
+vẫn chọn đúng lớp thuộc tác vụ 3.
+
+Nói cách khác, ảnh này \textbf{bị đếm là sai ở cột Acc@task nhưng lại đang đúng ở
+cột Acc@1}. Từ đó suy ra hai điều, và chúng bù trừ lẫn nhau:
 
 \begin{itemize}
-\item Sửa đường định tuyến cho ảnh đó \textbf{không mua được gì}, nó vốn đã đúng.
-\item Ngược lại, định tuyến lại một ảnh vốn đã đúng \textbf{có thể làm nó sai đi}.
+\item Sửa đường định tuyến cho ảnh đó \textbf{không mua được gì}: Acc@task tăng
+      thật, nhưng Acc@1 vốn đã đúng sẵn nên giữ nguyên. Tiền đã trả, hàng không có.
+\item Mức $+2$ điểm lại là con số \emph{ròng}. Việc hợp nhất đồng thời đẩy một số
+      ảnh vốn định tuyến đúng sang sai; những ảnh đó đang được phân lớp đúng và
+      \textbf{có nguy cơ bị làm cho sai đi}.
 \end{itemize}
+
+\paragraph{Ví dụ số cho thấy 2 điểm bốc hơi đi đâu.}
+Lấy năm ảnh, tất cả đều thuộc tác vụ 3, và so trạng thái trước với sau khi cải
+thiện định tuyến.
+
+\begin{table}[htbp]
+\centering
+\caption{Năm ảnh cùng thuộc tác vụ 3. In đậm là những ô có gì đó đáng chú ý.}
+\label{tab:vidu-phat-hien-2}
+\begin{tabular}{ccccc}
+\toprule
+Ảnh & LoRA cũ chọn & Lớp cũ đoán & LoRA mới chọn & Lớp mới đoán \\
+\midrule
+A & tác vụ 3 (đúng) & đúng            & tác vụ 3 (đúng) & đúng \\
+B & \textbf{tác vụ 7 (sai)} & \textbf{vẫn đúng} & tác vụ 3 (đúng) & đúng \\
+C & \textbf{tác vụ 7 (sai)} & sai     & tác vụ 3 (đúng) & \textbf{đúng} \\
+D & \textbf{tác vụ 7 (sai)} & \textbf{vẫn đúng} & tác vụ 3 (đúng) & đúng \\
+E & tác vụ 3 (đúng) & đúng            & \textbf{tác vụ 5 (sai)} & \textbf{sai} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Đếm hai chỉ số trên cùng bảng đó:
+
+\begin{itemize}
+\item \textbf{Acc@task} (nhìn cột LoRA). Cũ: chỉ A và E đúng, được $2/5 = 40\,\%$.
+      Mới: A, B, C, D đúng, được $4/5 = 80\,\%$. \textbf{Tăng 2 điểm tác vụ.}
+\item \textbf{Acc@1} (nhìn cột lớp). Cũ: chỉ C sai, được $4/5 = 80\,\%$.
+      Mới: chỉ E sai, được $4/5 = 80\,\%$. \textbf{Đứng yên.}
+\end{itemize}
+
+Ba nhóm ảnh giải thích toàn bộ hiện tượng:
+
+\begin{itemize}
+\item \textbf{B và D} -- định tuyến nhầm được sửa về đúng, nhưng lớp \emph{vốn đã
+      đúng sẵn} nhờ đầu phân lớp chung. Acc@task được $+2$, Acc@1 được $0$.
+      Đây là phần tiền đã trả mà không nhận thêm hàng.
+\item \textbf{C} -- thắng thật, sửa được cả định tuyến lẫn lớp. Acc@1 được $+1$.
+\item \textbf{E} -- mặt trái. Cải thiện định tuyến không miễn phí, nó đẩy một ảnh
+      vốn đúng sang nhầm LoRA, và lần này lớp sai theo. Acc@1 mất $-1$.
+\end{itemize}
+
+Cộng lại ở Acc@1: $+1$ (từ C) $-1$ (từ E) $= 0$. Đó chính là ``định tuyến tăng 2
+điểm nhưng phân lớp gần như đứng yên''.
 
 Đó là lý do phần lợi ích bị thất thoát. Muốn độ chính xác phân lớp tăng thật thì
 phải can thiệp vào chính bước phân lớp, không chỉ bước định tuyến.
@@ -283,55 +347,289 @@ Một bộ phân lớp yếu hơn vẫn có giá trị nếu nó sai ở chỗ k
 \section{Thành phần thứ nhất: đầu RP}
 \label{sec:dau-rp}
 
-\subsection{Ý tưởng}
+Đầu RP là phiên bản của kỹ thuật trong bài báo \textbf{RanPAC}. Mục này giải
+thích nó từ đầu, không cần đã đọc bài báo đó.
 
-Đầu RP là phiên bản của kỹ thuật trong bài báo \textbf{RanPAC}. Ý tưởng nghe hơi
-phản trực giác nhưng rất hiệu quả: chiếu đặc trưng lên một không gian ngẫu nhiên
-có số chiều rất lớn, rồi giải một bài toán hồi quy tuyến tính trong không gian
-đó.
+\subsection{Đầu RP khác TII ở chỗ nào}
 
-\begin{align}
-h &= \mathrm{ReLU}(f W), &&\text{$W$ đóng băng, sinh lại từ seed}\\
-G &= \sum_n h_n h_n^{\top}, \qquad
-C = \sum_n h_n\,\mathrm{onehot}(y_n)^{\top},
-&&\text{cộng dồn qua mọi ảnh đã thấy}\\
-s &= h^{\top} (G + \lambda I)^{-1} C
-&&\text{điểm số cho từng lớp}
-\end{align}
+Cả hai cùng trả lời câu hỏi ``ảnh này thuộc tác vụ nào?'', nhưng dùng hai loại
+bằng chứng hoàn toàn khác nhau.
 
-Cụ thể ba bước. \emph{Một}, nhân đặc trưng 768 chiều với ma trận ngẫu nhiên $W$
-để ra 10\,000 chiều rồi cho qua ReLU; $W$ được sinh một lần từ seed cố định và
-\textbf{không bao giờ được huấn luyện}. \emph{Hai}, với mỗi ảnh huấn luyện, cộng
-dồn vào ma trận Gram $G$ (ghi lại các chiều nào hay xuất hiện cùng nhau) và ma
-trận tương quan lớp $C$ (ghi lại chiều nào ứng với lớp nào). \emph{Ba}, trọng số
-phân lớp là nghiệm hồi quy ridge $(G+\lambda I)^{-1}C$.
+\begin{table}[htbp]
+\centering
+\caption{Đối chiếu hai bộ định tuyến.}
+\label{tab:tii-vs-rp}
+\begin{tabular}{@{}p{3.1cm}p{5.1cm}p{5.6cm}@{}}
+\toprule
+ & TII (bài báo gốc) & Đầu RP (phần thêm vào) \\
+\midrule
+Dựa vào cái gì   & prompt của từng tác vụ & đặc trưng ảnh 768 chiều \\
+Đo cái gì        & \textbf{độ bất định} -- prompt nào làm mô hình ít phân vân nhất
+                 & \textbf{độ khớp} -- đặc trưng này giống mẫu của lớp nào nhất \\
+Học bằng cách nào & lan truyền ngược, nhiều epoch
+                 & \textbf{không có gradient nào} -- giải hệ tuyến tính một lần \\
+Tham số học được & có (prompt) & \textbf{không có} \\
+Có thể quên không & có & \textbf{không, về mặt toán học} \\
+Acc@task, ImageNet-R & 63.80 & 77.12 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Điểm mấu chốt: TII hỏi \emph{``mô hình tự tin nhất khi đeo prompt nào?''}, còn
+đầu RP hỏi \emph{``đặc trưng này nằm gần vùng của lớp nào?''}. Hai câu hỏi khác
+nhau nên chúng \textbf{sai ở những ảnh khác nhau} -- và đó chính là điều kiện bắt
+buộc để việc gộp có ý nghĩa.
+
+\subsection{Trực giác: vì sao chiếu ngẫu nhiên lại giúp}
+
+Ý tưởng nghe rất phản trực giác: nhân đặc trưng với một ma trận \emph{toàn số
+ngẫu nhiên}, không huấn luyện gì cả, sao lại tốt hơn?
+
+Hình dung 200 lớp là 200 đám mây điểm trong không gian 768 chiều, chồng lấn lên
+nhau. Một mặt phẳng thẳng không tách nổi chúng. Nhưng nếu \textbf{bung lên
+10\,000 chiều rồi bẻ cong}, các đám mây có chỗ giãn ra, và một mặt phẳng thẳng
+trong không gian mới lại tách được.
+
+\begin{luuy}
+\textbf{Chỗ ``bẻ cong'' là bắt buộc, không phải trang trí.} Bỏ ReLU đi thì
+$h = fW$ chỉ là ánh xạ tuyến tính. Dù $h$ có 10\,000 chiều, nó vẫn nằm gọn trong
+một \emph{không gian con 768 chiều}, vì hạng của $W$ tối đa bằng 768. Hồi quy
+ridge trên $h$ khi đó \textbf{tương đương về mặt toán học} với hồi quy ridge trên
+$f$ gốc -- bơm lên 10\,000 chiều mà không được gì, chỉ tốn bộ nhớ. Chính phép cắt
+của ReLU mới thoát khỏi không gian con đó và tạo ra đặc trưng thật sự mới. Cờ
+\texttt{-{}-rp\_activation none} tồn tại trong mã chính là để chạy ablation
+chứng minh điều này.
+\end{luuy}
+
+\subsection{Năm bước, kèm kích thước tensor}
+\label{sec:rp-buoc}
+
+Lấy ImageNet-R làm ví dụ: 200 lớp, 10 tác vụ, mỗi tác vụ 20 lớp.
+
+\paragraph{Bước 1 -- Trích đặc trưng.}
+Ảnh đi qua ViT-B/16 đóng băng có gắn \textbf{LoRA của tác vụ 0}:
+\[ f \in \mathbb{R}^{B \times 768} . \]
+Vì sao luôn luôn là tác vụ 0 chứ không phải LoRA nào khác: xem Mục
+\ref{sec:lora0}, đó là ràng buộc quan trọng nhất của cả thành phần này.
+
+\paragraph{Bước 2 -- Chiếu ngẫu nhiên rồi phi tuyến.}
+\[ h = \mathrm{ReLU}(fW), \qquad W \in \mathbb{R}^{768 \times 10000},
+   \qquad h \in \mathbb{R}^{B \times 10000} . \]
+$W$ sinh bằng \texttt{torch.randn} từ seed 1993, \textbf{không bao giờ huấn
+luyện và không bao giờ lưu} -- cần thì sinh lại y hệt.
+
+\paragraph{Bước 3 -- Cộng dồn thống kê.}
+Một lượt duy nhất qua dữ liệu của tác vụ đang học, chạy dưới
+\texttt{@torch.no\_grad()}, không epoch, không learning rate, không optimizer:
+\[ G \mathrel{+}= h^{\top} h \in \mathbb{R}^{10000 \times 10000}, \qquad
+   C \mathrel{+}= h^{\top}\mathrm{onehot}(y) \in \mathbb{R}^{10000 \times 200} . \]
+$G$ ghi lại ``chiều nào hay xuất hiện cùng chiều nào'', $C$ ghi lại ``chiều nào
+ứng với lớp nào''. Cả hai tích lũy ở \textbf{float64}, vì cộng hàng chục nghìn
+số hạng ở float32 sẽ tích lũy sai số làm hỏng phép nghịch đảo về sau.
+
+\paragraph{Bước 4 -- Giải hồi quy ridge.}
+Một lần ở \emph{cuối mỗi tác vụ}, không phải mỗi batch:
+\[ W_o = (G + \lambda I)^{-1} C, \qquad \lambda = 10^4 . \]
+Mã dùng phân rã Cholesky, có nhánh dự phòng \texttt{lstsq} nếu ma trận vẫn suy
+biến.
+
+\paragraph{Bước 5 -- Suy luận.}
+\[ s = h\,W_o \in \mathbb{R}^{B \times 200} . \]
+Các lớp chưa từng gặp bị cộng bias $-\infty$, nên đầu RP không bao giờ đoán ra
+lớp nó chưa thấy.
+
+\subsection{Vì sao luôn dùng LoRA của tác vụ 0}
+\label{sec:lora0}
+
+Đây là ràng buộc dễ làm sai nhất. Có \textbf{hai} điều kiện, và chỉ đúng một lựa
+chọn thỏa mãn được cả hai.
+
+\paragraph{Ràng buộc 1 -- bộ trích phải cố định suốt cả chuỗi.}
+Nhìn lại bước 3: $G$ và $C$ là \emph{tổng cộng dồn qua mọi tác vụ}. Phép cộng chỉ
+có nghĩa khi các số hạng cùng đơn vị. Nếu tác vụ 0 đóng góp vector đo bằng
+``mét'' còn tác vụ 3 đóng góp vector đo bằng ``kg'', thì tổng của chúng là rác.
+
+\paragraph{Ràng buộc 2 -- bộ trích phải tồn tại ngay từ tác vụ đầu tiên.}
+Đây là ràng buộc \textbf{nhân quả} mà người ta hay quên. Lúc học tác vụ 0, ta
+phải cộng dồn dữ liệu của nó vào $G$ \emph{ngay lập tức}, vì sau đó không được
+xem lại (giao thức không lưu mẫu). Muốn cộng dồn thì phải trích đặc trưng. Mà
+lúc đó \textbf{LoRA 1 đến 9 chưa tồn tại}.
+
+\medskip\noindent
+Ghép hai ràng buộc lại: bộ trích phải cố định, \emph{và} phải có sẵn ở thời điểm
+sớm nhất. Chỉ còn đúng hai ứng viên -- mạng đóng băng không LoRA, hoặc LoRA tác
+vụ 0. Không có lựa chọn thứ ba.
+
+\begin{table}[htbp]
+\centering
+\caption{Dòng thời gian. Nhìn hàng thứ ba là thấy ngay ràng buộc nhân quả: thời
+điểm cộng dồn tác vụ 0 xảy ra \emph{trước} khi LoRA-1 tồn tại.}
+\label{tab:dong-thoi-gian}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Thời điểm & Việc xảy ra & Bộ trích dùng cho RP \\
+\midrule
+Học tác vụ 0     & HRM-PET huấn luyện LoRA-0     & \emph{chưa có gì} \\
+Xong tác vụ 0    & \textbf{ghim LoRA-0 vĩnh viễn} & --- \\
+Cộng dồn tác vụ 0 & $G \mathrel{+}=$, $C \mathrel{+}=$ & LoRA-0 \\
+Giải ridge       & $W_o$ cho 20 lớp              & --- \\
+Học tác vụ 1     & HRM-PET huấn luyện LoRA-1     & \emph{không liên quan tới RP} \\
+Cộng dồn tác vụ 1 & $G \mathrel{+}=$, $C \mathrel{+}=$ & \textbf{vẫn LoRA-0} \\
+$\vdots$         & $\vdots$                      & \textbf{vẫn LoRA-0} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Vì sao chọn LoRA-0 chứ không phải mạng trần.}
+Đã đo cả hai. Trên ImageNet-R, đầu RP trên đặc trưng đóng băng thuần chỉ đạt
+$55.79$, còn trên LoRA-0 đạt $70.08$ (phân lớp) và $77.12$ (định tuyến). Lý do:
+ImageNet-R là ảnh phong cách hóa, xa phân bố ImageNet-21K, nên đặc trưng đóng
+băng không đủ tốt. Chỉ cần \emph{một} lần thích nghi vào miền dữ liệu là đủ, và
+LoRA-0 làm đúng việc đó. Đây chính là \textbf{thích nghi phiên đầu} của RanPAC,
+khác ở chỗ ta không phải huấn luyện thêm gì -- HRM-PET vốn đã sinh ra LoRA-0
+trong quy trình bình thường của nó.
+
+\begin{luuy}
+\textbf{Một cảnh báo về con số 55.79.} Nó thấp hơn nhiều so với ablation ``No
+Phase 1'' của RanPAC ($71.8$ trên cùng ImageNet-R). Chênh lệch 16 điểm này
+\textbf{chưa được giải thích} -- có thể do khác biệt tiền xử lý ảnh, có thể là
+lỗi. \emph{Chiều} của kết luận (LoRA-0 tốt hơn mạng trần) thì cả hai bên đồng ý,
+nhưng \emph{độ lớn} thì đừng trích dẫn con số này khi chưa truy xong.
+\end{luuy}
+
+\paragraph{Hỏng thế nào nếu mỗi tác vụ dùng LoRA riêng.}
+Giả sử lúc cộng dồn, tác vụ 3 dùng LoRA-3. Vậy cột của $C$ ứng với lớp $c$ của
+tác vụ 3 là $\sum_{n: y_n = c} \mathrm{ReLU}(f^{(3)}_n W)$, trong đó $f^{(3)}$ là
+đặc trưng trích bằng LoRA-3. Nhưng lúc kiểm tra ta chỉ có \emph{một} đường trích.
+Điểm số tính ra là tích vô hướng giữa vector đo trong không gian LoRA-0 với
+nguyên mẫu đo trong không gian LoRA-3.
+
+ReLU còn làm chuyện này hỏng theo cách khó chịu hơn. Cùng một ảnh, $f^{(0)}$ và
+$f^{(3)}$ lệch nhau chút ít, nhưng sau ReLU thì \textbf{tập chiều được kích hoạt
+đã khác nhau} -- một số chiều đang dương bị cắt hẳn về 0. Đó không phải sai lệch
+nhỏ đều đặn mà là thay đổi rời rạc trong cấu trúc của vector.
+
+Hậu quả cuối cùng mới là thứ giết chết ứng dụng: mỗi tác vụ chịu \emph{một mức
+lệch khác nhau}, tùy LoRA của nó gần LoRA-0 đến đâu. Điều đó tạo ra \textbf{thiên
+lệch có hệ thống theo tác vụ}. Mà tầng 1 lại lấy max các điểm lớp để làm điểm
+định tuyến, nên bộ định tuyến sẽ thiên vị những tác vụ có LoRA tình cờ giống
+LoRA-0 -- chính xác là phá hỏng công dụng ta cần.
+
+Trong mã, hàm \texttt{pin\_rp\_extractor} ghi lại đúng cạm bẫy này: khi đánh giá,
+checkpoint của mô hình TII được nạp lại ở mỗi tác vụ, nên cộng dồn thẳng từ nó sẽ
+\emph{trộn lẫn mười bộ trích khác nhau}.
+
+\paragraph{Điều này không có nghĩa là bỏ phí LoRA 1--9.}
+Chúng vẫn được dùng đầy đủ, bởi chính đường của HRM-PET (định tuyến, nạp LoRA,
+DRM/CRM, đầu phân lớp). Đầu RP chỉ là một đường \emph{song song} không đụng tới
+chúng.
+
+Và đây là điểm thú vị nhất về mặt thiết kế: hai bên có \textbf{yêu cầu trái ngược
+nhau}. HRM-PET cần đặc trưng \emph{chuyên biệt hóa theo từng tác vụ}; đầu RP cần
+\emph{một không gian đặc trưng duy nhất dùng chung}. Chúng không thể hợp nhất
+thành một kiến trúc. Nhưng chính sự trái ngược đó là lý do chúng \textbf{bổ trợ}
+thay vì thừa: hai thiết kế đối nghịch tất yếu sai ở những ảnh khác nhau. Bảng hợp
+($82.99$ so với $77.79$) là bằng chứng thực nghiệm cho điều mà lập luận kiến trúc
+đã dự báo.
+
+\begin{luuy}
+\textbf{Hệ quả cần biết trước khi bảo vệ.} Vì LoRA-0 đóng vai trò thích nghi
+phiên đầu, chất lượng của đầu RP phụ thuộc vào việc \emph{tác vụ đầu tiên có đủ
+lớp hay không}. RanPAC đo trực tiếp điều này: chia càng nhiều tác vụ thì tác vụ
+đầu càng ít lớp và Phase 1 càng mất tác dụng -- trên ImageNet-R ở $T = 20$ họ chỉ
+còn $74.5$ so với $71.8$ khi bỏ hẳn Phase 1. Ta đang ở $T = 10$, tác vụ 0 có 20
+lớp, nên vẫn an toàn. Nhưng nếu bị hỏi ``phương pháp có bền với số tác vụ
+không?'' thì đây là điểm yếu thật, và là \textbf{điểm yếu kế thừa từ RanPAC chứ
+không phải do ta gây ra}. Trả lời thẳng như vậy tốt hơn né.
+\end{luuy}
+
+\subsection{Vai trò của nghịch đảo Gram, và của $\lambda$}
+
+Nếu chỉ dùng $C$ mà bỏ $G$ đi thì đó đúng là \textbf{bộ phân lớp theo nguyên mẫu
+lớp} -- cộng đặc trưng của từng lớp lại rồi so độ giống. Ta đã thử cách đó
+(Gaussian/Mahalanobis trong không gian 768 chiều gốc) và nó \textbf{rơi xuống
+$84.3$ so với $93.21$}.
+
+Nguyên nhân: đặc trưng ViT có vài hướng ``chung'' rất mạnh mà \emph{mọi lớp đều
+có}. Nguyên mẫu của 200 lớp vì thế tương quan nặng với nhau, chỉ khác nhau ở
+những hướng nhỏ. So sánh trực tiếp thì phần chung áp đảo phần riêng.
+
+$(G + \lambda I)^{-1}$ làm đúng việc \textbf{chia bớt các hướng chung đi}: hướng
+nào xuất hiện ở mọi ảnh thì có giá trị lớn trong $G$, nghịch đảo sẽ hạ trọng số
+của nó xuống. Còn lại là các hướng thực sự phân biệt được lớp.
+
+$\lambda$ làm hai việc cùng lúc. Thứ nhất, khiến $G$ \textbf{khả nghịch}: ma trận
+$10\,000 \times 10\,000$ ước lượng từ ít mẫu hơn thế thì thiếu hạng, không nghịch
+đảo được. Thứ hai, điều chuẩn để tránh khớp quá. Giá trị $10^4$ nghe rất lớn,
+nhưng các phần tử của $G$ là \emph{tổng qua hàng chục nghìn mẫu} nên tỉ lệ thực
+tế vẫn vừa phải.
+
+\subsection{Đầu vào và đầu ra}
+
+\paragraph{Đầu vào.}
+Lúc huấn luyện (\texttt{accumulate\_rp\_statistics}): cặp (đặc trưng, nhãn) của
+tác vụ đang học, một lượt duy nhất, không gradient. Lúc suy luận
+(\texttt{rp\_head\_predict}): một vector đặc trưng.
+
+Ràng buộc bắt buộc là mọi đặc trưng phải đến từ \emph{một} bộ trích cố định --
+xem Mục \ref{sec:lora0}. Những thứ nó \textbf{không} cần: không ảnh lưu trữ,
+không đặc trưng theo từng mẫu, không replay, không lan truyền ngược.
+
+\paragraph{Đầu ra.}
+Một vector điểm số cho từng lớp, $s \in \mathbb{R}^{B \times 200}$. Vector này đi
+vào \emph{hai} nơi khác nhau, và đây là chỗ tinh tế nhất của cả hệ thống:
+
+\begin{table}[htbp]
+\centering
+\caption{Cùng một vector $s$ nuôi cả hai tầng.}
+\label{tab:rp-hai-tang}
+\begin{tabular}{@{}llc@{}}
+\toprule
+Nơi dùng & Dùng thế nào & Kích thước \\
+\midrule
+Tầng 1 -- hợp nhất định tuyến
+  & lấy \texttt{max} trên các lớp của từng tác vụ
+  & $[B, 200] \rightarrow [B, 10]$ \\
+Tầng 2 -- hợp nhất phân lớp
+  & giữ nguyên
+  & $[B, 200]$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Phép rút gọn ở tầng 1 nằm trong hàm \texttt{\_task\_scores\_from\_class\_scores}
+(engine dòng 719), và nó lấy \textbf{max} chứ không phải tổng:
+$s^{\mathrm{task}}_t = \max_{c \in \text{tác vụ } t} s_c$.
+
+Vì $s$ đã được tính ở tầng 1 rồi nên \textbf{tầng 2 không tốn thêm một phép tính
+nào}. Toàn bộ chi phí tăng thêm của hệ thống là đúng \emph{một} lượt chạy mạng --
+khớp với bảng đo: $+1.02$, $+1.01$, $+1.00$ lượt gọi LoRA mỗi ảnh.
 
 \subsection{Vì sao cách này hợp với học liên tục}
 
 \paragraph{Nó tuân thủ ràng buộc không lưu mẫu.}
-$G$ và $C$ là \emph{tổng cộng dồn}. Khi tác vụ mới đến, chỉ cần cộng thêm vào,
-không cần xem lại dữ liệu cũ. Ma trận $W$ sinh lại được từ seed nên cũng không
-cần lưu. Không có ảnh nào, không có đặc trưng riêng lẻ nào được giữ.
+$G$ và $C$ là \emph{tổng cộng dồn}, cùng loại với trung bình và hiệp phương sai
+của cả lớp mà HRM-PET vốn đã lưu. Từ $G$ không thể khôi phục lại ảnh nào. Ma trận
+$W$ sinh lại được từ seed nên cũng không cần lưu.
 
-\paragraph{Nó không hề quên.}
-Không có bước huấn luyện lặp nào để ghi đè kiến thức cũ. Nghiệm hồi quy trên $G$
-và $C$ đầy đủ tương đương với việc huấn luyện tuyến tính trên toàn bộ dữ liệu
-cùng lúc.
+\paragraph{Nó không hề quên, và đây là chứng minh chứ không phải quan sát.}
+Phép cộng có tính giao hoán, nên $G = \sum_{t=1}^{T} G_t$ \textbf{không phụ thuộc
+thứ tự}. Học theo thứ tự $1 \rightarrow 10$, hay $10 \rightarrow 1$, hay xáo trộn
+bất kỳ, đều cho ra cùng một $G$, cùng một $C$, cùng một $W_o$ \emph{đến từng
+bit} -- và bằng đúng kết quả khi huấn luyện tuyến tính trên toàn bộ dữ liệu cùng
+một lúc. Không có bước lặp nào ghi đè kiến thức cũ, nên quên là \textbf{bất khả
+thi về mặt đại số}, khác hẳn các phương pháp dựa trên gradient vốn chỉ có thể
+``quên ít''.
 
-\paragraph{Nó không tốn gì thêm.}
-Toàn bộ phép tính là cộng ma trận và một lần giải hệ tuyến tính ở cuối mỗi tác vụ.
+\subsection{Cái giá phải trả}
 
-\subsection{Một chi tiết dễ sai}
+Ma trận $G$ có kích thước $10\,000 \times 10\,000$ ở float64, tức khoảng
+\textbf{800 MB bộ nhớ}. Đây là chi phí thật và là lý do không thể tăng
+\texttt{rp\_dim} tùy tiện: bộ nhớ tăng theo \emph{bình phương} số chiều. Phép
+giải Cholesky là $O(M^3)$ nhưng chỉ chạy một lần mỗi tác vụ nên không đáng kể.
 
-Đặc trưng $f$ phải lấy từ \textbf{một bộ LoRA cố định duy nhất} (cờ
-\texttt{-{}-rp\_lora\_task 0}, luôn dùng LoRA của tác vụ đầu tiên), chứ không
-phải mỗi tác vụ dùng LoRA riêng của nó.
-
-Lý do: $G$ và $C$ cộng dồn qua mọi tác vụ. Nếu mỗi tác vụ dùng một LoRA khác, các
-đặc trưng sẽ nằm ở những không gian khác nhau và việc cộng dồn trở nên vô nghĩa.
-Dùng một LoRA cố định chính là vai trò \textbf{thích nghi phiên đầu}
-(first-session adaptation) trong RanPAC, chỉ khác là ở đây nó có sẵn từ HRM-PET
-nên không phải huấn luyện thêm.
+Đổi lại: không có tham số học được, không quên, không lưu mẫu, và $+13.3$ điểm
+định tuyến so với TII trên ImageNet-R.
 
 \subsection{Thêm vào đâu trong mã nguồn}
 
@@ -346,9 +644,12 @@ Toàn bộ đầu RP        & \texttt{engines/random\_projection\_head.py} (file
 Sinh ma trận chiếu    & \texttt{\_ensure\_projection}, dòng 72 \\
 Cộng dồn $G$ và $C$   & \texttt{accumulate\_rp\_statistics}, dòng 115 \\
 Giải hồi quy ridge    & \texttt{solve\_rp\_head}, dòng 135 \\
+Cho điểm lúc suy luận & \texttt{rp\_head\_predict}, dòng 195 \\
 Gọi ở cuối mỗi tác vụ & \texttt{trainers/lora\_trainer.py}, dòng 312--321 \\
 Trích đặc trưng       & \texttt{pin\_rp\_extractor} / \texttt{rp\_extractor},
                         engine dòng 690 và 711 \\
+Rút gọn lớp thành tác vụ
+                      & \texttt{\_task\_scores\_from\_class\_scores}, dòng 719 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -359,39 +660,285 @@ Trích đặc trưng       & \texttt{pin\_rp\_extractor} / \texttt{rp\_extractor
 
 % =====================================================================
 \section{Thành phần thứ hai: hợp nhất định tuyến}
+\label{sec:tang1}
 
-\subsection{Làm gì}
+Tầng này thay \emph{đúng một} thứ: quyết định ``chạy LoRA nào''. Mọi thứ phía sau
+--- DRM, CRM, đầu phân lớp chung, cơ chế CRCT --- giữ nguyên, không sửa một dòng
+nào của HRM-PET.
 
-Thay vì để TII một mình quyết định tác vụ, ta trộn điểm số của TII với điểm số
-của đầu RP:
+\subsection{Đầu vào đã có gì}
+\label{sec:tang1-dauvao}
+
+Đây là chỗ dễ hiểu nhầm nhất. Hai đầu vào \textbf{không phải điểm số theo tác
+vụ}. Chúng là điểm số \emph{theo lớp}, cùng 200 chiều, trên cùng một không gian
+lớp.
+
+\begin{table}[htbp]
+\centering
+\caption{Hai đầu vào của tầng hợp nhất định tuyến.}
+\label{tab:tang1-dauvao}
+\begin{tabular}{@{}p{3.4cm}p{4.4cm}cp{3.4cm}@{}}
+\toprule
+Nguồn & Là gì & Kích thước & Lớp chưa gặp \\
+\midrule
+\texttt{tii\_logits} & logit của đầu phân lớp & $[B, 200]$
+  & bị \texttt{index\_fill} thành $-\infty$ \\
+\texttt{fusion\_rp\_scores} & điểm ridge của đầu RP & $[B, 200]$
+  & bị cộng bias $-\infty$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Việc quy đổi sang tác vụ là do \emph{chính hàm hợp nhất} làm, không phải do bên
+gọi. Đó là lý do hàm cần tham số \texttt{class\_mask}: nó phải biết lớp nào thuộc
+tác vụ nào.
+
+\begin{luuy}
+\textbf{Một điểm cần nói rõ.} Trong cấu hình đã chốt
+(\texttt{RP\_FUSE\_DRM=1}), thứ đi vào ô \texttt{tii\_logits} \emph{là}
+\texttt{id\_logits} --- tức đầu phân lớp chung sau lượt LoRA đầu tiên, chính là
+tín hiệu DRM. Nó \textbf{không phải} mô hình prompt thô có Acc@task $63.80$ ở
+Bảng \ref{tab:routing}. Điều này quan trọng khi bàn về giá trị của $w$ ở Mục
+\ref{sec:tang1-w}. Chi tiết luồng tín hiệu xem Mục \ref{sec:tii-tang2}.
+\end{luuy}
+
+\subsection{Bốn bước của công thức}
+
+\paragraph{Bước 1 --- Gộp điểm lớp thành điểm tác vụ, bằng \texttt{max}.}
+\[ \ell^{\mathrm{task}}_t = \max_{c \in \text{tác vụ } t} \ell_c,
+   \qquad
+   s^{\mathrm{task}}_t = \max_{c \in \text{tác vụ } t} s_c . \]
+Từ $[B, 200]$ xuống $[B, 10]$.
+
+Vì sao \texttt{max} chứ không phải tổng hay trung bình? Câu hỏi ta thực sự đang
+hỏi là \emph{``tác vụ này có chứa lớp đúng không?''}. Bằng chứng mạnh nhất cho
+điều đó là \textbf{lớp khớp nhất} trong tác vụ, không phải mức khớp trung bình
+của cả 20 lớp. Nếu dùng tổng, một tác vụ có 20 lớp cùng khớp lờ mờ sẽ đánh bại
+một tác vụ có một lớp khớp gần như chắc chắn --- ngược hoàn toàn với cái ta cần.
+\texttt{max} cũng khớp với cách kết quả được dùng ngay sau đó: ta định tuyến tới
+tác vụ, rồi đầu phân lớp chọn \emph{một} lớp.
+
+\paragraph{Bước 2 --- Chuẩn hóa $z$ theo từng ảnh.}
+\[ z(x)_t = \frac{x_t - \operatorname{mean}(x)}{\operatorname{std}(x)} , \]
+trong đó trung bình và độ lệch chuẩn tính \textbf{trên các tác vụ đã thấy của
+riêng ảnh đó} (trong mã là \texttt{dim=1}).
+
+Bỏ bước này đi thì phương pháp hỏng hoàn toàn, và đây là lỗi chúng ta thực sự đã
+mắc phải. Hai nguồn có biên độ lệch nhau cả hai bậc:
+
+\begin{table}[htbp]
+\centering
+\caption{Biên độ điển hình của hai nguồn trước khi chuẩn hóa.}
+\label{tab:bien-do}
+\begin{tabular}{@{}lc@{}}
+\toprule
+Nguồn & Biên độ điển hình \\
+\midrule
+Logit TII & $-20$ đến $+15$ \\
+Điểm ridge của đầu RP & $-0.3$ đến $+0.8$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Cộng thẳng thì TII át hoàn toàn ở \emph{mọi} giá trị $w$, kể cả $w = 0.1$. Khi
+chưa sửa, độ chính xác định tuyến rơi xuống \textbf{68.24}, thấp hơn cả mức
+$77.12$ của riêng đầu RP.
+
+\begin{luuy}
+\textbf{Dấu hiệu nhận biết cần nhớ.} Trộn hai nguồn mà kết quả \emph{tệ hơn từng
+nguồn riêng lẻ} thì gần như chắc chắn là lỗi thang đo, không phải lỗi trọng số.
+Gặp lại triệu chứng này ở bất kỳ phép trộn nào, hãy nghi ngờ thang đo trước tiên.
+\end{luuy}
+
+Vì sao chuẩn hóa theo \emph{từng ảnh} chứ không theo cả lô? Vì so sánh có ý nghĩa
+là so \emph{nội bộ trong một ảnh}: với ảnh này, tác vụ nào thắng. Chuẩn hóa theo
+lô sẽ giữ lại chênh lệch thang đo giữa các ảnh, thứ không liên quan gì tới việc
+chọn tác vụ. Chuẩn hóa theo ảnh xóa mức tự tin tuyệt đối và chỉ giữ lại
+\textbf{hình dạng phân bố điểm trên các tác vụ} --- đúng thứ cần cho một phép bỏ
+phiếu có trọng số.
+
+\paragraph{Bước 3 --- Trộn có trọng số.}
 \begin{equation}
-\mathrm{fused} = w\, z(\ell^{\mathrm{TII}}) + (1-w)\, z(s^{\mathrm{RP}}),
+\mathrm{fused}_t = w\, z(\ell^{\mathrm{task}})_t
+                 + (1-w)\, z(s^{\mathrm{task}})_t ,
 \qquad w = 0.7 .
 \label{eq:route}
 \end{equation}
+Trọng số đặt trên TII, nên phần của đầu RP là $1 - w = 0.3$. Vì sao chọn $0.7$:
+xem Mục \ref{sec:tang1-w}.
 
-Tác vụ có điểm cao nhất được chọn, rồi \textbf{giao cho DRM/CRM và đầu phân lớp
-của HRM-PET xử lý tiếp như bình thường}.
+\paragraph{Bước 4 --- Chọn và trả về.}
+Lấy \texttt{argmax} trên $\mathrm{fused}$ để ra \texttt{prompt\_id}, ghi đè quyết
+định định tuyến của HRM-PET. Sau đó DRM/CRM chạy tiếp bình thường, và đầu phân
+lớp được chạy lại với tuyến mới.
 
-Điểm quan trọng: chúng ta \textbf{không bỏ đi thành phần nào của HRM-PET}. DRM,
-CRM, đầu phân lớp chung, cơ chế CRCT, tất cả giữ nguyên. Chỉ bước 1 (TII đơn độc)
-được thay bằng bước 1 mới (TII kết hợp đầu RP).
+\subsection{Ví dụ số: vì sao chuẩn hóa quyết định thành bại}
 
-\subsection{Ký hiệu $z$ là gì và tại sao bắt buộc phải có}
+Ba tác vụ, tác vụ đúng là \textbf{tác vụ 1}. TII nghiêng về tác vụ 0 (sai), đầu
+RP nghiêng về tác vụ 1 (đúng).
 
-$z(\cdot)$ là phép \textbf{chuẩn hóa theo từng ảnh}: trừ đi trung bình rồi chia
-cho độ lệch chuẩn, tính riêng trên tập tác vụ đã thấy của chính ảnh đó.
+\begin{table}[htbp]
+\centering
+\caption{Cùng dữ liệu, cùng trọng số $w = 0.7$; khác biệt duy nhất là có chuẩn
+hóa hay không. In đậm là tác vụ được chọn.}
+\label{tab:vidu-chuanhoa}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+ & Tác vụ 0 & Tác vụ 1 (đúng) & Tác vụ 2 \\
+\midrule
+$\ell^{\mathrm{task}}$ (TII)      & 10.00 & 9.00 & 2.00 \\
+$s^{\mathrm{task}}$ (đầu RP)      & 0.20  & 0.55 & 0.10 \\
+\midrule
+\emph{Cộng thẳng, không chuẩn hóa} & \textbf{7.06} & 6.47 & 1.43 \\
+\midrule
+$z(\ell^{\mathrm{task}})$          & 0.688 & 0.459 & $-1.147$ \\
+$z(s^{\mathrm{task}})$             & $-0.353$ & 1.129 & $-0.776$ \\
+\emph{Sau khi chuẩn hóa}           & 0.376 & \textbf{0.660} & $-1.036$ \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-Bỏ bước này đi thì phương pháp hỏng hoàn toàn, và đây là lỗi chúng ta thực sự đã
-mắc phải. Logit của TII có biên độ rất rộng, ví dụ trải từ $-20$ đến $+15$, trong
-khi điểm số hồi quy ridge của đầu RP có biên độ hẹp, ví dụ từ $-0.3$ đến $+0.8$.
-Cộng thẳng hai đại lượng này thì TII át hoàn toàn ở \emph{mọi} giá trị $w$, kể cả
-$w = 0.1$.
+Không chuẩn hóa thì đóng góp của đầu RP chỉ $0.3 \times 0.55 = 0.165$ điểm, trong
+khi khoảng cách cần lật là $0.7 \times 1.0 = 0.7$. Nó bị nhấn chìm hoàn toàn và
+tác vụ 0 thắng --- sai.
 
-Khi chưa sửa, độ chính xác định tuyến rơi xuống \textbf{68.24}, thấp hơn cả mức
-77.12 của riêng đầu RP. Trộn hai nguồn mà lại tệ hơn từng nguồn riêng lẻ chính là
-dấu hiệu của lỗi thang đo. Sau khi chuẩn hóa, cả hai về cùng thang và $w$ mới
-thực sự mang nghĩa ``trọng số''.
+Sau khi chuẩn hóa, hai nguồn nói cùng một đơn vị. Đầu RP đẩy tác vụ 1 lên
+$z = 1.129$ trong khi TII chỉ đặt nó ở $0.459$, đủ để lật kết quả. Tác vụ 1
+thắng --- đúng. Cùng dữ liệu, cùng $w$; chỉ khác ở chỗ $w$ giờ mới thật sự mang
+nghĩa ``trọng số''.
+
+\subsection{Vì sao $w = 0.7$}
+\label{sec:tang1-w}
+
+\paragraph{Trước hết, $w$ nghĩa là gì.}
+Trọng số nằm trên TII, nên $w$ càng cao thì càng \textbf{bảo thủ}, càng bám sát
+baseline.
+
+\begin{table}[htbp]
+\centering
+\caption{Ý nghĩa các giá trị của $w$.}
+\label{tab:y-nghia-w}
+\begin{tabular}{@{}cl@{}}
+\toprule
+$w$ & Nghĩa \\
+\midrule
+$1.0$ & bỏ hẳn đầu RP --- \textbf{tái lập baseline chính xác đến từng chữ số} \\
+$0.7$ & cấu hình đã chốt \\
+$0.5$ & mặc định trong mã và trong script (không dùng) \\
+$0.0$ & bỏ hẳn TII, chỉ dùng đầu RP \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Việc $w = 1.0$ tái lập baseline đúng đến chữ số thập phân thứ tư ($77.7914$,
+$74.0191$, $1.2305$) không chỉ là chuyện hay --- nó là \textbf{phép kiểm chứng
+cài đặt}. Một tham số liên tục quay được về baseline chứng minh tầng hợp nhất
+không âm thầm làm gì khác ngoài việc trộn.
+
+\paragraph{$0.7$ không phải giá trị cho kết quả cao nhất.}
+Đây là phần đáng nói nhất. Trên ImageNet-R, bốn seed:
+
+\begin{table}[htbp]
+\centering
+\caption{Vì sao chọn $w = 0.7$ dù $w = 0.6$ có Acc@1 trung bình cao hơn.}
+\label{tab:chon-w}
+\begin{tabular}{@{}p{5.8cm}p{4.6cm}p{2.6cm}@{}}
+\toprule
+ & $w = 0.6$ & $w = 0.7$ \\
+\midrule
+Acc@1 trung bình (4 seed) & \textbf{+0.48} & $+0.31$ \\
+Đạt cả sáu chỉ số trên \emph{mọi} seed
+  & không --- hỏng Forgetting và Backward ở seed 43 & có \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Tiêu chí chọn \textbf{không phải} ``Acc@1 trung bình cao nhất'' mà là \textbf{``cả
+sáu chỉ số đều cải thiện trên mọi seed''}. Đó là lựa chọn có chủ đích. Một phương
+pháp thắng đậm ở trung bình nhưng thỉnh thoảng làm hỏng chỉ số ghi nhớ thì khi bị
+hỏi \emph{``chạy seed khác thì sao?''} sẽ rất khó trả lời. Chênh $0.17$ điểm
+Acc@1 không đáng để đánh đổi lấy một ô đỏ trong bảng.
+
+\begin{table}[htbp]
+\centering
+\caption{Chi tiết từng seed ở $w = 0.7$, ImageNet-R, giai đoạn \emph{chỉ có} hợp
+nhất định tuyến (chưa có thành phần thứ ba). Không seed nào âm.}
+\label{tab:w07-seed}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Chênh lệch so với baseline & seed 42 & seed 43 & seed 44 & seed 45 \\
+\midrule
+Acc@1    & $+0.29$ & $+0.17$ & $+0.40$ & $+0.38$ \\
+Acc@task & $+2.18$ & $+2.45$ & $+2.34$ & $+2.09$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Vì sao nghiêng về TII lại hợp lý.}
+Thoạt nhìn vô lý: đầu RP định tuyến tốt hơn hẳn ($77.12$ so với $63.80$), sao lại
+chỉ cho nó $0.3$?
+
+Hai lý do. Thứ nhất, như đã nêu ở Mục \ref{sec:tang1-dauvao}, thứ nhận $0.7$
+trong cấu hình đã chốt \emph{không phải} TII thô $63.80$, mà là tín hiệu DRM đã
+qua một lượt LoRA, mạnh hơn nhiều. Thứ hai, về vai trò: đầu RP vào đây làm
+\textbf{ý kiến thứ hai để sửa sai}, không phải để thay thế. Nó chỉ cần đủ sức lật
+những trường hợp nguồn chính đang lưng chừng. Cho nó quyền quá lớn thì nó bắt đầu
+lật cả những trường hợp nguồn chính vốn đúng --- đúng cơ chế đã làm hỏng seed 43
+ở $w = 0.6$.
+
+\begin{luuy}
+\textbf{Ba điều nên thủ sẵn khi bảo vệ.}
+\begin{enumerate}
+\item \emph{Khảo sát khá thô.} Ghi nhận được ba giá trị: $0.6$, $0.7$, $1.0$.
+      Không phải lưới mịn. Điểm đỡ là chính vì thử ít nên áp lực chọn lọc thấp,
+      khó nói là dò trúng nhiễu.
+\item \emph{Chọn trên ImageNet-R rồi dùng nguyên cho hai bộ còn lại.} CIFAR-100
+      và CUB-200 không được tinh chỉnh lại. Nghe như thiếu sót, nhưng thực ra
+      đây là lập luận \emph{có lợi}: một tham số chọn trên một bộ dữ liệu rồi
+      chuyển sang hai bộ khác mà vẫn cải thiện 17 trên 18 ô thì đó là bằng chứng
+      nó không khớp quá vào bộ nào.
+\item \emph{Chưa khảo sát lại sau khi có thành phần thứ ba.} Đây là điểm yếu
+      thật. Giá trị $w = 0.7$ được chốt khi \emph{mới chỉ có} hợp nhất định
+      tuyến. Sau khi thêm tầng 2, tối ưu của $w$ có thể đã dịch, vì tầng 2 giờ
+      đang gánh một phần việc sửa sai mà trước đây chỉ tầng 1 làm. Chưa ai chạy
+      lại để kiểm tra.
+\end{enumerate}
+\end{luuy}
+
+\noindent
+Muốn khép lỗ hổng thứ ba thì quét $w \in \{0.6,\, 0.65,\, 0.75,\, 0.8\}$ với cấu
+hình đầy đủ hiện tại, giữ nguyên tiêu chí ``cả sáu chỉ số trên mọi seed''. Chi
+phí là mấy lượt \emph{đánh giá}, không phải huấn luyện lại, vì đầu RP và các LoRA
+đều đã có checkpoint sẵn.
+
+\subsection{Vài chi tiết trong mã}
+
+\texttt{nan\_to\_num(..., neginf=-1e4)} đổi $-\infty$ của lớp chưa gặp thành số
+hữu hạn; để nguyên thì \texttt{mean} và \texttt{std} sẽ ra \texttt{nan}.
+\texttt{clamp\_min(1e-6)} ở mẫu số chặn phép chia cho 0 khi mọi tác vụ cùng điểm.
+
+Cơ chế tăng dần theo giai đoạn có trong hàm nhưng \textbf{mặc định tắt}:
+$\gamma = 0$ cho hệ số $1.0$, nên $w$ giữ nguyên $0.7$. Đã đo và đã loại, xem Mục
+\ref{sec:ramp}.
+
+Còn một \textbf{bộ định tuyến thứ ba} đã cài sẵn, dùng thống kê kích hoạt theo
+tầng, bật bằng \texttt{rp\_route\_fusion\_ls\_weight} (mặc định $0.0$). Riêng nó
+rất yếu ($48.5$ trên ImageNet-R) nhưng lỗi của nó gần như không chồng lấn hai bộ
+kia: một mình nó cứu được $2.8\,\%$ số ảnh mà cả hai cùng sai, nâng hợp ba nguồn
+lên $85.8$ so với $83.0$. Chưa dùng vì chưa chạy hoàn chỉnh.
+
+\subsection{Một điểm yếu cần biết}
+\label{sec:tang1-yeu}
+
+Chuẩn hóa theo từng ảnh \textbf{vứt bỏ mức tự tin tổng thể} của mỗi bộ định
+tuyến. Một bộ đang hoàn toàn mù mờ --- điểm gần như bằng nhau ở mọi tác vụ ---
+vẫn bị kéo lên độ lệch chuẩn $1$ y hệt một bộ đang rất chắc chắn. Nghĩa là tầng
+này \emph{không thể nói} ``với ảnh này TII đang mù, hãy tin đầu RP nhiều hơn''.
+
+Ở tầng 2 chúng ta đã giải quyết đúng vấn đề tương tự bằng cơ chế cổng theo biên
+top-2. Ở tầng 1 thì \textbf{chưa có gì tương đương}: $w = 0.7$ là hằng số cho mọi
+ảnh. Đây là hướng cải tiến còn bỏ ngỏ và chưa đo, \emph{không phải} thứ đã thử
+rồi loại.
 
 \subsection{Thêm vào đâu}
 
@@ -422,10 +969,131 @@ sửa.
 
 % =====================================================================
 \section{Thành phần thứ ba: hợp nhất phân lớp có cổng}
+\label{sec:tang2}
+
+Tầng này trộn \textbf{hai bộ phân lớp}. Trước khi vào công thức, cần biết rõ hai
+bộ đó là gì và bộ gốc hoạt động ra sao --- phần sau chính là gốc rễ của Phát hiện
+2 ở Mục \ref{sec:phat-hien-2}.
+
+\subsection{Hai bộ phân lớp là gì}
+\label{sec:hai-bo-phanlop}
+
+\begin{table}[htbp]
+\centering
+\caption{Hai bộ phân lớp được đem trộn ở tầng 2.}
+\label{tab:hai-bo}
+\begin{tabular}{@{}p{3.0cm}p{5.2cm}p{5.2cm}@{}}
+\toprule
+ & Đầu phân lớp chính & Đầu phân lớp của đầu RP \\
+\midrule
+Trong mã & \texttt{logits} & \texttt{fusion\_rp\_scores} \\
+Ký hiệu & $\ell$ & $s$ \\
+Bản chất & một lớp tuyến tính học bằng gradient
+         & nghiệm hồi quy ridge dạng đóng \\
+Đặc trưng đầu vào & LoRA \emph{của tác vụ được định tuyến tới}
+         & LoRA \emph{tác vụ 0}, cố định \\
+Xử lý lớp cũ & bị bỏ mặc sau giai đoạn của nó
+         & cộng dồn, bất biến thứ tự \\
+Chi phí thêm & (đã có sẵn) & \textbf{bằng không} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{luuy}
+\textbf{$\ell$ \emph{không phải} đầu ra của TII.} Đây là chỗ dễ nhầm nhất, một
+phần do ký hiệu: ở tầng 1 ta viết $\ell^{\mathrm{TII}}$, ở tầng 2 lại viết
+$\ell$. Chúng là \emph{hai tensor khác nhau ở hai thời điểm khác nhau}.
+
+$\ell$ ở tầng 2 là đầu ra của \textbf{đầu phân lớp chung}, chạy với LoRA đã được
+định tuyến lại (engine dòng 2123). Nó cách đầu ra của TII \emph{hai lượt chạy
+mạng}. Trong cấu hình đã chốt, ảnh hưởng trực tiếp của TII kết thúc ở dòng 1941,
+nơi nó chọn LoRA đầu tiên. Xem sơ đồ luồng tín hiệu ở Mục \ref{sec:tii-tang2}.
+\end{luuy}
+
+\subsection{Bộ phân lớp gốc hoạt động như thế nào}
+\label{sec:dau-chinh}
+
+\paragraph{Kiến trúc: đúng một lớp tuyến tính.}
+\begin{footnotesize}
+\begin{verbatim}
+self.head = nn.Linear(self.embed_dim, num_classes)      # 768 -> 200
+\end{verbatim}
+\end{footnotesize}
+
+Chỉ vậy thôi. \textbf{Một} ma trận $200 \times 768$ dùng chung cho mọi tác vụ,
+không phải mỗi tác vụ một đầu riêng. Mỗi lớp trong 200 lớp sở hữu \emph{một
+hàng} của ma trận đó:
+\[ \ell = W_{\mathrm{head}}\, f + b, \qquad W_{\mathrm{head}} \in \mathbb{R}^{200 \times 768} . \]
+Đầu vào $f$ là \texttt{pre\_logits} --- vector 768 chiều lấy từ ViT \emph{sau khi
+đã nạp LoRA của tác vụ được định tuyến tới}. Đây là chỗ duy nhất mà việc định
+tuyến ảnh hưởng tới kết quả phân lớp.
+
+\paragraph{Huấn luyện: che hết lớp của tác vụ khác.}
+Khi học tác vụ $t$:
+\begin{footnotesize}
+\begin{verbatim}
+mask     = class_mask[task_id]                    # 20 lop cua tac vu hien tai
+not_mask = np.setdiff1d(np.arange(args.nb_classes), mask)
+logits   = logits.index_fill(dim=1, index=not_mask, value=float('-inf'))
+loss     = criterion(logits, target)
+\end{verbatim}
+\end{footnotesize}
+
+180 lớp còn lại bị đặt thành $-\infty$, nên softmax cho chúng xác suất $0$, nên
+\textbf{gradient tới các hàng đó bằng $0$}. Chỉ 20 hàng của tác vụ hiện tại được
+cập nhật; 180 hàng kia đứng yên.
+
+\paragraph{Suy luận: mọi lớp đã gặp cùng cạnh tranh.}
+\begin{footnotesize}
+\begin{verbatim}
+mask = []
+for id in range(task_id + 1):        # HOP cua moi tac vu da thay
+    mask.extend(class_mask[id])
+\end{verbatim}
+\end{footnotesize}
+
+Đây là \textbf{bất đối xứng cốt lõi} của học liên tục theo lớp: lúc huấn luyện
+mỗi hàng chỉ từng cạnh tranh với 19 hàng cùng tác vụ, lúc kiểm tra nó phải cạnh
+tranh với 199 hàng.
+
+\paragraph{Hệ quả 1 --- đây là nguồn gốc của Phát hiện 2.}
+Vì đầu phân lớp nhìn thấy \emph{cả 200 lớp} chứ không bị giới hạn trong tác vụ đã
+định tuyến, một ảnh chạy nhầm LoRA \textbf{vẫn có thể ra đúng lớp}. LoRA chỉ là
+bộ điều hợp nhỏ trên cùng mạng xương sống, đặc trưng nó tạo ra không khác nhau
+nhiều, nên hàng của lớp đúng vẫn có thể thắng.
+
+Cùng một thiết kế vừa là điểm mạnh vừa là điểm yếu: \textbf{nó che lỗi định
+tuyến, nên cũng nuốt luôn phần cải thiện định tuyến}.
+
+\paragraph{Hệ quả 2 --- thiên lệch về tác vụ mới.}
+Vì mỗi nhóm 20 hàng chỉ được huấn luyện trong giai đoạn của nó rồi bị bỏ mặc, các
+hàng của tác vụ gần đây thường có chuẩn lớn hơn và thắng không công bằng. Đây là
+\emph{task-recency bias}, vấn đề kinh điển của lĩnh vực. CRCT là cơ chế của
+HRM-PET để giảm nó bằng cách phát lại đặc trưng cho các lớp cũ.
+
+Cần nói rõ một điều: biến thể CRCT phát lại \emph{đặc trưng thật của từng mẫu} bị
+\texttt{protocols.py} \textbf{cấm} dưới cờ \texttt{-{}-strict\_exemplar\_free},
+và mọi lần chạy của ta đều bật cờ đó. Nên CRCT trong cấu hình của ta chỉ dùng
+thống kê cấp lớp, không lưu đặc trưng theo từng mẫu.
+
+\subsection{Bộ phân lớp của đầu RP là bộ nào}
+
+Không phải thứ gì mới. Nó \textbf{đúng là vector $s$ đã tính ở thành phần thứ
+nhất}:
+\[ s = h\,W_o = \mathrm{ReLU}(fW)\,(G + \lambda I)^{-1} C \;\in\; \mathbb{R}^{B \times 200} . \]
+
+Tầng 1 đã ép nó xuống 10 chiều bằng \texttt{max} để định tuyến rồi vứt phần còn
+lại. Tầng 2 nhặt lại đúng vector đó ở dạng đầy đủ 200 chiều. \textbf{Đó là lý do
+tầng này không tốn thêm một phép tính nào} --- toàn bộ chi phí tăng thêm của hệ
+thống vẫn là đúng một lượt chạy mạng, đã trả ở tầng 1.
+
+Hai bộ khác nhau ở \emph{mọi} chiều có thể khác: cách học, đặc trưng đầu vào,
+cách xử lý lớp cũ. Hai thiết kế đối nghịch thì tất yếu sai ở những ảnh khác nhau,
+và Bảng \ref{tab:cls} đo đúng điều đó.
 
 \subsection{Phiên bản đầu tiên và lỗi của nó}
 
-Từ phát hiện 3, ý tưởng hiển nhiên là trộn luôn hai bộ phân lớp với một trọng số
+Từ phát hiện 3, ý tưởng hiển nhiên là trộn hai bộ phân lớp với một trọng số
 $\beta$ cố định. Kết quả: độ chính xác phân lớp tăng đáng kể trên cả ba bộ dữ
 liệu ($+1.40$, $+0.76$, $+1.61$). Nhưng xuất hiện một vấn đề dai dẳng:
 \textbf{hàm mất mát trên CIFAR-100 xấu đi $+0.019 \pm 0.003$.}
@@ -448,61 +1116,376 @@ lập tức, trong khi dự đoán cuối cùng chẳng đổi.
 
 Nói ngắn gọn: ta đang trả giá ở $90\,\%$ số ảnh để mua lợi ích ở $10\,\%$ còn lại.
 
-\subsection{Cách sửa: cơ chế cổng theo biên top-2}
+\subsection{Cơ chế cổng: biên top-2 là gì}
+\label{sec:cong}
 
-Cho $\beta$ thay đổi theo từng ảnh, tỉ lệ nghịch với mức độ chắc chắn của đầu
-phân lớp chính. Gọi $p_{(1)}$ và $p_{(2)}$ là hai xác suất cao nhất mà đầu phân
-lớp chính đưa ra:
+\paragraph{Nghĩa của từng chữ.}
+``Biên'' (margin) là khoảng cách. ``Top-2'' là hai lớp có điểm cao nhất. Sau
+softmax, đầu phân lớp cho ra 200 xác suất cộng lại bằng $1$; sắp giảm dần rồi lấy
+hai giá trị đầu:
+\begin{itemize}
+\item $p_{(1)}$ --- xác suất của lớp \emph{đang thắng};
+\item $p_{(2)}$ --- xác suất của lớp \emph{về nhì}.
+\end{itemize}
+Biên đo: \emph{lớp thắng đang dẫn trước lớp nhì bao xa?}
+
+\paragraph{Vì sao không lấy hiệu trực tiếp $p_{(1)} - p_{(2)}$.}
+Vì hiệu phụ thuộc vào mức tự tin tổng thể. Xét hai ảnh: ảnh A có
+$(0.90,\; 0.02)$, ảnh B có $(0.09,\; 0.002)$. Hiệu của B nhỏ gấp mười lần A,
+nhưng ở \emph{cả hai}, lớp nhì đều kém lớp nhất đúng 45 lần --- vị thế cạnh tranh
+y hệt nhau. Ảnh B chỉ đơn giản là mô hình trải xác suất ra nhiều lớp hơn, chuyện
+đó không liên quan gì tới việc lớp nhì có lật được lớp nhất hay không.
+
+\paragraph{Công thức chuẩn hóa.}
+\[ \text{biên} = \frac{p_{(1)} - p_{(2)}}{p_{(1)} + p_{(2)}} \]
+Chia cho \emph{tổng của riêng hai lớp đó}, không phải cho $1$. Kết quả rất đẹp:
+đặt $r = p_{(2)}/p_{(1)}$ thì
+\[ \frac{p_{(1)} - p_{(2)}}{p_{(1)} + p_{(2)}} = \frac{1 - r}{1 + r} , \]
+nghĩa là \textbf{biên chỉ phụ thuộc vào tỉ số giữa hai lớp dẫn đầu}, hoàn toàn
+không quan tâm chúng chiếm bao nhiêu phần trăm tổng xác suất. Cả hai ảnh A và B ở
+trên đều cho biên $0.957$ --- đúng như mong muốn.
+
+\begin{table}[htbp]
+\centering
+\caption{Biên và cổng theo tỉ số $r = p_{(2)}/p_{(1)}$. Cổng $= 1 -$ biên.}
+\label{tab:bien-ti-so}
+\begin{tabular}{@{}rrrl@{}}
+\toprule
+$r$ & Biên & Cổng & Diễn giải \\
+\midrule
+1.00 & 0.000 & \textbf{1.000} & hoàn toàn phân vân, trộn hết công suất \\
+0.86 & 0.077 & 0.923 & rất phân vân \\
+0.50 & 0.333 & 0.667 & phân vân vừa \\
+0.10 & 0.818 & 0.182 & khá chắc \\
+0.01 & 0.980 & \textbf{0.020} & rất chắc, gần như không trộn \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Trọng số theo từng ảnh.}
 \begin{equation}
 \beta_i = \beta \left( 1 - \frac{p_{(1)} - p_{(2)}}{p_{(1)} + p_{(2)}} \right),
 \qquad \beta = 0.5 .
 \label{eq:gate}
 \end{equation}
 
+Hai chi tiết dễ bỏ qua: cổng tính trên \textbf{xác suất softmax}, không phải
+logit thô; và nó chỉ tính trên các lớp đã gặp.
+
 \begin{luuy}
 \textbf{Vì sao chọn biên giữa hai lớp cao nhất, chứ không phải entropy hay xác
 suất cao nhất?} Lập luận rất cụ thể: việc trộn chỉ có thể thay đổi dự đoán bằng
 cách hất lớp đang đứng đầu xuống. Mà ứng viên khả dĩ nhất để thay thế nó chính là
-lớp đứng thứ hai. Vậy đại lượng cần đo là khoảng cách giữa đúng hai lớp đó.
+lớp đứng thứ hai. Vậy đại lượng cần đo là khoảng cách giữa đúng hai lớp đó ---
+không phải entropy của cả 200 lớp (bị 198 lớp vô can làm nhiễu), cũng không phải
+riêng $p_{(1)}$ (không biết đối thủ đang ở đâu). Chế độ \texttt{entropy} vẫn có
+trong mã làm dòng ablation.
 \end{luuy}
 
 \begin{table}[htbp]
 \centering
-\caption{Cơ chế cổng chạy thực tế.}
+\caption{Cổng chạy thực tế, với $\beta = 0.5$.}
 \label{tab:gate}
-\begin{tabular}{lrrrl}
+\begin{tabular}{@{}lrrrrl@{}}
 \toprule
-Tình huống & $p_{(1)}$ & $p_{(2)}$ & $\beta_i$ & Hệ quả \\
+Tình huống & $p_{(1)}$ & $p_{(2)}$ & Biên & $\beta_i$ & Hệ quả \\
 \midrule
-Mô hình rất chắc chắn & 0.90 & 0.02 & $\approx 0.007$ & gần như không đụng tới \\
-Mô hình đang phân vân & 0.35 & 0.30 & $\approx 0.28$  & trộn gần hết công suất \\
+Rất chắc chắn   & 0.97 & 0.01 & 0.980 & \textbf{0.010} & gần như không đụng tới \\
+Chắc chắn       & 0.90 & 0.02 & 0.957 & \textbf{0.022} & gần như không đụng tới \\
+Đang phân vân   & 0.35 & 0.30 & 0.077 & \textbf{0.462} & trộn gần hết công suất \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Đúng như mong muốn: giữ nguyên chỗ mô hình đã đúng, can thiệp mạnh chỗ nó đang
-lung lay. Vì cơ chế cổng kéo trọng số hiệu dụng xuống rất nhiều, $\beta$ danh
-nghĩa phải nâng từ $0.3$ lên $\mathbf{0.5}$. Chúng ta có thử $0.8$ nhưng lúc đó
-trộn quá mạnh và ImageNet-R hỏng cả ba chỉ số Loss, Forgetting, Backward.
+Đúng như mong muốn: ảnh chắc chắn chỉ nhường $2\,\%$ quyền quyết định, ảnh lung
+lay nhường tới $46\,\%$ trên mức danh nghĩa $50\,\%$. Vì cổng kéo trọng số hiệu
+dụng xuống rất nhiều, $\beta$ danh nghĩa phải nâng từ $0.3$ lên $\mathbf{0.5}$.
+Chúng ta có thử $0.8$ nhưng lúc đó trộn quá mạnh và ImageNet-R hỏng cả ba chỉ số
+Loss, Forgetting, Backward.
 
 Kết quả sau khi thêm cổng: hàm mất mát trên CIFAR-100 đi từ
 $\mathbf{+0.019 \pm 0.003}$ về $\mathbf{-0.000 \pm 0.001}$. Suy giảm hệ thống
 biến mất hoàn toàn.
 
-\subsection{Bước cuối: đưa về lại thang đo cũ}
+\subsection{Công thức trộn: điểm số của đầu RP nằm ở đâu}
+\label{sec:cong-thuc-tron}
 
-Sau khi trộn, kết quả nằm ở thang ``trung bình 0, phương sai 1'', không phải
-thang của logit ban đầu. Đưa nó về:
-\begin{align}
-m_i &= (1 - \beta_i)\, z(\ell_i) + \beta_i\, z(s_i),\\
-\hat{\ell}_i &= m_i \cdot \mathrm{std}(\ell_i) + \mathrm{mean}(\ell_i).
+\begin{equation}
+m_i = \underbrace{(1 - \beta_i)\, z(\ell_i)}_{\text{đầu phân lớp chính}}
+    + \underbrace{\beta_i\, z(s_i)}_{\textbf{đầu RP}}
+\label{eq:mix}
+\end{equation}
+
+\textbf{$s_i$ chính là điểm số của đầu RP}, số hạng thứ hai, mang trọng số
+$\beta_i$. Trong mã:
+
+\begin{footnotesize}
+\begin{verbatim}
+mixed = ((1.0 - share) * _standardize_valid(routed, valid)      # l  = dau chinh
+         + share * _standardize_valid(rp_scores, valid))         # s  = DAU RP
+\end{verbatim}
+\end{footnotesize}
+
+\begin{luuy}
+\textbf{Cạm bẫy: hai tầng đặt trọng số ở hai phía ngược nhau.}
+
+\smallskip
+\begin{tabular}{@{}lll@{}}
+\toprule
+ & Trọng số nằm trên & Phần của đầu RP \\
+\midrule
+Tầng 1 (định tuyến) & \textbf{TII}, $w = 0.7$ & $1 - w = 0.3$ \\
+Tầng 2 (phân lớp)   & \textbf{đầu RP}, $\beta = 0.5$ & $\beta_i$ \\
+\bottomrule
+\end{tabular}
+\smallskip
+
+Số trong cấu hình \texttt{RP\_FUSE\_W=0.7} là phần của \emph{TII}; số trong
+\texttt{RP\_CLS\_W=0.5} là phần của \emph{đầu RP}. Ngược nhau. Và ở tầng 2 nó còn
+bị cổng nhân vào, nên phần thực tế $\beta_i$ thường nhỏ hơn $0.5$ rất nhiều.
+\end{luuy}
+
+\subsection{Bước affine: đưa về lại thang đo cũ}
+\label{sec:affine}
+
+\paragraph{``Trung bình 0, phương sai 1'' nghĩa là gì.}
+Đây là kết quả của phép chuẩn hóa $z_i = (x_i - \operatorname{mean}(x)) /
+\operatorname{std}(x)$. Lấy ví dụ 5 lớp cho gọn, $\ell = [8,\, 5,\, 3,\, 2,\, 2]$:
+trung bình $= 4.0$, độ lệch $= [4,\, 1,\, -1,\, -2,\, -2]$, độ lệch chuẩn
+$= \sqrt{26/5} = 2.280$, nên
+\[ z(\ell) = [1.754,\; 0.439,\; -0.439,\; -0.877,\; -0.877] . \]
+Cộng lại bằng $0$, trung bình bình phương bằng $1$. (Phương sai là bình phương
+của độ lệch chuẩn, nên khi độ lệch chuẩn bằng $1$ thì phương sai cũng bằng $1$;
+hai cách nói là một.) Mục đích là đưa hai danh sách điểm về \textbf{cùng một đơn
+vị} để cộng được.
+
+\paragraph{``Affine'' nghĩa là gì.}
+Biến đổi dạng $y = a\,x + b$: nhân với một hằng số rồi cộng một hằng số. Chỉ kéo
+giãn và tịnh tiến, không bẻ cong.
+\begin{equation}
+\hat{\ell}_i = m_i \cdot \mathrm{std}(\ell_i) + \mathrm{mean}(\ell_i)
 \label{eq:affine}
-\end{align}
+\end{equation}
 
-Đây là \textbf{biến đổi affine theo từng ảnh}, tức là đơn điệu, nên \textbf{thứ
-tự xếp hạng giữa các lớp không đổi} và mọi chỉ số độ chính xác giữ nguyên đến
-từng bit. Nó chỉ đưa thang đo về mức so sánh được với baseline khi tính hàm mất
-mát.
+\paragraph{Vì sao cần bước này.}
+Hàm mất mát quan tâm tới \emph{thang tuyệt đối} của logit, không chỉ thứ tự. Lấy
+$m = [1.2,\, 0.5,\, -0.3,\, -0.6,\, -0.8]$: để nguyên thang chuẩn hóa thì softmax
+cho lớp thắng $p_1 = 0.495$, mất mát $= 0.703$. Sau khi nhân $2.280$ cộng $4.0$
+thì $\hat\ell = [6.74,\, 5.14,\, 3.32,\, 2.63,\, 2.18]$, $p_1 = 0.792$, mất mát
+$= \mathbf{0.233}$. \textbf{Cùng một dự đoán, cùng một thứ tự, mà mất mát chênh
+gấp ba lần.}
+
+\paragraph{Vì sao lấy $\mathrm{mean}$ và $\mathrm{std}$ của $\ell$.}
+Đây là lý do quyết định. Đặt $\beta_i = 0$, tức tắt hoàn toàn việc trộn. Khi đó
+$m = z(\ell)$, và
+\[ \hat{\ell} = z(\ell)\cdot \mathrm{std}(\ell) + \mathrm{mean}(\ell)
+   = \frac{\ell - \mathrm{mean}(\ell)}{\mathrm{std}(\ell)}\cdot \mathrm{std}(\ell)
+     + \mathrm{mean}(\ell) = \ell . \]
+\textbf{Ra lại đúng $\ell$, không sai một bit.} Chỉ khi neo vào mô-men của $\ell$
+thì $\beta$ mới là một núm xoay liên tục về baseline, giống vai trò của $w = 1.0$
+ở tầng 1. Neo vào chỗ khác thì tắt trộn sẽ \emph{không} đưa ta về điểm xuất phát,
+và ta mất luôn phép kiểm chứng cài đặt lẫn dòng ablation.
+
+\begin{table}[htbp]
+\centering
+\caption{Vẫn đặt $\beta = 0$, chỉ đổi mốc affine. Cả ba dòng dự đoán \emph{y hệt
+nhau}, nên Acc@1 giống nhau; chỉ Loss đổi. Ví dụ dùng
+$\mathrm{mean}(s) = 0.30$, $\mathrm{std}(s) = 0.210$.}
+\label{tab:moc-affine}
+\begin{tabular}{@{}lp{5.0cm}rr@{}}
+\toprule
+Mốc dùng để đưa về & $\hat\ell$ thu được & $p_{(1)}$ & Loss \\
+\midrule
+$\mathrm{mean}(\ell),\ \mathrm{std}(\ell)$
+  & $[8.00,\, 5.00,\, 3.00,\, 2.00,\, 2.00]$ & 0.942 & \textbf{0.060} \\
+$\mathrm{mean}(s),\ \mathrm{std}(s)$
+  & $[0.67,\, 0.39,\, 0.21,\, 0.12,\, 0.12]$ & 0.282 & 1.264 \\
+Không đưa về
+  & $[1.75,\, 0.44,\, -0.44,\, -0.88,\, -0.88]$ & 0.656 & 0.421 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Neo vào $s$ sẽ khiến ta báo cáo một phương pháp có độ chính xác bằng baseline
+nhưng Loss tệ gấp hơn 20 lần, trong khi \emph{không dự đoán khác một ảnh nào}.
+Con số đó không đo chất lượng, nó đo việc chọn sai đơn vị.
+
+\paragraph{Vì sao thang của $\ell$ là thang duy nhất có nghĩa.}
+$\ell$ là đầu ra của một lớp tuyến tính \emph{huấn luyện bằng cross-entropy}, nên
+độ trải của nó mã hóa mức tự tin đã hiệu chỉnh của mô hình. Còn $s$ là nghiệm hồi
+quy ridge, một giá trị hồi quy chưa chuẩn hóa, không có thang xác suất nào cả
+(Loss thô của riêng đầu RP khoảng $4.6$, và đó là hiện tượng thang đo chứ không
+phải suy giảm chất lượng). Nói ngắn: $\ell$ biết ``chắc chắn'' nghĩa là gì, $s$
+thì không.
+
+\paragraph{Vì sao tính theo từng ảnh.}
+\texttt{\_valid\_moments} tính riêng cho từng ảnh và \emph{chỉ trên các lớp đã
+gặp}. Ảnh mà mô hình rất chắc chắn có $\mathrm{std}(\ell)$ lớn, ảnh mơ hồ có
+$\mathrm{std}(\ell)$ nhỏ --- đó chính là mức tự tin, thứ mà Loss đo. Dùng một
+hằng số chung cho cả tập sẽ làm phẳng ảnh chắc chắn và làm nhọn ảnh mơ hồ, phá
+hủy đúng thông tin cần bảo toàn. Việc chỉ tính trên lớp đã gặp cũng quan trọng:
+lớp chưa gặp mang giá trị $-\infty$, gộp vào thì mọi thống kê thành rác.
+
+\paragraph{Hai hệ quả đáng biết.}
+Phép chuẩn hóa \textbf{bất biến với mọi biến đổi affine dương của đầu vào}:
+$z(as + b) = z(s)$ với $a > 0$. Nghĩa là nhân $s$ với bất kỳ hệ số nhiệt độ nào
+cũng không thay đổi gì hết --- đó là lý do cờ \texttt{-{}-rp\_calibrate} hoàn
+toàn vô tác dụng ở tầng này, và cũng là lý do \texttt{CALIBRATE=0}.
+
+Và vì $a = \mathrm{std}(\ell) > 0$ nên $\hat\ell$ là hàm \textbf{đơn điệu tăng}
+của $m$: không thể đảo chỗ hai phần tử nào. Mà \texttt{argmax} và top-5 chỉ phụ
+thuộc thứ tự, nên \textbf{Acc@1 và Acc@5 giữ nguyên đến từng bit}, chỉ Loss thay
+đổi. Đây cũng là phép kiểm chứng cài đặt: bật bước affine mà độ chính xác nhúc
+nhích dù chỉ ở chữ số thập phân cuối thì chắc chắn có lỗi ở chỗ khác.
+
+\begin{luuy}
+\textbf{Đây là lựa chọn bảo thủ, và cố ý.} Neo vào mô-men của $\ell$ nghĩa là ta
+mặc định mức tự tin của baseline là đúng, chỉ cho phép việc trộn thay đổi thứ tự
+bên trong độ trải sẵn có. Tham số \texttt{rp\_class\_fusion\_sharpen} tồn tại để
+nới ràng buộc đó nhưng \textbf{mặc định bằng $1.0$, tức tắt}. Nâng nó lên sẽ cải
+thiện Loss mà không đụng tới độ chính xác, nhưng đó là hiệu chỉnh nhiệt độ cho
+phía ta trong khi baseline không được hiệu chỉnh --- so sánh không công bằng. Nếu
+hiệu chỉnh cả hai bên thì chênh lệch giữ nguyên. Đừng đuổi theo hướng này.
+\end{luuy}
+
+\subsection{Hai kênh mà đầu RP đi vào hệ thống}
+\label{sec:hai-kenh}
+
+$\ell$ \emph{không chứa gì} của đầu RP --- nó là $W_{\mathrm{head}} f + b$, thuần
+túy đầu phân lớp chung. Nhưng đầu RP \emph{có} ảnh hưởng tới việc $\ell$ được
+tính bằng LoRA nào, vì tầng 1 đã chọn \texttt{prompt\_id}.
+
+\begin{table}[htbp]
+\centering
+\caption{Đầu RP đi vào hệ thống qua hai kênh khác nhau.}
+\label{tab:hai-kenh}
+\begin{tabular}{@{}llp{5.6cm}@{}}
+\toprule
+Kênh & Đầu RP làm gì & Ảnh hưởng tới $\ell$ \\
+\midrule
+Tầng 1 & chọn LoRA nào được nạp
+       & \textbf{gián tiếp} --- đổi $f$, nên đổi $\ell$ \\
+Tầng 2 & trộn $s$ vào kết quả
+       & \textbf{trực tiếp} --- nhưng sau khi $\ell$ đã có \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Phân biệt này quan trọng vì nó \emph{đo được}, và chính nó là lý do tầng 2 phải
+tồn tại. Trên ImageNet-R, seed 42:
+
+\begin{table}[htbp]
+\centering
+\caption{Đóng góp của từng kênh, ImageNet-R seed 42.}
+\label{tab:dong-gop-kenh}
+\begin{tabular}{@{}lrl@{}}
+\toprule
+Cấu hình & Acc@1 & Kênh đang hoạt động \\
+\midrule
+Baseline & 74.02 & không có đầu RP \\
+Chỉ hợp nhất định tuyến ($\beta = 0$) & 74.31 & chỉ kênh gián tiếp, $+0.29$ \\
+Thêm hợp nhất phân lớp & \textbf{75.42} & cả hai kênh, $+1.40$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Kênh gián tiếp chỉ mua được $+0.29$; kênh trực tiếp mua thêm $+1.11$ nữa, gấp gần
+bốn lần. Con số đó chính là Phát hiện 2 dưới dạng định lượng: đưa thông tin của
+đầu RP vào qua đường định tuyến thì phần lớn bị đầu phân lớp chung nuốt mất, vì
+nó vốn đã đoán đúng nhiều ảnh dù chạy nhầm LoRA. Muốn thông tin đó tới nơi thì
+phải đưa thẳng vào bước phân lớp.
+
+Và vì ở $\beta = 0$ ta có $\hat{\ell} = \ell$ đúng đến từng bit, dòng giữa của
+bảng vừa là một cấu hình thật vừa là dòng ablation sạch.
+
+\subsection{Vì sao không dùng luôn đầu ra của TII ở tầng này}
+\label{sec:tii-tang2}
+
+Câu hỏi tự nhiên: TII cũng xuất ra điểm số cho từng lớp, sao không trộn nó vào
+đây làm ý kiến thứ ba? Trả lời được thì phải phân biệt \textbf{hai} thứ đều mang
+tên ``đầu ra của TII'', và chúng cho hai câu trả lời ngược nhau.
+
+\begin{footnotesize}
+\begin{verbatim}
+ 993   old_logits = original_model(input)['logits']        <- TII that (mo hinh prompt)
+1941   lora_id    = argmax(old_logits) -> tac vu           <- dinh tuyen lan 1
+1944   logits     = model(input, task_id=lora_id)['logits']
+1964   id_logits  = logits                                 <- (!) cung mot tensor
+2007   fuse_routers(fusion_rp_scores, id_logits, ...)      <- TANG 1 nhan cai nay
+2123   logits     = model(input, task_id=prompt_id)['logits']
+2178   fuse_class_scores(logits, fusion_rp_scores, ...)    <- TANG 2 nhan cai nay
+\end{verbatim}
+\end{footnotesize}
+
+\paragraph{Ứng viên A -- \texttt{id\_logits}, thứ mà tầng 1 đang gọi là ``TII''.}
+Dòng 1964 là chỗ bất ngờ. Trong cấu hình đã chốt (\texttt{RP\_FUSE\_DRM=1}), thứ
+mà \texttt{fuse\_routers} nhận vào dưới tên tham số \texttt{tii\_logits}
+\textbf{không phải mô hình prompt}, mà là chính đầu phân lớp chung sau lượt LoRA
+đầu tiên -- tức tín hiệu DRM.
+
+Vì vậy nó \textbf{dư thừa với tầng 2}: cùng đầu phân lớp, cùng mạng xương sống,
+cùng bộ trọng số, chỉ khác ở chỗ nạp LoRA nào. Với đa số ảnh thì tuyến không đổi
+sau khi hợp nhất, nên hai tensor \emph{giống hệt nhau} -- mà trộn $x$ với $x$ vẫn
+ra $x$, không thêm một bit thông tin nào. Còn với những ảnh có đổi tuyến,
+\texttt{id\_logits} chính là câu trả lời ta \emph{vừa quyết định loại bỏ}; trộn
+nó vào là kéo ngược về phía đáp án đã bị bác.
+
+\paragraph{Ứng viên B -- \texttt{old\_logits}, mô hình prompt thật.}
+Đây là một bộ phân lớp hoàn chỉnh 200 chiều đến từ mô hình khác hẳn: kiến trúc
+prompt, bộ trọng số riêng, đầu phân lớp riêng. Nó không mắc vấn đề dư thừa ở
+trên, nên \textbf{đây là ý tưởng hợp lệ và chúng ta chưa từng thử}.
+
+Có một chặn trên chặt cho nó. Nếu đoán \emph{đúng lớp} thì ánh xạ lớp đó sang tác
+vụ tất nhiên cũng đúng tác vụ, suy ra
+$\mathrm{Acc@1}(\texttt{old\_logits}) \le \mathrm{Acc@task}(\text{TII})$:
+
+\begin{table}[htbp]
+\centering
+\caption{Chặn trên của TII khi dùng làm bộ phân lớp, đối chiếu với đầu phân lớp
+chính.}
+\label{tab:tii-chan-tren}
+\begin{tabular}{lrr}
+\toprule
+Bộ dữ liệu & Chặn trên của TII & Đầu phân lớp chính \\
+\midrule
+ImageNet-R & $\le 63.80$ & 74.31 \\
+CIFAR-100  & $\le 81.21$ & 89.97 \\
+CUB-200    & $\le 92.96$ & \textbf{86.48} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Hai dòng đầu cho thấy khoảng cách lớn. Nhưng dòng CUB thì chặn trên còn nằm
+\emph{trên} cả đầu chính, nghĩa là ở đó lập luận ``TII quá yếu'' không loại được
+nó.
+
+Mà độ chính xác vốn không phải tiêu chí đúng. Đầu RP trên ImageNet-R chỉ đạt
+$70.08$ so với $74.31$ mà vẫn cứu được $4.58\,\%$ số ảnh. Tiêu chí là
+\textbf{tính bổ trợ}, và ta chưa đo tính bổ trợ của \texttt{old\_logits} bao giờ.
+
+\begin{luuy}
+\textbf{Cách kiểm chứng rẻ, không cần huấn luyện lại.} Cờ
+\texttt{-{}-classifier\_union\_audit} (engine dòng 2183) đã tính sẵn
+\texttt{ClsRPOnly} -- tỉ lệ ảnh mà đầu RP đúng còn đầu chính sai, chính là cột
+cuối của Bảng \ref{tab:cls}. Thêm một khối tương tự trỏ vào \texttt{old\_logits}
+là ra \texttt{ClsTIIOnly}: khoảng năm dòng mã, một lượt đánh giá. Trên
+$3\,\%$ thì đáng làm tầng hợp nhất ba nguồn; dưới $1\,\%$ thì đóng hướng.
+\end{luuy}
+
+\paragraph{Dự đoán ghi trước.}
+Để khỏi tự bịa lý do sau khi thấy số: tôi cho rằng nó sẽ \emph{yếu hơn đầu RP
+đáng kể} trên ImageNet-R và CIFAR-100, và \emph{khá hơn} trên CUB-200.
+
+Lý do là \textbf{mức đa dạng kiến trúc}. Đầu RP được chọn vì nó khác biệt về bản
+chất: không gradient, bất biến thứ tự, hình học không gian đặc trưng khác hẳn.
+Còn \texttt{old\_logits} dùng chung ViT đóng băng, chung không gian lớp và chung
+thiết kế softmax với đầu chính, chỉ khác cơ chế thích nghi (prompt thay vì LoRA).
+Càng giống nhau thì càng sai ở cùng những ảnh.
+
+Có một rủi ro cụ thể nữa: \texttt{original\_model} được huấn luyện lại và nạp lại
+theo từng tác vụ, nên \emph{bản thân nó có quên}. Điểm số lớp của nó cho các lớp
+thuộc tác vụ cũ nhiều khả năng bị suy giảm có hệ thống, tạo ra thiên lệch theo
+tác vụ -- đúng loại lỗi mà đầu RP miễn nhiễm nhờ tính bất biến thứ tự.
 
 \subsection{Thêm vào đâu}
 
@@ -913,6 +1896,12 @@ số của bảng tổng kết. Việc ghi trước là thứ đã bắt đượ
 \item Cấu hình đã chốt, đủ bốn seed trên cả ba bộ dữ liệu, \textbf{17 trong 18
       phép so sánh cải thiện}.
 \item Báo cáo kỹ thuật ở \texttt{reports/bao\_cao\_fusion.tex}.
+\item Chưa khảo sát lại trọng số định tuyến $w$ sau khi có thành phần
+      thứ ba. Quét $w \in \{0.6,\, 0.65,\, 0.75,\, 0.8\}$ với cấu hình
+      đầy đủ, chỉ tốn vài lượt đánh giá (Mục \ref{sec:tang1-w}).
+\item Thí nghiệm rẻ nhất chưa làm: đo \texttt{ClsTIIOnly} để biết mô hình
+      prompt có bổ trợ được cho tầng hợp nhất phân lớp hay không (Mục
+      \ref{sec:tii-tang2}). Khoảng năm dòng mã, một lượt đánh giá.
 \item Việc còn lại đáng làm nhất: bổ sung \textbf{ImageNet-A} làm bộ dữ liệu thứ
       tư. Phần mã đã sẵn sàng -- lớp nạp dữ liệu ở
       \texttt{continual\_datasets/continual\_datasets.py} dòng 712 và cấu hình ở

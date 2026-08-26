@@ -192,17 +192,34 @@ Sau khi cải thiện định tuyến, chúng ta gặp một điều bất ngờ
 hơn 2 điểm, nhưng độ chính xác phân lớp chỉ tăng 0.29 điểm.** Trên CUB-200 thì
 còn tệ hơn: định tuyến tăng 1.13 điểm mà phân lớp *giảm* 0.05 điểm.
 
-Nguyên nhân nằm ở chi tiết đã đánh dấu ở mục 2.2: **đầu phân lớp dùng chung**.
+**Trước hết phải hỏi: 2 điểm đó nằm ở những ảnh nào?** Đây là câu hỏi mở khóa
+toàn bộ mục này. Ảnh vốn đã được định tuyến đúng thì không còn gì để cải thiện,
+nên chúng không đóng góp gì vào mức tăng. Suy ra toàn bộ phần tăng thêm đó **đúng
+bằng nhóm ảnh trước đây bị định tuyến nhầm, nay được định tuyến đúng** — và đó là
+nhóm ảnh *duy nhất* mà việc cải thiện định tuyến có thể chạm tới.
 
-Giả sử một ảnh thuộc tác vụ 3 nhưng bị định tuyến nhầm sang LoRA của tác vụ 7.
-LoRA số 7 vẫn là một bộ điều hợp nhỏ gắn trên cùng mạng xương sống, nên đặc trưng
-nó tạo ra không quá khác biệt. Đầu phân lớp lại nhìn thấy *tất cả* 200 lớp, nên
-nó hoàn toàn có thể vẫn chọn đúng lớp thuộc tác vụ 3.
+Vậy muốn biết 2 điểm ấy có biến thành độ chính xác phân lớp hay không, ta bắt
+buộc phải soi vào nhóm đó và hỏi: **trước đây, khi còn bị định tuyến nhầm, những
+ảnh này bị phân lớp ra sao?** Đó là lý do ví dụ ngay dưới xuất phát từ một ảnh bị
+nhầm. Chữ "giả sử" ở đây **không** có nghĩa là phương pháp mới gây ra nhầm lẫn;
+nó đang mô tả *trạng thái cũ* của chính những ảnh mà phương pháp mới sắp sửa lại.
 
-Từ đó suy ra hai điều:
+**Câu trả lời nằm ở chi tiết đã đánh dấu ở mục 2.2: đầu phân lớp dùng chung.**
 
-- Sửa đường định tuyến cho ảnh đó **không mua được gì** — nó vốn đã đúng.
-- Ngược lại, định tuyến lại một ảnh vốn đã đúng **có thể làm nó sai đi**.
+Giả sử một ảnh thuộc tác vụ 3 nhưng theo cách cũ bị định tuyến nhầm sang LoRA của
+tác vụ 7. LoRA số 7 vẫn là một bộ điều hợp nhỏ gắn trên cùng mạng xương sống, nên
+đặc trưng nó tạo ra không quá khác biệt. Đầu phân lớp lại nhìn thấy *tất cả* 200
+lớp chứ không bị giới hạn trong các lớp của tác vụ 7, nên nó hoàn toàn có thể vẫn
+chọn đúng lớp thuộc tác vụ 3.
+
+Nói cách khác, ảnh này **bị đếm là sai ở cột Acc@task nhưng lại đang đúng ở cột
+Acc@1**. Từ đó suy ra hai điều, và chúng bù trừ lẫn nhau:
+
+- Sửa đường định tuyến cho ảnh đó **không mua được gì**: Acc@task tăng thật,
+  nhưng Acc@1 vốn đã đúng sẵn nên giữ nguyên. Tiền đã trả, hàng không có.
+- Mức +2 điểm lại là con số *ròng*. Việc hợp nhất đồng thời đẩy một số ảnh vốn
+  định tuyến đúng sang sai; những ảnh đó đang được phân lớp đúng và **có nguy cơ
+  bị làm cho sai đi**.
 
 Đó là lý do phần lợi ích bị thất thoát. Muốn Acc@1 tăng thật thì phải can thiệp
 vào chính bước phân lớp, không chỉ bước định tuyến.
