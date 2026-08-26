@@ -19,6 +19,7 @@
 \usepackage{caption}
 \usepackage{microtype}
 \usepackage{enumitem}
+\usepackage{float}
 \usepackage{tikz}
 \usetikzlibrary{arrows.meta, positioning}
 \usepackage[hidelinks]{hyperref}
@@ -79,7 +80,7 @@ HRM-PET xử lý mỗi mẫu đầu vào qua bốn bước:
 Toàn bộ chất lượng của chuỗi xử lý này phụ thuộc vào một tín hiệu định tuyến duy
 nhất, sinh ra ở bước 1.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
 \begin{tikzpicture}[
   font=\small, >={Stealth[length=2mm]},
@@ -188,43 +189,6 @@ projection, viết tắt là đầu RP) trên chính đặc trưng LoRA của HR
 cho độ chính xác định tuyến cao hơn TII ở cả ba bộ dữ liệu. Quan trọng hơn,
 \emph{hợp} của hai bộ định tuyến vượt xa kết quả mà HRM-PET đạt được sau khi đã
 tinh chỉnh bằng DRM và CRM.
-
-\begin{table}[htbp]
-\centering
-\caption{Đối chiếu hai bộ định tuyến. Hai nguồn khai thác hai loại bằng chứng
-khác nhau về cùng một câu hỏi, đây là cơ sở để kỳ vọng chúng cho kết quả sai trên
-những tập mẫu khác nhau.}
-\label{tab:tii-vs-rp}
-\begin{tabular}{@{}p{3.3cm}p{4.9cm}p{5.2cm}@{}}
-\toprule
- & TII & Đầu RP \\
-\midrule
-Bằng chứng sử dụng
-  & prompt của từng tác vụ
-  & đặc trưng ảnh $768$ chiều \\
-Đại lượng đo
-  & độ bất định của mô hình khi gắn từng bộ prompt
-  & mức tương đồng giữa đặc trưng và nguyên mẫu lớp \\
-Cách xác định tham số
-  & lan truyền ngược qua nhiều epoch
-  & lời giải dạng đóng, một bước \\
-Tham số được huấn luyện
-  & có
-  & không \\
-Chịu ảnh hưởng của quên
-  & có
-  & không, do tính bất biến thứ tự \\
-Acc@task, ImageNet-R
-  & $63.80$
-  & $77.12$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Điểm khác biệt cốt lõi nằm ở hàng thứ hai: TII đánh giá mức độ tự tin của mô hình
-khi gắn từng bộ prompt, còn đầu RP đánh giá mức tương đồng giữa đặc trưng của mẫu
-và nguyên mẫu của từng lớp. Hai tiêu chí khác nhau về bản chất, nên không có lý
-do để chúng cùng thất bại trên một tập mẫu.
 
 \begin{table}[htbp]
 \centering
@@ -410,6 +374,44 @@ tồn tại.
 Hai ràng buộc kết hợp lại chỉ để lại hai lựa chọn: mạng xương sống chưa thích
 nghi, hoặc bộ tham số LoRA của tác vụ đầu tiên. Chúng tôi chọn phương án thứ hai;
 Mục \ref{sec:closed} trình bày số liệu so sánh giữa hai phương án.
+
+\subsubsection{Đối chiếu với TII}
+\begin{table}[htbp]
+\centering
+\caption{Đối chiếu hai bộ định tuyến. Hai nguồn khai thác hai loại bằng chứng
+khác nhau về cùng một câu hỏi, đây là cơ sở để kỳ vọng chúng cho kết quả sai trên
+những tập mẫu khác nhau.}
+\label{tab:tii-vs-rp}
+\begin{tabular}{@{}p{3.3cm}p{4.9cm}p{5.2cm}@{}}
+\toprule
+ & TII & Đầu RP \\
+\midrule
+Bằng chứng sử dụng
+  & prompt của từng tác vụ
+  & đặc trưng ảnh $768$ chiều \\
+Đại lượng đo
+  & độ bất định của mô hình khi gắn từng bộ prompt
+  & mức tương đồng giữa đặc trưng và nguyên mẫu lớp \\
+Cách xác định tham số
+  & lan truyền ngược qua nhiều epoch
+  & lời giải dạng đóng, một bước \\
+Tham số được huấn luyện
+  & có
+  & không \\
+Chịu ảnh hưởng của quên
+  & có
+  & không, do tính bất biến thứ tự \\
+Acc@task, ImageNet-R
+  & $63.80$
+  & $77.12$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Điểm khác biệt cốt lõi nằm ở hàng thứ hai: TII đánh giá mức độ tự tin của mô hình
+khi gắn từng bộ prompt, còn đầu RP đánh giá mức tương đồng giữa đặc trưng của mẫu
+và nguyên mẫu của từng lớp. Hai tiêu chí khác nhau về bản chất, nên không có lý
+do để chúng cùng thất bại trên một tập mẫu.
 
 \subsection{Tầng thứ nhất: hợp nhất ở cấp định tuyến}
 \label{sec:stage1}
