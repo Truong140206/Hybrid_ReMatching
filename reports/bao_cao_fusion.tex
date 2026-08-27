@@ -696,6 +696,69 @@ cần tăng từ $0.3$ lên $0.5$. Khi tăng tiếp lên $0.8$, mức hợp nh�
 lớn và ImageNet-R suy giảm đồng thời ở Loss, Forgetting và Backward. Giá trị tối
 ưu do đó nằm trong khoảng giữa chứ không ở biên của dải khảo sát.
 
+\subsection{Hoãn hợp nhất ở các giai đoạn đầu}
+\label{sec:mintasks}
+
+Ước lượng ma trận Gram của đầu RP cần đủ số lớp mới đáng tin, nên hợp nhất ở cấp
+phân lớp có thể gây hại khi chuỗi tác vụ mới bắt đầu. Tham số
+\texttt{-{}-rp\_class\_fusion\_min\_tasks} $M$ cho phép hoãn việc trộn cho tới
+khi đã quan sát đủ $M$ tác vụ. Chúng tôi khảo sát $M \in \{1, 2, 3\}$ trên ba bộ
+dữ liệu và bốn seed, giữ nguyên mọi cấu hình khác.
+
+\paragraph{Tham số này không chạm vào kết quả cuối.}
+Trung bình bốn seed của Acc@1 tại $M = 3$ là $75.180$, $90.473$ và $87.878$ trên
+ImageNet-R, CIFAR-100 và CUB-200 --- trùng với giá trị của cấu hình $M = 1$ ở
+Bảng \ref{tab:main} đến hai chữ số thập phân. Độ chính xác ở các giai đoạn từ
+thứ ba trở đi cũng trùng đến từng chữ số. Chỉ hai giai đoạn đầu thay đổi, nên
+\textbf{độ chính xác trung bình qua mọi giai đoạn} (average incremental
+accuracy, AIA) là chỉ số duy nhất phân định được.
+
+\paragraph{Kết quả: $M = 3$ kém hơn.}
+AIA@1 giảm ở $9$ trong $12$ ô, và mọi ô cải thiện đều thuộc ImageNet-R. Bảng
+\ref{tab:mintasks} cho thấy nguyên nhân.
+
+\begin{table}[H]
+\centering
+\caption{Chênh lệch độ chính xác theo giai đoạn giữa $M = 3$ và $M = 1$, bốn
+seed cho mỗi bộ dữ liệu. Từ giai đoạn thứ ba trở đi mọi giá trị trùng khít nên
+không liệt kê.}
+\label{tab:mintasks}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Bộ dữ liệu & Giai đoạn 1 & Giai đoạn 2 \\
+\midrule
+ImageNet-R & $+1.5$\quad $+0.9$\quad $+0.7$\quad $+0.3$
+           & $+0.7$\quad $-0.5$\quad $+0.6$\quad $-0.9$ \\
+CIFAR-100  & $+0.1$\quad\ \ $0$\quad\ \ \ $0$\quad\ \ \ $0$
+           & $-0.3$\quad $-0.4$\quad $-0.3$\quad $-0.3$ \\
+CUB-200    & $+0.2$\quad $+0.2$\quad $+0.4$\quad $+0.3$
+           & $-1.1$\quad $-1.2$\quad $-1.2$\quad $-1.5$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Hai cột đi ngược chiều nhau, và đó là toàn bộ lời giải thích. Ở \textbf{giai
+đoạn 1}, việc hoãn hợp nhất không bao giờ gây hại: lúc đó ma trận Gram mới thấy
+một tác vụ nên đầu RP yếu nhất, trong khi đầu phân lớp chính chỉ phải phân biệt
+số lớp của một tác vụ nên mạnh nhất. Ở \textbf{giai đoạn 2}, việc hoãn lại
+\emph{gây hại}, rõ rệt trên CUB-200 với mức mất tới $1.5$ điểm.
+
+Kết luận là phần gây hại \textbf{chỉ nằm ở giai đoạn đầu tiên}; từ giai đoạn thứ
+hai trở đi việc hợp nhất đã có lợi. Ngưỡng chuyển từ hại sang lợi rơi đúng vào
+thời điểm ma trận Gram quan sát tác vụ thứ hai.
+
+\paragraph{Vì sao vẫn giữ $M = 1$.}
+Cấu hình $M = 2$ chỉ hoãn hợp nhất ở giai đoạn đầu tiên nên tránh được điểm yếu
+của $M = 3$. Vì $M = 2$ và $M = 3$ chỉ khác nhau ở giai đoạn thứ hai, đường cong
+của $M = 2$ suy ra được trực tiếp từ hai đường cong đã đo, và chúng tôi đã kiểm
+chứng phép suy này khớp chính xác với một lượt chạy $M = 2$ thực tế. Áp dụng cho
+toàn bộ $12$ ô: $9$ ô cải thiện, $3$ ô không đổi, \emph{không ô nào kém đi}.
+
+Tuy nhiên mức cải thiện trung bình chỉ là $+0.04$ điểm AIA@1, thấp hơn sai số
+giữa các seed của mọi chỉ số được báo cáo. Chúng tôi do đó giữ $M = 1$ làm cấu
+hình mặc định và trình bày khảo sát này như một kết quả phân tích, không phải
+một thay đổi phương pháp.
+
 \subsection{Trọng số tăng dần theo giai đoạn: đã cài đặt, đã đo và đã loại bỏ}
 \label{sec:ramp}
 
@@ -722,10 +785,12 @@ cải tiến thực chất.
 Hai kết quả có giá trị vẫn thu được từ thí nghiệm này:
 
 \begin{enumerate}[leftmargin=*, itemsep=3pt]
-\item Cơ chế hợp nhất ở cấp phân lớp \emph{thực sự} gây hại tại giai đoạn đầu.
-      Trên ImageNet-R, độ chính xác ở tác vụ thứ nhất là $86.0$ so với $87.5$
-      của baseline, phù hợp với lập luận rằng ước lượng ma trận Gram cần đủ số
-      lớp mới đáng tin cậy.
+\item Cơ chế hợp nhất ở cấp phân lớp \emph{thực sự} gây hại tại giai đoạn đầu
+      tiên. Trên ImageNet-R, độ chính xác ở tác vụ thứ nhất là $86.0$ so với
+      $87.5$ của baseline, phù hợp với lập luận rằng ước lượng ma trận Gram
+      cần đủ số lớp mới đáng tin cậy. Mục \ref{sec:mintasks} đo lại hiện
+      tượng này trên cả $12$ ô và cho thấy phần gây hại chỉ khu trú ở giai
+      đoạn thứ nhất, không kéo sang giai đoạn thứ hai.
 \item Cũng chính đầu RP đó lại là bộ định tuyến mạnh ngay từ giai đoạn đầu. Do
       vậy, việc giảm trọng số định tuyến ở các giai đoạn sớm chỉ làm giảm độ
       chính xác định tuyến trung bình trên cả ba bộ dữ liệu mà không đem lại lợi

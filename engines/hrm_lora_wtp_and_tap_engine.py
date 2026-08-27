@@ -753,11 +753,15 @@ def _stage_ramp(seen_tasks, total_tasks, gamma):
     Forgetting and Backward barely move: they compare a task's final accuracy
     against its own earlier peak, so a correction applied equally at every stage
     cancels out of both. Constant weight is also wrong on its own terms. The RP
-    head's Gram estimate needs classes before it is trustworthy -- measured
-    stage by stage on ImageNet-R it costs -1.38 and -0.95 at stages 1-2, then
-    returns +0.6 to +1.6 from stage 3 on -- while TII has more tasks to tell
-    apart as they accumulate. Both say the second opinion should be trusted more
-    as the sequence grows.
+    head's Gram estimate needs classes before it is trustworthy -- while TII has
+    more tasks to tell apart as they accumulate. Both say the second opinion
+    should be trusted more as the sequence grows.
+
+    NOTE 2026-08-28: the figure this docstring used to quote (-1.38 and -0.95 at
+    stages 1-2 on ImageNet-R) was a single seed and does NOT generalise. Twelve
+    (dataset, seed) cells now say the harm is confined to stage 1; stage 2 is
+    already net positive, and withholding the blend there costs up to -1.5 on
+    CUB-200. See rp_class_fusion_min_tasks below.
 
     gamma = 0 reproduces the constant weight exactly, and the ramp reaches 1.0
     at the final stage, so the reported final row is untouched either way.
@@ -2188,9 +2192,19 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
 
             class_weight = float(getattr(args, 'rp_class_fusion_weight', 0.0))
             # The RP head needs enough classes before its Gram estimate is
-            # reliable: measured stage by stage on ImageNet-R it costs -1.38 and
-            # -0.95 at stages 1-2, then gains +0.6 to +1.6 from stage 3 on. Hold
-            # the blend back until enough tasks are in.
+            # reliable, so the blend can be held back for the first tasks.
+            #
+            # Measured over 12 (dataset, seed) cells, 2026-08-28: the harm is
+            # confined to stage 1, where withholding the blend gains +0.1 to
+            # +1.5 and never loses. By stage 2 the blend is already net
+            # positive -- withholding it there costs -0.3 to -0.4 on CIFAR-100
+            # and -1.1 to -1.5 on CUB-200. Stages 3+ are bit-identical either
+            # way, and so is the final row.
+            #
+            # min_tasks=3 is therefore WORSE than the default (AIA@1 down in 9
+            # of 12 cells). min_tasks=2 is a Pareto gain but only +0.04 AIA@1 on
+            # average, below the noise floor of everything we report, so the
+            # shipped default stays 1.
             if task_id + 1 < int(getattr(args, 'rp_class_fusion_min_tasks', 1)):
                 class_weight = 0.0
             if class_weight != 0.0 and 'fusion_rp_scores' in dir():
