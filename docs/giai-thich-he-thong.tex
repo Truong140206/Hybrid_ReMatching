@@ -702,7 +702,7 @@ giải Cholesky là $O(M^3)$ nhưng chỉ chạy một lần mỗi tác vụ nê
 \begin{table}[htbp]
 \centering
 \caption{Vị trí của đầu RP trong mã nguồn.}
-\begin{tabular}{lL}
+\begin{tabular}{@{}p{4.4cm}>{\raggedright\arraybackslash}p{10.0cm}@{}}
 \toprule
 Việc & Vị trí \\
 \midrule
@@ -721,7 +721,8 @@ Rút gọn lớp thành tác vụ
 \end{table}
 
 \noindent Cờ bật:
-\texttt{-{}-rp\_head -{}-rp\_dim 10000 -{}-rp\_lambda 1e4}
+
+\noindent\texttt{-{}-rp\_head -{}-rp\_dim 10000 -{}-rp\_lambda 1e4}\\
 \texttt{-{}-rp\_feature\_source lora -{}-rp\_lora\_task 0}
 
 % =====================================================================
@@ -1358,7 +1359,7 @@ và ta mất luôn phép kiểm chứng cài đặt lẫn dòng ablation.
 nhau}, nên Acc@1 giống nhau; chỉ Loss đổi. Ví dụ dùng
 $\mathrm{mean}(s) = 0.30$, $\mathrm{std}(s) = 0.210$.}
 \label{tab:moc-affine}
-\begin{tabular}{@{}lp{5.0cm}rr@{}}
+\begin{tabular}{@{}llrr@{}}
 \toprule
 Mốc dùng để đưa về & $\hat\ell$ thu được & $p_{(1)}$ & Loss \\
 \midrule
@@ -1827,7 +1828,8 @@ cd ~/Documents/truongnguyen/Hybrid_ReMatching && \
 \begin{table}[htbp]
 \centering
 \caption{Bản đồ mã nguồn.}
-\begin{tabular}{lL}
+\small
+\begin{tabular}{@{}l>{\raggedright\arraybackslash}p{5.5cm}@{}}
 \toprule
 File & Vai trò \\
 \midrule
@@ -1918,7 +1920,8 @@ Lý do là cả hai đều so một tác vụ với đỉnh của chính nó, n�
 dụng đồng đều ở mọi giai đoạn sẽ \textbf{triệt tiêu khỏi cả hai}.
 
 Giải pháp thử nghiệm: cho trọng số trộn tăng dần theo số tác vụ đã thấy, dạng
-$(\text{số tác vụ đã thấy}/T)^{\gamma}$. Vì hệ số này đạt $1.0$ ở giai đoạn cuối
+$(t/T)^{\gamma}$ với $t$ là số tác vụ đã thấy. Vì hệ số này đạt
+$1.0$ ở giai đoạn cuối
 nên hàng kết quả cuối cùng \textbf{không đổi một chữ số nào}, chỉ hai chỉ số ma
 trận mới thay đổi.
 
