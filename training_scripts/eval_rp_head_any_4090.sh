@@ -47,6 +47,7 @@ RP_RAMP_SCOPE="${RP_RAMP_SCOPE:-both}"
 RP_FUSE="${RP_FUSE:-0}"
 RP_FUSE_W="${RP_FUSE_W:-0.5}"
 RP_FUSE_DRM="${RP_FUSE_DRM:-0}"
+RP_LSEARCH="${RP_LSEARCH:-0}"
 
 if [[ -z "${RUN_DIR}" ]]; then echo "Usage: DATASET=... TII_DIR=... $0 RUN_DIR" >&2; exit 64; fi
 if [[ -z "${DATASET}" ]]; then echo "Set DATASET (e.g. Split-CUB200)" >&2; exit 64; fi
@@ -75,6 +76,8 @@ GATE_TAG=""; [[ "${RP_CLS_GATE}" != "none" ]] && GATE_TAG="g${RP_CLS_GATE}"
 RAMP_TAG=""; [[ "${RP_RAMP}" != "0.0" ]] && RAMP_TAG="r$(tag "${RP_RAMP}")"
 [[ "${RP_RAMP}" != "0.0" && "${RP_RAMP_SCOPE}" != "both" ]] && RAMP_TAG="${RAMP_TAG}s${RP_RAMP_SCOPE}"
 CAL_FLAG=""; [[ "${CALIBRATE}" == "1" ]] && CAL_FLAG="--rp_calibrate"
+LSEARCH_FLAG=""; LSEARCH_TAG=""
+[[ "${RP_LSEARCH}" == "1" ]] && LSEARCH_FLAG="--rp_lambda_search" && LSEARCH_TAG="lsearch"
 PIN_FLAG=""; [[ "${RP_PIN}" == "1" ]] && PIN_FLAG="--rp_pin_extractor"
 [[ "${RP_BARE}" == "1" ]] && PIN_FLAG="--rp_pin_extractor --rp_bare_extractor"
 BARE_TAG=""; [[ "${RP_BARE}" == "1" ]] && BARE_TAG="bare"
@@ -84,7 +87,7 @@ AUDIT_FLAG=""; [[ "${RP_ROUTE_AUDIT}" == "1" ]] && AUDIT_FLAG="--rp_route_audit"
 [[ "${RP_LAYER_STAT}" == "1" ]] && AUDIT_FLAG="${AUDIT_FLAG} --layer_stat_router"
 FUSE_FLAG=""; [[ "${RP_FUSE}" == "1" ]] && FUSE_FLAG="--rp_route_fusion --rp_route_fusion_weight ${RP_FUSE_W}"
 [[ "${RP_FUSE_DRM}" == "1" ]] && FUSE_FLAG="--rp_route_fusion_drm --rp_route_fusion_weight ${RP_FUSE_W} --rp_route_fusion_ls_weight ${RP_LS_W} --rp_class_fusion_weight ${RP_CLS_W} --rp_class_fusion_sharpen ${RP_CLS_SHARP} --rp_class_fusion_min_tasks ${RP_CLS_MIN} --rp_class_fusion_gate ${RP_CLS_GATE} --rp_fusion_ramp ${RP_RAMP} --rp_fusion_ramp_scope ${RP_RAMP_SCOPE}"
-LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_rp_${RP_SOURCE}_d${RP_DIM}_${RP_ACT}_l$(tag "${RP_LAMBDA}")_n${RP_NORM}_t${RP_LORA_TASK}_b$(tag "${RP_BLEND}")_p${RP_PIN}_i${RP_INORM}_c${CALIBRATE}_ra${RP_ROUTE_AUDIT}ls${RP_LAYER_STAT}_f${RP_FUSE}d${RP_FUSE_DRM}w$(tag "${RP_FUSE_W}")lsw$(tag "${RP_LS_W}")c${RP_COST}ca${RP_CLS_AUDIT}cw$(tag "${RP_CLS_W}")sh$(tag "${RP_CLS_SHARP}")m${RP_CLS_MIN}${GATE_TAG}${RAMP_TAG}${BARE_TAG}.log"
+LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_rp_${RP_SOURCE}_d${RP_DIM}_${RP_ACT}_l$(tag "${RP_LAMBDA}")_n${RP_NORM}_t${RP_LORA_TASK}_b$(tag "${RP_BLEND}")_p${RP_PIN}_i${RP_INORM}_c${CALIBRATE}_ra${RP_ROUTE_AUDIT}ls${RP_LAYER_STAT}_f${RP_FUSE}d${RP_FUSE_DRM}w$(tag "${RP_FUSE_W}")lsw$(tag "${RP_LS_W}")c${RP_COST}ca${RP_CLS_AUDIT}cw$(tag "${RP_CLS_W}")sh$(tag "${RP_CLS_SHARP}")m${RP_CLS_MIN}${GATE_TAG}${RAMP_TAG}${BARE_TAG}${LSEARCH_TAG}.log"
 [[ -s "${LOG_PATH}" ]] && { echo "Refusing to overwrite: ${LOG_PATH}" >&2; exit 3; } || true
 
 cd "${REPO_ROOT}"
@@ -101,7 +104,7 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --num_tasks "${NUM_TASKS}" --rp_head --rp_dim "${RP_DIM}" \
   --rp_activation "${RP_ACT}" --rp_lambda "${RP_LAMBDA}" \
   --rp_feature_source "${RP_SOURCE}" --rp_normalize "${RP_NORM}" \
-  --rp_lora_task "${RP_LORA_TASK}" --rp_logit_blend "${RP_BLEND}" --rp_input_norm "${RP_INORM}" ${CAL_FLAG} ${PIN_FLAG} ${AUDIT_FLAG} ${FUSE_FLAG} \
+  --rp_lora_task "${RP_LORA_TASK}" --rp_logit_blend "${RP_BLEND}" --rp_input_norm "${RP_INORM}" ${CAL_FLAG} ${PIN_FLAG} ${AUDIT_FLAG} ${FUSE_FLAG} ${LSEARCH_FLAG} \
   --strict_exemplar_free --eval --output_dir "${RUN_DIR}" 2>&1 | tee "${LOG_PATH}"
 printf 'Hybrid RP head wall time seconds: %s\n' "$(( $(date +%s) - START_TIME ))" | tee -a "${LOG_PATH}"
 echo "Final hybrid metrics:"; grep "Average accuracy till task${NUM_TASKS}" "${LOG_PATH}" | tail -n 1 || true

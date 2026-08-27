@@ -34,6 +34,14 @@ _state = {
     'projection': None,
     'gram': None,
     'prototypes': None,
+    # Second copy of the statistics over an 80% subset of the current task, so
+    # lambda can be chosen against the held-out 20% instead of being a constant
+    # somebody tuned once. See _select_lambda.
+    'gram_fit': None,
+    'prototypes_fit': None,
+    'count': 0,
+    'count_fit': 0,
+    'split_index': 0,
     'dim': None,
     'seen_classes': set(),
 }
@@ -43,10 +51,16 @@ def reset_rp_head():
     _state['projection'] = None
     _state['gram'] = None
     _state['prototypes'] = None
+    _state['gram_fit'] = None
+    _state['prototypes_fit'] = None
+    _state['count'] = 0
+    _state['count_fit'] = 0
+    _state['split_index'] = 0
     _state['dim'] = None
     _state['seen_classes'] = set()
     _state['temperature'] = None
     _state['weights'] = None
+    _state['lambda_used'] = None
     # solve_rp_head always rewrites this, so a stale mask has never actually
     # leaked. Clearing it anyway: the invariant that keeps it safe lives in
     # another function, and a reset should leave nothing behind.
@@ -134,6 +148,114 @@ def accumulate_rp_statistics(features, targets, args, device, nb_classes):
     _state['prototypes'] += projected.T @ onehot
     _state['seen_classes'].update(int(t) for t in targets.detach().cpu().tolist())
 
+    # Mirror the accumulation over a fixed 80% subset. The split is a running
+    # index rather than a random draw so a run is reproducible without carrying
+    # another generator, and because the caller walks the data class by class it
+    # comes out stratified for free: every class contributes its own fifth.
+    batch = projected.shape[0]
+    index = torch.arange(_state['split_index'], _state['split_index'] + batch,
+                         device=device)
+    _state['split_index'] += batch
+    _state['count'] += batch
+    if not bool(getattr(args, 'rp_lambda_search', False)):
+        return
+    if _state['gram_fit'] is None:
+        _state['gram_fit'] = torch.zeros(
+            (dim, dim), dtype=torch.float64, device=device)
+        _state['prototypes_fit'] = torch.zeros(
+            (dim, nb_classes), dtype=torch.float64, device=device)
+    keep = (index % 5) != 4
+    if not bool(keep.any()):
+        return
+    fit_projected = projected[keep]
+    _state['gram_fit'] += fit_projected.T @ fit_projected
+    _state['prototypes_fit'] += fit_projected.T @ onehot[keep]
+    _state['count_fit'] += int(keep.sum())
+
+
+def _ridge(gram, lam):
+    """G + lambda I, adding along the diagonal instead of building lam * I.
+
+    At rp_dim=10000 a float64 identity is 800 MB and `lam * eye` materialises a
+    second one, so the obvious form spends 2.4 GB of temporaries to express
+    something that touches 10000 numbers. Arithmetically identical: every
+    off-diagonal entry was gram + 0.0. This matters more now that the lambda
+    search calls it seventeen times per task.
+    """
+    out = gram.clone()
+    out.diagonal().add_(lam)
+    return out
+
+
+def _ridge_solve(gram, prototypes, lam):
+    chol = torch.linalg.cholesky(_ridge(gram, lam))
+    return torch.cholesky_solve(prototypes, chol)
+
+
+@torch.no_grad()
+def _select_lambda(args, device):
+    """Choose lambda on held-out data from the current task, RanPAC's procedure.
+
+    RanPAC does not ship a fixed lambda. At every task it splits that task's own
+    data 80:20, sweeps lambda across 17 orders of magnitude, and keeps whichever
+    value minimises squared error on the held-out fifth. Old tasks are never
+    touched, so the continual-learning constraint holds. We had replaced that
+    step with a constant tuned once on ImageNet-R seed 42 -- which is both a
+    deviation from the method we build on and the single largest source of
+    hyperparameter selection bias in the report.
+
+    The validation error needs no stored features. With one-hot targets,
+
+        ||Y - W^T H||_F^2 = n_val - 2 tr(W^T C_val) + tr(W^T G_val W)
+
+    and the held-out statistics are just the difference between the full and the
+    fitted accumulators. So the sweep is closed-form in quantities we already
+    keep, and the exemplar-free protocol is preserved by construction rather
+    than by argument.
+
+    The sweep is the expensive part -- 17 Cholesky factorisations of a dim x dim
+    matrix per task. RanPAC's own write-up names the same step as its bottleneck.
+    """
+    gram_fit = _state.get('gram_fit')
+    if gram_fit is None:
+        raise RuntimeError(
+            'rp_lambda_search is on but no 80% statistics were accumulated; '
+            'accumulate_rp_statistics must run with the same flag set')
+    n_val = int(_state['count']) - int(_state['count_fit'])
+    if n_val <= 0:
+        raise RuntimeError('rp_lambda_search has an empty validation split')
+
+    prototypes_fit = _state['prototypes_fit']
+    gram_val = _state['gram'] - gram_fit
+    prototypes_val = _state['prototypes'] - prototypes_fit
+
+    best_lambda, best_error = None, None
+    tried = []
+    for exponent in range(-8, 9):
+        lam = float(10.0 ** exponent)
+        try:
+            weights = _ridge_solve(gram_fit, prototypes_fit, lam)
+        except torch.linalg.LinAlgError:
+            # Tiny lambda on a rank-deficient Gram. Not a failure, just a value
+            # the data cannot support; skip it rather than abort the sweep.
+            continue
+        error = (float(n_val)
+                 - 2.0 * float((weights * prototypes_val).sum())
+                 + float((weights * (gram_val @ weights)).sum()))
+        tried.append((lam, error))
+        if best_error is None or error < best_error:
+            best_lambda, best_error = lam, error
+        del weights
+    del gram_val, prototypes_val
+
+    if best_lambda is None:
+        raise RuntimeError('rp_lambda_search: every lambda failed to solve')
+    print('RP head lambda search: chose %.3g over %d values '
+          '(val MSE %.6g, %d fit / %d val samples)'
+          % (best_lambda, len(tried), best_error,
+             _state['count_fit'], n_val))
+    return best_lambda
+
 
 @torch.no_grad()
 def solve_rp_head(args, device, seen_class_ids=None):
@@ -142,15 +264,15 @@ def solve_rp_head(args, device, seen_class_ids=None):
     prototypes = _state['prototypes']
     if gram is None:
         raise RuntimeError('RP head has no accumulated statistics')
-    lam = float(getattr(args, 'rp_lambda', 1e4))
-    dim = gram.shape[0]
-    # Add lambda along the diagonal in place instead of building lam * I. At
-    # rp_dim=10000 a float64 identity is 800 MB, and `lam * eye` materialises a
-    # second one, so the old form spent 2.4 GB of temporaries to express
-    # something that touches 10000 numbers. Arithmetically identical: every
-    # off-diagonal entry was gram + 0.0.
-    ridge = gram.clone()
-    ridge.diagonal().add_(lam)
+    if bool(getattr(args, 'rp_lambda_search', False)):
+        # Selected on 80%, but the final weights are refitted on everything.
+        # Holding out a fifth is a device for picking lambda, not a reason to
+        # throw that fifth away once lambda is fixed.
+        lam = _select_lambda(args, device)
+    else:
+        lam = float(getattr(args, 'rp_lambda', 1e4))
+    _state['lambda_used'] = lam
+    ridge = _ridge(gram, lam)
     try:
         chol = torch.linalg.cholesky(ridge)
         weights = torch.cholesky_solve(prototypes, chol)

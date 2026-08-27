@@ -18,6 +18,9 @@ import pytest
 import torch
 
 from engines.random_projection_head import (
+    _ridge,
+    _ridge_solve,
+    _select_lambda,
     accumulate_rp_statistics,
     get_rp_state,
     project_features,
@@ -392,3 +395,122 @@ def test_accumulation_is_order_independent():
                                  targets[start:start + 32], args, DEVICE, 5)
     backward = solve_rp_head(args, DEVICE)
     assert torch.allclose(forward, backward, atol=1e-5)
+
+
+# --------------------------------------------------------------------------
+# Choosing lambda instead of hard-coding it
+# --------------------------------------------------------------------------
+
+def _accumulate(args, features, targets, classes, batch=32):
+    reset_rp_head()
+    for start in range(0, features.shape[0], batch):
+        accumulate_rp_statistics(features[start:start + batch],
+                                 targets[start:start + batch],
+                                 args, DEVICE, classes)
+
+
+def test_lambda_search_is_off_by_default_and_costs_nothing():
+    """Without the flag, no second set of statistics is built at all."""
+    args = _rp_args(rp_dim=32)
+    torch.manual_seed(0)
+    _accumulate(args, torch.randn(96, 16), torch.randint(0, 5, (96,)), 5)
+    state = get_rp_state()
+    assert state['gram_fit'] is None
+    assert state['count'] == 96 and state['count_fit'] == 0
+    solve_rp_head(args, DEVICE)
+    assert state['lambda_used'] == pytest.approx(float(args.rp_lambda))
+
+
+def test_split_holds_out_exactly_one_fifth():
+    args = _rp_args(rp_dim=32, rp_lambda_search=True)
+    torch.manual_seed(0)
+    _accumulate(args, torch.randn(200, 16), torch.randint(0, 5, (200,)), 5)
+    state = get_rp_state()
+    assert state['count'] == 200
+    assert state['count_fit'] == 160          # 80%
+    assert state['count'] - state['count_fit'] == 40
+
+
+def test_held_out_error_matches_a_direct_computation():
+    """The identity the whole search rests on.
+
+    n_val - 2 tr(W^T C_val) + tr(W^T G_val W) must equal ||Y_val - H_val W||_F^2
+    computed the obvious way. If this drifts, the sweep silently optimises the
+    wrong quantity, so it is worth asserting rather than trusting the algebra.
+    """
+    args = _rp_args(rp_dim=32, rp_lambda_search=True)
+    torch.manual_seed(0)
+    features = torch.randn(200, 16)
+    targets = torch.randint(0, 5, (200,))
+    _accumulate(args, features, targets, 5)
+    state = get_rp_state()
+
+    gram_val = state['gram'] - state['gram_fit']
+    prototypes_val = state['prototypes'] - state['prototypes_fit']
+    n_val = state['count'] - state['count_fit']
+    weights = _ridge_solve(state['gram_fit'], state['prototypes_fit'], 100.0)
+
+    closed_form = (float(n_val)
+                   - 2.0 * float((weights * prototypes_val).sum())
+                   + float((weights * (gram_val @ weights)).sum()))
+
+    # Same split the accumulator used: every fifth sample, counting from zero.
+    held_out = (torch.arange(features.shape[0]) % 5) == 4
+    projected = project_features(features[held_out], args, DEVICE).double()
+    onehot = torch.zeros(int(held_out.sum()), 5, dtype=torch.float64)
+    onehot[torch.arange(int(held_out.sum())), targets[held_out]] = 1.0
+    direct = float(((onehot - projected @ weights) ** 2).sum())
+
+    assert closed_form == pytest.approx(direct, rel=1e-6, abs=1e-6)
+
+
+def test_search_beats_the_worst_value_in_its_own_grid():
+    args = _rp_args(rp_dim=32, rp_lambda_search=True)
+    torch.manual_seed(0)
+    features = torch.randn(300, 16)
+    targets = torch.randint(0, 5, (300,))
+    _accumulate(args, features, targets, 5)
+    state = get_rp_state()
+    chosen = _select_lambda(args, DEVICE)
+
+    gram_val = state['gram'] - state['gram_fit']
+    prototypes_val = state['prototypes'] - state['prototypes_fit']
+    n_val = state['count'] - state['count_fit']
+
+    def error(lam):
+        w = _ridge_solve(state['gram_fit'], state['prototypes_fit'], lam)
+        return (float(n_val) - 2.0 * float((w * prototypes_val).sum())
+                + float((w * (gram_val @ w)).sum()))
+
+    assert error(chosen) <= error(1e8) + 1e-9
+    assert error(chosen) <= error(1e4) + 1e-9
+
+
+def test_search_records_what_it_chose_and_refits_on_everything():
+    """Lambda comes from the 80%, but the shipped weights use all the data."""
+    args = _rp_args(rp_dim=32, rp_lambda_search=True)
+    torch.manual_seed(0)
+    _accumulate(args, torch.randn(300, 16), torch.randint(0, 5, (300,)), 5)
+    state = get_rp_state()
+    weights = solve_rp_head(args, DEVICE)
+    chosen = state['lambda_used']
+    assert chosen is not None
+    expected = _ridge_solve(state['gram'], state['prototypes'], chosen).float()
+    assert torch.allclose(weights, expected, atol=1e-5, rtol=1e-3)
+
+
+def test_search_without_accumulated_split_raises():
+    args = _rp_args(rp_dim=32)
+    torch.manual_seed(0)
+    _accumulate(args, torch.randn(96, 16), torch.randint(0, 5, (96,)), 5)
+    args.rp_lambda_search = True
+    with pytest.raises(RuntimeError, match='80%'):
+        solve_rp_head(args, DEVICE)
+
+
+def test_ridge_helper_equals_the_dense_identity_form():
+    torch.manual_seed(0)
+    gram = torch.randn(12, 12, dtype=torch.float64)
+    gram = gram @ gram.T
+    assert torch.equal(_ridge(gram, 7.5),
+                       gram + 7.5 * torch.eye(12, dtype=torch.float64))

@@ -198,6 +198,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--rp_dim', default=5000, type=int, help='random projection width M (RanPAC default 10000; 5000 halves the Gram cost)')
     subparsers.add_argument('--rp_activation', default='relu', choices=['relu', 'square', 'gelu', 'none'], type=str)
     subparsers.add_argument('--rp_lambda', default=10000.0, type=float, help='ridge regularizer added to the Gram diagonal before inversion')
+    subparsers.add_argument('--rp_lambda_search', action='store_true', help="choose lambda per task the way RanPAC does, by splitting the current task 80:20 and sweeping 17 orders of magnitude against held-out squared error, instead of using the fixed --rp_lambda; old tasks are never touched and no features are stored, since the validation error is closed-form in the second-order statistics already kept")
     subparsers.add_argument('--rp_seed', default=1993, type=int, help='seed for the frozen random projection (regenerated, never stored)')
     subparsers.add_argument('--rp_calibrate', action='store_true', help='fit one scalar temperature on training scores so the head Loss is comparable to a softmax classifier (only the scalar is kept)')
     subparsers.add_argument('--rp_normalize', default='none', choices=['none', 'l2', 'scale'], type=str, help='feature scaling before the random projection; raw ViT pre_logits scale distorts the ReLU projection and the single ridge lambda')
