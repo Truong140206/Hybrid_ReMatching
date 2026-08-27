@@ -895,8 +895,21 @@ def _fusion_gate(routed_logits, valid, mode, rp_scores=None):
             raise ValueError(
                 "rp_class_fusion_gate='margin_both' needs the RP scores; "
                 'the caller passed none')
+        # Put the RP scores on the routed logits' scale before measuring their
+        # margin. Ridge scores span about 1 unit while the routed logits span
+        # about 35, so a softmax on the raw scores leaves every RP margin near
+        # 0.05 -- the gate then comes out ~20x too small and the mode silently
+        # under-fuses. Measured 2026-08-28 before this fix: 74.59 / 74.63 /
+        # 74.67 at beta 0.5 / 0.8 / 1.0 on ImageNet-R seed 42, against 75.51
+        # for one-sided 'margin', rising monotonically with beta -- the
+        # signature of under-fusion, not of a wrong hypothesis.
+        #
+        # This is the same affine map the mixing below uses, so conf(rp) = 1
+        # still recovers 'margin' exactly.
+        mean, std = _valid_moments(routed_logits.float(), valid)
+        rp_on_scale = _standardize_valid(rp_scores.float(), valid) * std + mean
         undecided = 1.0 - _top2_margin(routed_logits, valid)
-        return (undecided * _top2_margin(rp_scores, valid)).clamp(0.0, 1.0)
+        return (undecided * _top2_margin(rp_on_scale, valid)).clamp(0.0, 1.0)
     if mode == 'entropy':
         probs = torch.softmax(
             torch.where(valid, routed_logits.float(),
