@@ -51,9 +51,10 @@ Nguồn thứ hai là một đầu phân lớp dựa trên phép chiếu ngẫu 
 kiểu RanPAC, xây dựng trực tiếp trên đặc trưng LoRA mà HRM-PET đã huấn luyện.
 Nhờ vậy phương pháp không cần huấn luyện thêm tham số nào và vẫn tuân thủ giao
 thức không lưu mẫu (exemplar-free). Trên ba bộ dữ liệu học liên tục và bốn seed,
-phương pháp cải thiện 17 trong 18 phép so sánh: độ chính xác định tuyến tăng từ
-$+1.10$ đến $+2.26$ điểm, độ chính xác phân lớp tăng từ $+0.69$ đến $+1.50$
-điểm. Chi phí tính toán tăng thêm đúng bằng một lượt truyền xuôi (forward pass)
+độ chính xác định tuyến tăng từ $+1.10$ đến $+2.26$ điểm và độ chính xác phân
+lớp tăng từ $+0.69$ đến $+1.50$ điểm; ở cả hai trục, mức tăng lớn hơn độ lệch
+chuẩn giữa các seed nhiều lần. Hai chỉ số ghi nhớ không cho thấy thay đổi phân
+biệt được với không, và chúng tôi không tuyên bố cải thiện ở đó. Chi phí tính toán tăng thêm đúng bằng một lượt truyền xuôi (forward pass)
 trên mỗi mẫu.
 \end{abstract}
 
@@ -589,6 +590,7 @@ tác vụ với chính nó ở thời điểm trước đó, chứ không so sá
 pháp. Đặc điểm này sẽ được dùng lại ở Mục \ref{sec:ramp}.
 
 \section{Kết quả}
+\label{sec:results}
 
 Bảng \ref{tab:main} tổng hợp kết quả trên cả ba bộ dữ liệu. Giá trị là trung
 bình $\pm$ độ lệch chuẩn trên bốn seed. Cột \emph{Thay đổi} được tính theo cặp:
@@ -633,23 +635,29 @@ seed 42, 43, 44, 45.}
 \end{tabular}
 \end{table}
 
-Ba nhận xét về bảng trên.
+Sáu chỉ số không phải sáu sự kiện độc lập. Chúng đo ba trục, và
+phát biểu theo trục vừa nói được nhiều hơn vừa chịu được phản biện tốt hơn một
+phép đếm gộp. Đại lượng quyết định ở đây là tỉ số giữa mức thay đổi và độ lệch
+chuẩn của chính mức thay đổi đó: dưới $2$ thì không phân giải được.
 
-\textbf{Mức độ bao phủ.} Trong tổng số $18$ phép so sánh ($6$ chỉ số trên $3$ bộ
-dữ liệu), $17$ phép cho kết quả cải thiện. Trường hợp còn lại là Backward trên
-ImageNet-R với giá trị $-0.047 \pm 0.282$: độ lệch chuẩn lớn gấp sáu lần trị
-tuyệt đối của trung bình, nên đại lượng này không phân biệt được với $0$. Đây là
-dao động giữa các seed, không phải suy giảm có tính hệ thống.
+\textbf{Trục định tuyến (Acc@task): cải thiện chắc chắn.} Mức tăng $+1.10$ đến
+$+2.26$ điểm, tỉ số nói trên nằm trong khoảng $8$ đến $17$. Đây là trục phương
+pháp tác động trực tiếp, và cũng là trục có bằng chứng vững nhất.
 
-Cách đếm này cần đọc kèm Mục \ref{sec:limits}: siêu tham số được chọn trên
-ImageNet-R theo tiêu chí cùng dạng với chính phép đếm, nên $18$ ô không phải
-$18$ bằng chứng độc lập. Phần độc lập là $11$ ô của CIFAR-100 và CUB-200, và cả
-$11$ đều cải thiện.
+\textbf{Trục phân lớp (Acc@1, Acc@5): cải thiện chắc chắn.} Acc@1 tăng $+0.69$
+đến $+1.50$ điểm với tỉ số từ $3.0$ đến $11.0$; Acc@5 tăng $+0.22$ đến $+1.31$
+với tỉ số từ $3.8$ đến $8.9$. Phần lợi ở định tuyến không chuyển hóa hết sang
+phân lớp --- lý do đã phân tích ở Mục \ref{sec:analysis} --- nhưng phần chuyển
+hóa được thì lặp lại ổn định trên mọi seed.
 
-\textbf{Mức độ tin cậy.} Hai chỉ số đáng tin cậy nhất là Acc@task và Acc@5, với
-độ lệch chuẩn của mức thay đổi nhỏ hơn chính mức thay đổi khoảng mười đến mười
-lăm lần. Nói cách khác, mức cải thiện ở hai chỉ số này lặp lại ổn định trên mọi
-seed.
+\textbf{Trục ghi nhớ (Forgetting, Backward): không có bằng chứng.} Tỉ số nằm
+trong khoảng $0.17$ đến $1.6$, không lần nào chạm ngưỡng phân giải trên bất kỳ
+bộ dữ liệu nào. Hai chỉ số này còn gần như là ảnh gương của nhau --- CIFAR-100
+$-0.156$ với $+0.142$, CUB-200 $-0.359$ với $+0.279$ --- nên đếm chúng thành hai
+ô là đếm một sự kiện hai lần. Chúng tôi không tuyên bố cải thiện ở trục này.
+
+Đọc kèm Mục \ref{sec:limits}: siêu tham số được chọn trên ImageNet-R, nên phần
+bằng chứng độc lập là $11$ ô của CIFAR-100 và CUB-200, cả $11$ đều cải thiện.
 
 \textbf{Trường hợp CUB-200.} Bộ dữ liệu này vốn là điểm yếu của phiên bản chỉ có
 tầng định tuyến: mức tăng độ chính xác định tuyến không chuyển hóa thành Acc@1
@@ -961,11 +969,10 @@ nó mạnh vì siêu tham số được chuyển sang hai bộ này nguyên vẹ
 
 Ngược lại, ImageNet-R không còn ô nào độc lập, và hai con số được trích dẫn
 nhiều nhất trong báo cáo đều nằm ở đó. Giá trị Backward $-0.047 \pm 0.282$ ở
-Bảng \ref{tab:main} chính là đại lượng đã dùng để chọn $\beta$. Còn tiêu chí
-chọn $w$ --- cải thiện đồng thời cả sáu chỉ số trên mọi seed --- cùng dạng với
-cách đếm $17/18$: cấu hình được chọn để tối đa hóa số ô cải thiện, rồi số ô cải
-thiện được báo cáo như một phát hiện. Cách đếm đó vì vậy không nên đọc như một
-phép kiểm định độc lập.
+Bảng \ref{tab:main} chính là đại lượng đã dùng để chọn $\beta$. Còn tiêu chí chọn $w$ --- cải thiện đồng thời cả sáu chỉ số trên mọi
+seed --- tự nó đã là một phép đếm số ô cải thiện. Chọn cấu hình để tối đa hóa
+một đại lượng rồi báo cáo chính đại lượng đó như phát hiện là một vòng tròn. Đây
+là lý do Mục \ref{sec:results} phát biểu theo ba trục thay vì đếm gộp số ô.
 
 Độ lớn của thiên lệch bị chặn bởi dải quét. Với $\lambda$, dải trên seed 42 là
 $0.432$ điểm Acc@1, tức phần lợi thu được từ việc chọn trên chính seed đó nhiều
@@ -995,8 +1002,20 @@ hiệu chỉnh mà trước đó chỉ tầng thứ nhất thực hiện, giá t
 đã dịch chuyển. Khảo sát lại chỉ cần thêm một số lượt đánh giá, không cần huấn
 luyện lại.
 
-\textbf{Phạm vi đánh giá.} Thí nghiệm được thực hiện trên ba bộ dữ liệu. Mã
-nguồn đã có sẵn bộ nạp dữ liệu cho ImageNet-A, nhưng dữ liệu cần được tải thủ
+\textbf{Phạm vi đánh giá.} Toàn bộ kết quả được đo ở \emph{một}
+cấu hình duy nhất: mạng xương sống ViT-B/16 tiền huấn luyện trên ImageNet-21K,
+LoRA hạng $8$, chuỗi $10$ tác vụ. Bài gốc khảo sát bốn bộ dữ liệu trên năm mạng
+xương sống, tức hai mươi thiết lập; chúng tôi phủ hai trong số đó. Bộ thứ ba,
+CUB-200, là phần chúng tôi tự thêm và dùng nguyên siêu tham số của ImageNet-R
+chứ không chỉnh riêng.
+
+Chúng tôi vì vậy không có bằng chứng nào về hành vi của phương pháp khi đổi mạng
+xương sống, đổi hạng LoRA, hay đổi độ dài chuỗi tác vụ. Hai tầng hợp nhất đều
+đặt ở giai đoạn suy luận và chỉ giả định hệ thống có cấu trúc định tuyến cộng
+phân lớp, nên về nguyên tắc chúng không phụ thuộc vào ba lựa chọn đó --- nhưng
+đó là lập luận, không phải phép đo.
+
+Mã nguồn đã có sẵn bộ nạp dữ liệu cho ImageNet-A, nhưng dữ liệu cần được tải thủ
 công nên bộ này chưa được đưa vào đánh giá.
 
 \section{Kết luận}
