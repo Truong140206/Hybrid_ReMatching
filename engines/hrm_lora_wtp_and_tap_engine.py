@@ -844,7 +844,25 @@ def _standardize_valid(scores, valid):
     return torch.where(valid, scores - mean, torch.zeros_like(scores)) / std
 
 
-def _fusion_gate(routed_logits, valid, mode):
+def _top2_margin(scores, valid):
+    """Normalised gap between a sample's top two classes, in [0, 1].
+
+    Dividing by the sum of the top two rather than by 1 makes the quantity a
+    function of the ratio p2/p1 alone: (1 - r) / (1 + r). It therefore measures
+    how threatened the winner is by the runner-up, independently of how much
+    probability mass the pair holds -- which is what we want, since fusion can
+    only change a prediction by unseating the winner.
+    """
+    probs = torch.softmax(
+        torch.where(valid, scores.float(),
+                    torch.full_like(scores, -1e4, dtype=torch.float32)),
+        dim=1)
+    top2 = probs.topk(2, dim=1).values
+    return ((top2[:, :1] - top2[:, 1:2])
+            / top2.sum(dim=1, keepdim=True).clamp_min(1e-12)).clamp(0.0, 1.0)
+
+
+def _fusion_gate(routed_logits, valid, mode, rp_scores=None):
     """How much this sample should listen to the second classifier, in [0, 1].
 
     A fixed blend spends the same 30% of the decision on the RP head for a
@@ -855,19 +873,35 @@ def _fusion_gate(routed_logits, valid, mode):
     buys no argmax. Fusion can only change a prediction by unseating the top
     class, and its most likely challenger is the runner-up, so gate on how
     decided the routed head is between its own top two.
+
+    'margin' looks at one side only. It hands the RP head up to 46% of the
+    decision whenever the routed head is torn -- even when the RP head is torn
+    too and has nothing to contribute. 'margin_both' closes that gap by scaling
+    the same quantity by the RP head's own margin:
+
+        margin:       beta_i = beta * (1 - conf(routed))
+        margin_both:  beta_i = beta * (1 - conf(routed)) * conf(rp)
+
+    so the blend opens only when the routed head is undecided AND the RP head
+    is decided. Setting conf(rp) = 1 recovers 'margin' exactly, which gives the
+    mode an identity check of the same kind as w = 1.0 and beta = 0.
     """
     if mode in (None, 'none'):
         return None
-    probs = torch.softmax(
-        torch.where(valid, routed_logits.float(),
-                    torch.full_like(routed_logits, -1e4, dtype=torch.float32)),
-        dim=1)
     if mode == 'margin':
-        top2 = probs.topk(2, dim=1).values
-        margin = ((top2[:, :1] - top2[:, 1:2])
-                  / top2.sum(dim=1, keepdim=True).clamp_min(1e-12))
-        return (1.0 - margin).clamp(0.0, 1.0)
+        return (1.0 - _top2_margin(routed_logits, valid)).clamp(0.0, 1.0)
+    if mode == 'margin_both':
+        if rp_scores is None:
+            raise ValueError(
+                "rp_class_fusion_gate='margin_both' needs the RP scores; "
+                'the caller passed none')
+        undecided = 1.0 - _top2_margin(routed_logits, valid)
+        return (undecided * _top2_margin(rp_scores, valid)).clamp(0.0, 1.0)
     if mode == 'entropy':
+        probs = torch.softmax(
+            torch.where(valid, routed_logits.float(),
+                        torch.full_like(routed_logits, -1e4, dtype=torch.float32)),
+            dim=1)
         entropy = -(probs * probs.clamp_min(1e-12).log()).sum(dim=1, keepdim=True)
         classes = valid.sum(dim=1, keepdim=True).clamp_min(2).float()
         return (entropy / classes.log()).clamp(0.0, 1.0)
@@ -896,8 +930,13 @@ def fuse_class_scores(routed_logits, rp_scores, weight, seen_tasks=None):
         weight = weight * _stage_ramp(
             seen_tasks, getattr(args_ref[0], 'num_tasks', seen_tasks),
             getattr(args_ref[0], 'rp_fusion_ramp', 0.0))
-    gate = _fusion_gate(routed, valid,
-                        getattr(args_ref[0], 'rp_class_fusion_gate', 'none'))
+    # neginf=-1e4 here, not 0.0 as in the mixing below: the gate feeds these
+    # straight into a softmax, so an unseen class must stay far away rather
+    # than land in the middle of the distribution.
+    gate = _fusion_gate(
+        routed, valid,
+        getattr(args_ref[0], 'rp_class_fusion_gate', 'none'),
+        rp_scores=torch.nan_to_num(rp_scores.float(), neginf=-1e4))
     share = weight if gate is None else weight * gate
     mixed = ((1.0 - share) * _standardize_valid(routed, valid)
              + share * _standardize_valid(
@@ -2207,6 +2246,17 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
             # shipped default stays 1.
             if task_id + 1 < int(getattr(args, 'rp_class_fusion_min_tasks', 1)):
                 class_weight = 0.0
+            if class_weight != 0.0 and 'fusion_rp_scores' not in dir():
+                # Fail loudly. fusion_rp_scores only exists on the
+                # --rp_route_fusion_drm path, so asking for class fusion
+                # without it used to skip stage 2 in silence -- and a run that
+                # silently measured the baseline would look like a measurement
+                # of the blend.
+                raise RuntimeError(
+                    '--rp_class_fusion_weight is %.3f but the RP scores were '
+                    'never computed; class fusion requires '
+                    '--rp_route_fusion_drm. Refusing to skip stage 2 silently.'
+                    % class_weight)
             if class_weight != 0.0 and 'fusion_rp_scores' in dir():
                 args_ref[0] = args
                 logits = fuse_class_scores(
