@@ -641,6 +641,11 @@ ImageNet-R với giá trị $-0.047 \pm 0.282$: độ lệch chuẩn lớn gấp
 tuyệt đối của trung bình, nên đại lượng này không phân biệt được với $0$. Đây là
 dao động giữa các seed, không phải suy giảm có tính hệ thống.
 
+Cách đếm này cần đọc kèm Mục \ref{sec:limits}: siêu tham số được chọn trên
+ImageNet-R theo tiêu chí cùng dạng với chính phép đếm, nên $18$ ô không phải
+$18$ bằng chứng độc lập. Phần độc lập là $11$ ô của CIFAR-100 và CUB-200, và cả
+$11$ đều cải thiện.
+
 \textbf{Mức độ tin cậy.} Hai chỉ số đáng tin cậy nhất là Acc@task và Acc@5, với
 độ lệch chuẩn của mức thay đổi nhỏ hơn chính mức thay đổi khoảng mười đến mười
 lăm lần. Nói cách khác, mức cải thiện ở hai chỉ số này lặp lại ổn định trên mọi
@@ -907,6 +912,7 @@ Chi phí bộ nhớ tăng thêm gồm một ma trận Gram, một ma trận tư�
 seed để sinh lại ma trận chiếu.
 
 \section{Hạn chế}
+\label{sec:limits}
 
 \textbf{Chỉ số Backward trên ImageNet-R.} Giá trị $-0.047 \pm 0.282$ không phân
 biệt được với $0$. Cần thêm số lượng seed để kết luận về dấu, tuy nhiên có thể
@@ -919,9 +925,58 @@ Muốn cải thiện thêm thì phải áp dụng hiệu chỉnh nhiệt độ, 
 phương pháp đề xuất trong khi giữ nguyên baseline là một so sánh không công
 bằng; nếu hiệu chỉnh cho cả hai thì chênh lệch trở lại như cũ.
 
-\textbf{Cách chọn siêu tham số.} Giá trị $\beta$ được chọn trên seed 42 và dùng
-chung cho cả ba bộ dữ liệu, sau đó được kiểm chứng lại trên ba seed còn lại.
-Chúng tôi không đặt siêu tham số riêng cho từng bộ dữ liệu.
+\textbf{Cách chọn siêu tham số.} Cả ba siêu tham số của phương pháp đều được
+chọn trên ImageNet-R, và các seed dùng để chọn đều nằm trong trung bình báo cáo.
+Cụ thể: $\lambda = 10000$ chọn bằng cách quét năm giá trị trên seed 42, dải
+Acc@1 giữa năm giá trị là $0.432$ điểm; $\beta = 0.5$ chọn theo Loss trên
+CIFAR-100 và Backward trên ImageNet-R (Bảng \ref{tab:beta}); $w = 0.7$ chọn theo
+tiêu chí mọi chỉ số cải thiện trên mọi seed, đo trên ImageNet-R với cả bốn seed
+(Bảng \ref{tab:choose-w}). Chúng tôi không đặt siêu tham số riêng cho từng bộ dữ
+liệu, nhưng cũng không giữ lại được tập kiểm chứng độc lập cho ImageNet-R.
+
+Hệ quả là mức độ độc lập của bằng chứng khác nhau rõ rệt giữa ba bộ dữ liệu
+(Bảng \ref{tab:tuning-scope}).
+
+\begin{table}[htbp]
+\centering
+\caption{Mức độ độc lập của bằng chứng, xét theo việc ô đó có từng được dùng làm
+tiêu chí chọn siêu tham số hay không.}
+\label{tab:tuning-scope}
+\begin{tabular}{@{}lp{6.4cm}c@{}}
+\toprule
+Bộ dữ liệu & Ô từng dùng làm tiêu chí chọn & Ô độc lập \\
+\midrule
+ImageNet-R & Backward (chọn $\beta$); cả sáu chỉ số (chọn $w$); toàn bộ seed 42
+             (quét $\lambda$) & $0/6$ \\
+CIFAR-100  & Loss (chọn $\beta$) & $5/6$ \\
+CUB-200    & không có & $6/6$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+CUB-200 chưa từng tham gia bất kỳ bước chọn nào, nên sáu ô của nó là bằng chứng
+độc lập hoàn toàn, và CIFAR-100 độc lập ở năm trên sáu ô. Cộng lại là $11$ ô
+độc lập, tất cả đều cải thiện. Đây mới là phần bằng chứng mạnh của báo cáo, và
+nó mạnh vì siêu tham số được chuyển sang hai bộ này nguyên vẹn, không chỉnh lại.
+
+Ngược lại, ImageNet-R không còn ô nào độc lập, và hai con số được trích dẫn
+nhiều nhất trong báo cáo đều nằm ở đó. Giá trị Backward $-0.047 \pm 0.282$ ở
+Bảng \ref{tab:main} chính là đại lượng đã dùng để chọn $\beta$. Còn tiêu chí
+chọn $w$ --- cải thiện đồng thời cả sáu chỉ số trên mọi seed --- cùng dạng với
+cách đếm $17/18$: cấu hình được chọn để tối đa hóa số ô cải thiện, rồi số ô cải
+thiện được báo cáo như một phát hiện. Cách đếm đó vì vậy không nên đọc như một
+phép kiểm định độc lập.
+
+Độ lớn của thiên lệch bị chặn bởi dải quét. Với $\lambda$, dải trên seed 42 là
+$0.432$ điểm Acc@1, tức phần lợi thu được từ việc chọn trên chính seed đó nhiều
+nhất là $0.432$ cho một trong bốn seed, khoảng $0.11$ điểm trên trung bình, so
+với mức cải thiện báo cáo $+1.236$. Bỏ riêng seed 42 --- seed duy nhất dùng để
+quét $\lambda$ --- thì Acc@1 trên ImageNet-R tăng $+1.150$ thay vì $+1.236$, còn
+Forgetting chuyển từ $-0.056$ sang $+0.002$, tức thành ô không cải thiện thứ
+hai. Phép bỏ này chỉ loại được phần thiên lệch của $\lambda$; $\beta$ và $w$ vẫn
+được chọn trên chính ba seed còn lại. Cả hai giá trị vẫn không phân biệt được
+với $0$, nên kết luận không đổi: trên ImageNet-R, hai trục ghi nhớ không có bằng
+chứng theo hướng nào cả.
 
 \textbf{Vị trí so với các phương pháp công bố.} Báo cáo này đo mức cải thiện so
 với HRM-PET, không nhằm thiết lập kết quả tốt nhất hiện có. Ở giao thức $T = 10$,
