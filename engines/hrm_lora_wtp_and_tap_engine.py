@@ -862,6 +862,9 @@ def _top2_margin(scores, valid):
             / top2.sum(dim=1, keepdim=True).clamp_min(1e-12)).clamp(0.0, 1.0)
 
 
+gate_stats = {}
+
+
 def _fusion_gate(routed_logits, valid, mode, rp_scores=None):
     """How much this sample should listen to the second classifier, in [0, 1].
 
@@ -886,10 +889,18 @@ def _fusion_gate(routed_logits, valid, mode, rp_scores=None):
     is decided. Setting conf(rp) = 1 recovers 'margin' exactly, which gives the
     mode an identity check of the same kind as w = 1.0 and beta = 0.
     """
+    # The mean gate is recorded so a run can be read without guessing. The
+    # first margin_both attempt was inconclusive precisely because the gate's
+    # magnitude was invisible: its numbers rose monotonically with beta, which
+    # is the signature of under-fusion, but nothing in the log said by how much
+    # the gate had shrunk. GateShare and ConfRP make that direct.
+    gate_stats.clear()
     if mode in (None, 'none'):
         return None
     if mode == 'margin':
-        return (1.0 - _top2_margin(routed_logits, valid)).clamp(0.0, 1.0)
+        gate = (1.0 - _top2_margin(routed_logits, valid)).clamp(0.0, 1.0)
+        gate_stats['gate'] = gate.mean().item()
+        return gate
     if mode == 'margin_both':
         if rp_scores is None:
             raise ValueError(
@@ -909,7 +920,12 @@ def _fusion_gate(routed_logits, valid, mode, rp_scores=None):
         mean, std = _valid_moments(routed_logits.float(), valid)
         rp_on_scale = _standardize_valid(rp_scores.float(), valid) * std + mean
         undecided = 1.0 - _top2_margin(routed_logits, valid)
-        return (undecided * _top2_margin(rp_on_scale, valid)).clamp(0.0, 1.0)
+        conf_rp = _top2_margin(rp_on_scale, valid)
+        gate = (undecided * conf_rp).clamp(0.0, 1.0)
+        gate_stats['gate'] = gate.mean().item()
+        gate_stats['conf_rp'] = conf_rp.mean().item()
+        gate_stats['undecided'] = undecided.mean().item()
+        return gate
     if mode == 'entropy':
         probs = torch.softmax(
             torch.where(valid, routed_logits.float(),
@@ -917,7 +933,9 @@ def _fusion_gate(routed_logits, valid, mode, rp_scores=None):
             dim=1)
         entropy = -(probs * probs.clamp_min(1e-12).log()).sum(dim=1, keepdim=True)
         classes = valid.sum(dim=1, keepdim=True).clamp_min(2).float()
-        return (entropy / classes.log()).clamp(0.0, 1.0)
+        gate = (entropy / classes.log()).clamp(0.0, 1.0)
+        gate_stats['gate'] = gate.mean().item()
+        return gate
     raise ValueError('unknown rp_class_fusion_gate: %s' % mode)
 
 
@@ -2276,6 +2294,19 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     logits, fusion_rp_scores, class_weight, task_id + 1)
                 loss = criterion(logits, target)
                 acc1, acc5 = accuracy(logits, target, topk=(1, 5))
+                # GateShare is the effective per-sample weight the RP head
+                # actually receives, beta times the gate -- not the nominal
+                # beta. Reading it next to Acc@1 tells a mode that lost because
+                # it mixed too little apart from one that lost because mixing
+                # more was the wrong thing to do.
+                if 'gate' in gate_stats:
+                    metric_logger.meters['GateShare'].update(
+                        class_weight * gate_stats['gate'], n=input.shape[0])
+                if 'conf_rp' in gate_stats:
+                    metric_logger.meters['ConfRP'].update(
+                        gate_stats['conf_rp'], n=input.shape[0])
+                    metric_logger.meters['Undecided'].update(
+                        gate_stats['undecided'], n=input.shape[0])
             if (bool(getattr(args, 'classifier_union_audit', False))
                     and 'fusion_rp_scores' in dir()):
                 # Routing gains convert poorly into Acc@1 because the shared
@@ -2307,6 +2338,14 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
         .format(task_acc=metric_logger.meters['Acc@task'],
                 top1=metric_logger.meters['Acc@1'], top5=metric_logger.meters['Acc@5'],
                 losses=metric_logger.meters['Loss']))
+    if 'GateShare' in metric_logger.meters:
+        line = '* GateShare {g.global_avg:.4f}'.format(
+            g=metric_logger.meters['GateShare'])
+        if 'ConfRP' in metric_logger.meters:
+            line += (' Undecided {u.global_avg:.4f} ConfRP {c.global_avg:.4f}'
+                     .format(u=metric_logger.meters['Undecided'],
+                             c=metric_logger.meters['ConfRP']))
+        print(line)
     if bool(getattr(args, 'budgeted_rematching', False)):
         print(
             '* Budgeted FallbackRate {rate.global_avg:.3f} LoRA/sample {cost.global_avg:.3f}'
