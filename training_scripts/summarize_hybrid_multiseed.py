@@ -15,13 +15,19 @@ DATASETS = [('imr', 'ImageNet-R'), ('cifar100', 'CIFAR-100'), ('cub200', 'CUB-20
 SEEDS = [42, 43, 44, 45]
 METRICS = ['Acc@task', 'Acc@1', 'Acc@5', 'Loss', 'Forgetting', 'Backward']
 LOWER_IS_BETTER = {'Loss', 'Forgetting'}
-# The shipped configuration: w = 0.7, beta = 0.5, gate = margin, min_tasks = 1.
-# The previous default ended '...cw0p3sh1p0m1.log', which is beta 0.3 with NO
-# gate -- neither the beta nor the gate of the configuration we report. Running
-# this script with no arguments therefore summarised a superseded run and
-# printed a table that looked entirely normal.
+# The shipped configuration: dim = 10000, lambda = 10000, w = 0.7, beta = 0.5,
+# gate = margin, min_tasks = 1. Running with no arguments now reproduces the
+# reported table exactly -- verified 2026-08-28 against the published row
+# (ImageNet-R Backward -0.047 +- 0.282, the single non-positive cell of 18).
+#
+# Two things had to be pinned to get here. The old default ended
+# '...cw0p3sh1p0m1.log', which is beta 0.3 with NO gate -- neither the beta nor
+# the gate of the configuration we report. And leaving lambda to a wildcard let
+# the glob swallow the whole lambda sweep: five logs matched on seed 42, and
+# because '0' sorts before '_', sorted()[0] picked l100000 rather than the
+# shipped l10000. That would have silently reported a run 0.43 Acc@1 worse.
 FUSION_GLOB = (sys.argv[2] if len(sys.argv) > 2
-               else '_eval_rp_lora_*f1d1w0p7*cw0p5sh1p0m1gmargin.log')
+               else '_eval_rp_lora_d10000_relu_l10000_*f1d1w0p7*cw0p5sh1p0m1gmargin.log')
 
 
 def final_row(path):
