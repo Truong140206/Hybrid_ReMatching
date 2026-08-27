@@ -32,17 +32,26 @@ def label(path):
         if name.endswith(cut):
             name = name[:-len(cut)]
     name = re.sub(r'^(imr|cifar100|cub200)_lora_rank8_baseline_10tasks_', '', name)
-    m = re.search(r'(gmargin(?:r\d+p\d+)?)$', name)
-    return m.group(1) if m else (name[-28:] or name)
+    # Keep beta as well as the gate. The old pattern captured only the gate tag,
+    # so a beta sweep -- the commonest thing this script is pointed at -- came
+    # out as several identical 'gmargin' labels with no way to tell the columns
+    # apart. It also failed to match 'gmargin_both' at all, since that tag does
+    # not end where the pattern expected.
+    m = re.search(r'cw(\d+p\d+)sh\d+p\d+m\d+(g[a-z_]+)?(r\d+p\d+)?$', name)
+    if m:
+        gate = (m.group(2) or 'gnone')[1:]
+        ramp = ('/' + m.group(3)) if m.group(3) else ''
+        return '%s b%s%s' % (gate, m.group(1).replace('p', '.'), ramp)
+    return name[-28:] or name
 
 
 for path in sys.argv[1:]:
     rows = curve(path)
     if not rows:
-        print('%-14s no stage rows in %s' % ('--', os.path.basename(path)))
+        print('%-20s no stage rows in %s' % ('--', os.path.basename(path)))
         continue
     acc1 = [r[1] for r in rows]
     acct = [r[0] for r in rows]
-    print('%-14s AIA@1 %6.2f  AIA@task %6.2f  |  %s' % (
+    print('%-20s AIA@1 %6.2f  AIA@task %6.2f  |  %s' % (
         label(path), sum(acc1) / len(acc1), sum(acct) / len(acct),
         ' '.join('%.1f' % a for a in acc1)))

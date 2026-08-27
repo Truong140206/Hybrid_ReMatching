@@ -811,8 +811,17 @@ def fuse_routers(rp_scores, tii_logits, class_mask, seen_task_count, args,
         # far wider scale than ridge scores, so mixing them directly lets TII
         # dominate at any weight. Standardizing per sample first makes the
         # weight mean what it says.
+        # unbiased=False on purpose. At stage 1 there is exactly one task, so
+        # the Bessel-corrected std divides by n-1 = 0 and yields NaN, which
+        # clamp_min cannot repair -- NaN compares false against everything. The
+        # NaN was harmless only because argmax over a single column returns 0
+        # whatever it holds, i.e. the answer was right by luck. The population
+        # std gives 0 there, which clamp_min does repair. For every stage past
+        # the first the two differ by sqrt(n/(n-1)), a constant shared by both
+        # routers, so it cancels in the argmax and no measured number moves.
         centered = scores - scores.mean(dim=1, keepdim=True)
-        return centered / centered.std(dim=1, keepdim=True).clamp_min(1e-6)
+        return centered / centered.std(
+            dim=1, unbiased=False, keepdim=True).clamp_min(1e-6)
 
     fused = (weight * standardize(tii_task)
              + (1.0 - weight) * standardize(rp_task))
@@ -1066,8 +1075,16 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 'temperature=', float(getattr(args, 'shared_prototype_temperature', 0.07)),
             )
 
+    # Explicit sentinel rather than a `'fusion_rp_scores' in dir()` probe. dir()
+    # reads the function's locals, so once any batch assigns the name it stays
+    # visible to every later batch -- a batch that failed to compute its own
+    # scores would silently be judged against the previous batch's. That cannot
+    # happen today because the branch is gated on an args flag that is constant
+    # across batches, but the guard should not depend on that staying true.
+    fusion_rp_scores = None
     with torch.no_grad():
         for input, target in metric_logger.log_every(data_loader, args.print_freq, header):
+            fusion_rp_scores = None
             input = input.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
 
@@ -2277,7 +2294,7 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
             # shipped default stays 1.
             if task_id + 1 < int(getattr(args, 'rp_class_fusion_min_tasks', 1)):
                 class_weight = 0.0
-            if class_weight != 0.0 and 'fusion_rp_scores' not in dir():
+            if class_weight != 0.0 and fusion_rp_scores is None:
                 # Fail loudly. fusion_rp_scores only exists on the
                 # --rp_route_fusion_drm path, so asking for class fusion
                 # without it used to skip stage 2 in silence -- and a run that
@@ -2288,7 +2305,7 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     'never computed; class fusion requires '
                     '--rp_route_fusion_drm. Refusing to skip stage 2 silently.'
                     % class_weight)
-            if class_weight != 0.0 and 'fusion_rp_scores' in dir():
+            if class_weight != 0.0 and fusion_rp_scores is not None:
                 args_ref[0] = args
                 logits = fuse_class_scores(
                     logits, fusion_rp_scores, class_weight, task_id + 1)
@@ -2308,7 +2325,7 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     metric_logger.meters['Undecided'].update(
                         gate_stats['undecided'], n=input.shape[0])
             if (bool(getattr(args, 'classifier_union_audit', False))
-                    and 'fusion_rp_scores' in dir()):
+                    and fusion_rp_scores is not None):
                 # Routing gains convert poorly into Acc@1 because the shared
                 # classifier often gets the class right despite a wrong route.
                 # This measures whether the RP head, used as a classifier in its

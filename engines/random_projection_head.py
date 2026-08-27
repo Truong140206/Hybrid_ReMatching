@@ -47,6 +47,10 @@ def reset_rp_head():
     _state['seen_classes'] = set()
     _state['temperature'] = None
     _state['weights'] = None
+    # solve_rp_head always rewrites this, so a stale mask has never actually
+    # leaked. Clearing it anyway: the invariant that keeps it safe lives in
+    # another function, and a reset should leave nothing behind.
+    _state['class_mask_bias'] = None
 
 
 def rp_head_ready():
@@ -140,11 +144,24 @@ def solve_rp_head(args, device, seen_class_ids=None):
         raise RuntimeError('RP head has no accumulated statistics')
     lam = float(getattr(args, 'rp_lambda', 1e4))
     dim = gram.shape[0]
-    ridge = gram + lam * torch.eye(dim, dtype=torch.float64, device=device)
+    # Add lambda along the diagonal in place instead of building lam * I. At
+    # rp_dim=10000 a float64 identity is 800 MB, and `lam * eye` materialises a
+    # second one, so the old form spent 2.4 GB of temporaries to express
+    # something that touches 10000 numbers. Arithmetically identical: every
+    # off-diagonal entry was gram + 0.0.
+    ridge = gram.clone()
+    ridge.diagonal().add_(lam)
     try:
         chol = torch.linalg.cholesky(ridge)
         weights = torch.cholesky_solve(prototypes, chol)
-    except Exception:
+    except torch.linalg.LinAlgError as err:
+        # Only the not-positive-definite case falls back. A bare `except
+        # Exception` here also swallowed OOM, and swallowed it into lstsq,
+        # which needs more memory than the Cholesky it was replacing. Say so
+        # rather than degrading in silence.
+        print('RP head: Cholesky failed (', err, ') - falling back to lstsq. '
+              'A singular Gram at lambda =', lam, 'means the statistics are '
+              'degenerate; check that accumulation actually ran.')
         weights = torch.linalg.lstsq(ridge, prototypes).solution
     weights = weights.float()
     if seen_class_ids is not None:

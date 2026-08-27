@@ -15,8 +15,13 @@ DATASETS = [('imr', 'ImageNet-R'), ('cifar100', 'CIFAR-100'), ('cub200', 'CUB-20
 SEEDS = [42, 43, 44, 45]
 METRICS = ['Acc@task', 'Acc@1', 'Acc@5', 'Loss', 'Forgetting', 'Backward']
 LOWER_IS_BETTER = {'Loss', 'Forgetting'}
+# The shipped configuration: w = 0.7, beta = 0.5, gate = margin, min_tasks = 1.
+# The previous default ended '...cw0p3sh1p0m1.log', which is beta 0.3 with NO
+# gate -- neither the beta nor the gate of the configuration we report. Running
+# this script with no arguments therefore summarised a superseded run and
+# printed a table that looked entirely normal.
 FUSION_GLOB = (sys.argv[2] if len(sys.argv) > 2
-               else '_eval_rp_lora_*f1d1w0p7*cw0p3sh1p0m1.log')
+               else '_eval_rp_lora_*f1d1w0p7*cw0p5sh1p0m1gmargin.log')
 
 
 def final_row(path):
@@ -44,11 +49,24 @@ for prefix, label in DATASETS:
     template = os.path.join(OUTPUT_ROOT, prefix + '_lora_rank8_baseline_10tasks_seed%d')
     baseline = {m: [] for m in METRICS}
     hybrid = {m: [] for m in METRICS}
-    used, missing = [], []
+    used, missing, ambiguous = [], [], []
     for seed in SEEDS:
         run = template % seed
         conv = final_row(run + '_eval_conventional.log')
         matches = sorted(glob.glob(run + FUSION_GLOB))
+        if len(matches) > 1:
+            # Refuse rather than guess. The wildcards span lambda, dim and w,
+            # so one glob really can match several distinct configurations --
+            # measured: five logs matched '*cw0p5sh1p0m1gmargin.log' on seed 42,
+            # spanning 0.43 Acc@1. Taking sorted()[0] would have reported one of
+            # them as if it were the only candidate, and this script builds the
+            # table that goes in the report.
+            ambiguous.append(seed)
+            print('  seed %d: %d logs match, refusing to choose:' % (
+                seed, len(matches)))
+            for path in matches:
+                print('    ' + os.path.basename(path))
+            continue
         fuse = final_row(matches[0] if matches else None)
         if conv is None or fuse is None:
             missing.append('%d(%s%s)' % (seed, '' if conv else 'conv ',
@@ -64,6 +82,9 @@ for prefix, label in DATASETS:
         label, used or 'NONE', len(used), len(SEEDS)))
     if missing:
         print('  missing: ' + ', '.join(missing))
+    if ambiguous:
+        print('  AMBIGUOUS seeds %s -- narrow FUSION_GLOB and re-run; this '
+              'table is incomplete' % ambiguous)
     if not used:
         continue
     print('  %-11s %17s %17s %17s' % ('Metric', 'HRM-PET', 'Hybrid', 'Delta'))
