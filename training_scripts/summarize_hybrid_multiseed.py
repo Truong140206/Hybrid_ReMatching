@@ -26,8 +26,13 @@ LOWER_IS_BETTER = {'Loss', 'Forgetting'}
 # the glob swallow the whole lambda sweep: five logs matched on seed 42, and
 # because '0' sorts before '_', sorted()[0] picked l100000 rather than the
 # shipped l10000. That would have silently reported a run 0.43 Acc@1 worse.
+#
+# '_c0_' is pinned too. rollout_hybrid_4090.sh defaults CALIBRATE to 1 while the
+# shipped configuration is 0, so a rollout launched without CALIBRATE=0 produces
+# '_c1_' logs. Those would have matched a wildcard in that position, and if they
+# were the only logs for a seed nothing would have flagged it.
 FUSION_GLOB = (sys.argv[2] if len(sys.argv) > 2
-               else '_eval_rp_lora_d10000_relu_l10000_*f1d1w0p7*cw0p5sh1p0m1gmargin.log')
+               else '_eval_rp_lora_d10000_relu_l10000_*_c0_ra0ls0_f1d1w0p7*cw0p5sh1p0m1gmargin.log')
 
 
 def final_row(path):
