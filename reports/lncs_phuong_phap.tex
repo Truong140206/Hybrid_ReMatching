@@ -50,33 +50,144 @@ tham số \and Chiếu ngẫu nhiên.}
 
 \subsection{Phát biểu bài toán}
 
-Học liên tục theo lớp (CIL) học một chuỗi $T$ tác vụ mà không quên tác vụ cũ.
-Tác vụ thứ $t$ gồm $n_t$ mẫu $\mathcal{D}_t=\{(x^t_i,y^t_i)\}_{i=1}^{n_t}$
-thuộc tập lớp $\mathcal{C}_t$, trong đó $x^t_i \in \mathcal{X}$ là ảnh vào và
-$y^t_i \in \mathcal{Y}$ là nhãn. Tại thời điểm $t$ chỉ $\mathcal{D}_t$ khả dụng
-cho huấn luyện. Các tập lớp không chồng lấn, $\mathcal{C}_t \cap \mathcal{C}_{t'}
-= \emptyset$ với $t \neq t'$, và định danh tác vụ \emph{không} được biết khi suy
-luận. Báo cáo này làm việc trong thiết lập không lưu mẫu: ảnh của các tác vụ đã
-qua không bao giờ được giữ lại.
+Học liên tục theo lớp (class-incremental learning, CIL) học một chuỗi $T$ tác vụ
+mà không quên tác vụ cũ. Tác vụ thứ $t$ gồm $n_t$ mẫu
+$\mathcal{D}_t=\{(x^t_i,y^t_i)\}_{i=1}^{n_t}$ thuộc tập lớp $\mathcal{C}_t$,
+trong đó $x^t_i \in \mathcal{X}$ là ảnh vào và $y^t_i \in \mathcal{Y}$ là nhãn
+tương ứng. Toàn bộ chuỗi là $\mathcal{D}=\{\mathcal{D}_1,\dots,\mathcal{D}_T\}$.
 
-Trong các phương pháp dựa trên tinh chỉnh hiệu quả tham số (PET), một mạng xương
-sống tiền huấn luyện $h_{\mathrm{ptm}}$ được đóng băng, và một kho tham số nhẹ
-$\mathcal{P}=\{p_1,\dots,p_T\}$ được duy trì, mỗi bộ ứng với một tác vụ. Khi suy
-luận, hệ thống phải \emph{chọn} bộ tham số nào để gắn vào mạng xương sống trước
-khi phân lớp.
+Ba ràng buộc định nghĩa thiết lập. Thứ nhất, tại thời điểm $t$ chỉ
+$\mathcal{D}_t$ khả dụng cho huấn luyện. Thứ hai, các tập lớp không chồng lấn,
+$\mathcal{C}_t \cap \mathcal{C}_{t'} = \emptyset$ với mọi $t \neq t'$, và khi suy
+luận thì \emph{định danh tác vụ không được biết}: mô hình phải phân biệt mọi lớp
+đã gặp bằng một đầu phân lớp dùng chung. Thứ ba, báo cáo này làm việc trong thiết
+lập không lưu mẫu (rehearsal-free): ảnh của các tác vụ đã qua không bao giờ được
+giữ lại, kể cả một tập nhỏ.
 
-Chúng tôi lấy HRM-PET làm cơ sở. Với ảnh vào $x$, đặc trưng truy vấn
-$q(x)=h(x;\theta_{\mathrm{ptm}})$ được đưa qua một bộ phân lớp phụ để suy ra
-định danh tác vụ ban đầu; bước này gọi là suy luận định danh tác vụ (TII).
-HRM-PET tinh chỉnh kết quả đó bằng hai cơ chế đối sánh lại, DRM và CRM, rồi gắn
-bộ tham số đã chọn vào mạng xương sống và sinh véc-tơ điểm số theo lớp
-$\ell \in \mathbb{R}^{|\mathcal{Y}|}$ từ một đầu phân lớp dùng chung. Lớp dự
-đoán là $\hat{y}=\arg\max_c \ell_c$.
+Trong các phương pháp dựa trên tinh chỉnh hiệu quả tham số (PET), mạng xương sống
+tiền huấn luyện $h_{\mathrm{ptm}}$ với tham số $\theta_{\mathrm{ptm}}$ được đóng
+băng, và một kho tham số nhẹ $\mathcal{P}=\{p_1,\dots,p_T\}$ được duy trì, mỗi bộ
+huấn luyện riêng cho một tác vụ. Ở đây $p_t$ là một bộ điều hợp LoRA. Đầu phân
+lớp dùng chung ký hiệu $g_{\theta_g}$. Vì định danh tác vụ không biết khi suy
+luận, hệ thống buộc phải \emph{chọn} bộ tham số nào gắn vào mạng xương sống trước
+khi phân lớp --- và toàn bộ chất lượng phía sau phụ thuộc vào lựa chọn đó.
 
-Toàn bộ chuỗi xử lý này phụ thuộc vào \emph{một} tín hiệu định tuyến duy nhất,
-sinh ra tại khối đầu tiên. Mục này đề xuất một nguồn tín hiệu thứ hai và hai vị
-trí để hợp nhất nó vào, cả hai đặt ở giai đoạn suy luận nên không cần huấn luyện
-lại bất kỳ tham số nào. Hình~\ref{fig:pipeline} minh họa vị trí của chúng.
+\begin{table}
+\caption{Ký hiệu dùng trong mục này.}\label{tab:notation}
+\begin{tabular}{ll}
+\hline
+Ký hiệu & Ý nghĩa\\
+\hline
+$\mathcal{D}_t$, $\mathcal{C}_t$ & dữ liệu và tập lớp của tác vụ $t$\\
+$h_{\mathrm{ptm}}$, $\theta_{\mathrm{ptm}}$ & mạng xương sống tiền huấn luyện, đóng băng\\
+$\mathcal{P}=\{p_1,\dots,p_T\}$ & kho tham số LoRA, mỗi tác vụ một bộ\\
+$g_{\theta_g}$, $g_\omega$ & đầu phân lớp dùng chung; bộ phân lớp phụ của TII\\
+$q(x)$ & đặc trưng truy vấn từ mạng xương sống trần\\
+$\hat{d}(x)$, $\tilde{d}(x)$ & phân bố theo lớp của TII; của đầu phân lớp sau định tuyến\\
+$\mathcal{T}(\cdot)$ & ánh xạ lớp sang định danh tác vụ\\
+$\hat{t}_f$, $\hat{t}_s$ & định danh tác vụ ở đối sánh đầu và sau khi đối sánh lại\\
+$\ell \in \mathbb{R}^{|\mathcal{Y}|}$ & điểm số theo lớp của đầu phân lớp đã định tuyến\\
+$s \in \mathbb{R}^{|\mathcal{Y}|}$ & điểm số theo lớp của đầu chiếu ngẫu nhiên\\
+$z(\cdot)$ & chuẩn hóa về trung bình không, phương sai đơn vị trên từng mẫu\\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Quy trình cơ sở}
+
+Chúng tôi lấy HRM-PET làm cơ sở. Quy trình suy luận của nó gồm bốn khối nối
+tiếp, trình bày dưới đây theo đúng thứ tự dữ liệu đi qua.
+
+\subsubsection{Suy luận định danh tác vụ (TII).}
+Ảnh vào được đưa qua mạng xương sống \emph{trần}, không gắn bộ điều hợp nào, để
+lấy đặc trưng truy vấn. Đặc trưng này đi vào một bộ phân lớp phụ $g_\omega$ được
+huấn luyện bằng entropy chéo, sinh ra một phân bố theo lớp:
+\begin{equation}
+q(x) = h(x;\theta_{\mathrm{ptm}}),
+\qquad
+\hat{d}(x) = g\!\left(q(x); \theta_\omega\right).
+\label{eq:tii}
+\end{equation}
+Định danh tác vụ ban đầu thu được bằng cách lấy lớp có xác suất cao nhất rồi ánh
+xạ sang tác vụ chứa nó, với $\mathcal{T}$ là ánh xạ lớp sang tác vụ.
+
+\subsubsection{Đối sánh lại trực tiếp (DRM).}
+Nhờ tri thức dùng chung trong kho tham số, với một số mẫu thì lớp mà đầu phân
+lớp dự đoán \emph{đã} thuộc đúng tác vụ, dù đối sánh ban đầu sai. Những mẫu đó
+nhận ra được vì lớp dự đoán không thuộc tác vụ đã đối sánh. HRM-PET so sánh hai
+định danh:
+\begin{align}
+\hat{t}_f &= \mathcal{T}\!\left(\arg\max_i\, g(q(x);\theta_\omega)\right),
+\label{eq:tf}\\
+\hat{t}_s &= \mathcal{T}\!\left(\arg\max_i\,
+   g\!\left(h(x; p_{\hat{t}_f}, \theta_{\mathrm{ptm}}); \theta_g\right)\right),
+\label{eq:ts}
+\end{align}
+và chỉ thay thế khi hai giá trị khác nhau:
+\begin{equation}
+\hat{y} =
+\begin{cases}
+\arg\max_i\, g\!\left(h(x; p_{\hat{t}_s}, \theta_{\mathrm{ptm}}); \theta_g\right),
+  & \text{nếu } \hat{t}_f \neq \hat{t}_s,\\[2pt]
+\arg\max_i\, g\!\left(h(x; p_{\hat{t}_f}, \theta_{\mathrm{ptm}}); \theta_g\right),
+  & \text{ngược lại.}
+\end{cases}
+\label{eq:drm}
+\end{equation}
+Nếu $\hat{t}_s$ đúng thì độ chính xác định tuyến tăng; nếu sai thì kết quả xấu
+nhất cũng chỉ là dự đoán sai như $\hat{t}_f$ vốn đã sai. Thiết kế do đó không thể
+làm giảm hiệu năng.
+
+\subsubsection{Đối sánh lại theo độ tin cậy (CRM).}
+Khi $\hat{t}_f = \hat{t}_s$ thì DRM không có gì để thay. Với những mẫu đó, HRM-PET
+dựa trên một quan sát khác: mỗi bộ tham số chỉ được huấn luyện cùng các lớp của
+tác vụ nó, nên với mẫu bị ghép sai, phân bố dự đoán thường kém chắc chắn hơn. Độ
+tin cậy $E(\cdot)$ được tính bằng hàm entropy suy rộng hậu nghiệm, không cần huấn
+luyện thêm, và một bộ phát hiện so nó với ngưỡng $\tau$:
+\begin{equation}
+De(x) =
+\begin{cases}
+0, & \text{nếu } E(\tilde{d}(x)) \leq \tau \quad (\text{nghi ghép sai}),\\
+1, & \text{ngược lại.}
+\end{cases}
+\label{eq:detect}
+\end{equation}
+Vì không thể vạch một ranh giới dứt khoát bằng $\tau$, HRM-PET không thay thẳng
+$\hat{t}_f$ mà so độ tin cậy giữa một tập ứng viên $\Gamma$ gồm $N$ lớp có xác
+suất cao nhất trong $\hat{d}(x)$, rồi chọn định danh cho độ tin cậy lớn nhất:
+\begin{equation}
+\hat{t}_s = \arg\max_{i \,\in\, \Gamma}\;
+   E\!\left(g\!\left(h(x; p_{\mathcal{T}(i)}, \theta_{\mathrm{ptm}});
+   \theta_g\right)\right),
+\qquad N = 2 .
+\label{eq:crm}
+\end{equation}
+Mỗi ứng viên tốn thêm một lượt truyền xuôi, nên $N$ được giữ nhỏ.
+
+\subsubsection{Đầu phân lớp dùng chung.}
+Bộ tham số đã chọn được gắn vào mạng xương sống, và đầu phân lớp dùng chung sinh
+véc-tơ điểm số theo lớp trên toàn bộ các lớp đã gặp:
+\begin{equation}
+\ell = g\!\left(h(x; p_{\hat{t}}, \theta_{\mathrm{ptm}}); \theta_g\right)
+   \in \mathbb{R}^{|\mathcal{Y}|},
+\qquad
+\hat{y} = \arg\max_c\, \ell_c ,
+\label{eq:logits}
+\end{equation}
+trong đó $\hat{t}$ là định danh tác vụ sau DRM và CRM. Các lớp chưa gặp bị che
+bằng $-\infty$ nên không thể được dự đoán.
+
+\subsubsection{Điểm yếu của cấu trúc này.}
+Hai nhận xét dẫn tới phương pháp đề xuất. Thứ nhất, cả chuỗi bốn khối trên phụ
+thuộc vào \emph{một} nguồn tín hiệu định tuyến duy nhất, sinh ra ở
+(\ref{eq:tii}); DRM và CRM chỉ tinh chỉnh chứ không bổ sung nguồn nào. Thứ hai,
+$\ell$ ở (\ref{eq:logits}) là đầu phân lớp \emph{dùng chung}, nên nó thường đã
+đoán đúng lớp bất chấp định tuyến sai --- điều đó có nghĩa cải thiện định tuyến
+không tự động chuyển thành cải thiện phân lớp.
+
+Mục này đề xuất một nguồn tín hiệu thứ hai và hai vị trí để hợp nhất nó vào, ứng
+với hai nhận xét trên. Cả hai đặt ở giai đoạn suy luận nên không huấn luyện lại
+bất kỳ tham số nào. Hình~\ref{fig:pipeline} minh họa vị trí của chúng.
 
 \subsection{Nguồn tín hiệu thứ hai}
 
@@ -110,11 +221,11 @@ thêm được khả năng tách lớp nào. Nghịch đảo ma trận Gram kh�
 chiều đã mở rộng, việc mà hiệp phương sai theo từng lớp trong không gian gốc
 không làm được.
 
-Quan trọng nhất, $G$ và $C$ đều là \emph{tổng} trên các mẫu. Phép cộng có tính
-giao hoán, nên kết quả không phụ thuộc thứ tự các tác vụ được học: đầu phân lớp
-này không quên theo đúng nghĩa cấu trúc, chứ không phải nhờ một cơ chế chống
-quên nào. Và vì chỉ giữ hai ma trận tổng hợp, không giữ đặc trưng của từng mẫu,
-giao thức không lưu mẫu được bảo toàn.
+Quan trọng nhất, $G$ và $C$ ở (\ref{eq:gram}) đều là \emph{tổng} trên các mẫu.
+Phép cộng có tính giao hoán, nên kết quả không phụ thuộc thứ tự các tác vụ được
+học: đầu phân lớp này không quên theo đúng nghĩa cấu trúc, chứ không phải nhờ một
+cơ chế chống quên nào. Và vì chỉ giữ hai ma trận tổng hợp, không giữ đặc trưng
+của từng mẫu, giao thức không lưu mẫu được bảo toàn.
 
 \subsection{Hợp nhất hai tầng}
 
