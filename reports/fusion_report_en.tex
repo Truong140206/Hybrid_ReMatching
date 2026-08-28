@@ -926,32 +926,69 @@ ImageNet-R & 56.36 & 71.8 \\
 \end{tabular}
 \end{table}
 
-Table~\ref{tab:nophase1} records a discrepancy we cannot yet explain. The first
-two benchmarks differ by $2$ to $4$ points, which is attributable to our fixing
-$\lambda$ instead of cross-validating it per session as RanPAC does, together
-with small differences in image preprocessing. ImageNet-R alone differs by a
-further $12$ points or so.
+Table~\ref{tab:nophase1} used to record a discrepancy we could not explain: the
+first two benchmarks differ by $2$ to $4$ points, and ImageNet-R by a further
+$12$ or so. That discrepancy is now explained, and the cause lies in the
+comparison rather than in the implementation.
 
-We ruled out six causes by direct experiment: the data is not missing ($200$
-classes, $24\,000$ training and $6\,000$ test images); the features are not
-implicitly adapted (verified with a freshly constructed extractor, matching digit
-for digit); it is not a consequence of the continual-learning sequence (by the
-order invariance of $G$ and $C$); it is not $\lambda$ (swept over
-$\{10^2,\dots,10^6\}$, with an interior maximum of $58.10$); it is not data
-augmentation perturbing the statistics (the statistics are accumulated over
-deterministic transforms, as in RanPAC); and it is not a wrong input value range.
+We eliminated the components one at a time by direct experiment. The data is
+not missing ($200$ classes, $24\,000$ training and $6\,000$ test images). The
+features are not implicitly adapted, verified with a freshly constructed
+extractor. It is not a consequence of the continual-learning sequence, by the
+order invariance of $G$ and $C$. It is not data augmentation, since the
+statistics are accumulated over deterministic transforms exactly as in RanPAC.
+And it is not a wrong input value range: measured both ways on ImageNet-R with
+the bare extractor, leaving it wrong gives $55.79$ and correcting it gives
+$56.36$, so the correction is worth $+0.56$ points --- real but small, and the
+$56.36$ in the table was already the corrected figure.
 
-The last of these is worth spelling out, because it is a genuine fault in the
-codebase. The transform builder calls \texttt{ToTensor} without
-\texttt{Normalize}, so images arrive in $[0,1]$ while the ImageNet-21K ViT-B/16
-checkpoint was trained on $[-1,1]$. HRM-PET is immune because it trains on
-whatever features it is given; a training-free head is not. We measured both
-sides directly on ImageNet-R with the bare extractor: leaving the range wrong
-gives Acc@1 $55.79$, correcting it gives $56.36$. The correction is therefore
-worth $+0.56$ points --- real, but one twenty-seventh of the gap to be
-explained, and the $56.36$ in Table~\ref{tab:nophase1} is already the
-\emph{corrected} figure. Note also that this is far below the $+2.7$ points the
-same correction buys on CUB-200, so it does not transfer between datasets.
+\textbf{The decisive step was to remove the projection entirely.} Setting the
+projection dimension to zero reduces the method to a ridge regression on the
+frozen $768$-dimensional features, that is, a linear classifier --- and RanPAC
+publishes a number for exactly that configuration. The result: CUB-200 reaches
+$86.42$ against their $86.8$, while ImageNet-R reaches only $54.02$ against
+$67.6$. Same code, same extractor, same $\lambda$ selection --- one benchmark
+matches, the other is $13.6$ short. The gap survives removing the random
+projection altogether, so the classification head is not the cause. Neither is
+the data, since our HRM-PET baseline on ImageNet-R reaches $73.94$ against the
+$73.86$ the original reports.
+
+That leaves the pre-trained checkpoint. ImageNet-R consists of exactly $200$
+\emph{ImageNet-1k} classes redrawn as art, sculpture and cartoon, so a backbone
+fine-tuned on ImageNet-1k already carries features aligned with those very
+labels; CUB-200 is birds, which are not a $1$k class set, and gains no
+comparable benefit. We tested this by pointing \emph{only} the frozen snapshot
+at an ImageNet-21K checkpoint fine-tuned on ImageNet-1k, leaving every other
+component untouched. Table~\ref{tab:backbone} gives the result.
+
+\begin{table}[htbp]
+\centering
+\caption{Same no-projection configuration, changing only the frozen extractor's
+checkpoint. Acc@1, seed 42.}
+\label{tab:backbone}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Dataset & ImageNet-21K & 21K + 1k & Change \\
+\midrule
+CUB-200    & 86.42 & 87.53 & $+1.11$ \\
+ImageNet-R & 54.02 & 68.03 & $\mathbf{+14.01}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two things follow. First, ImageNet-R gains thirteen times what CUB-200 gains,
+exactly as predicted from its classes coinciding with the $1$k label set, so
+this is not a generic "better checkpoint" effect. Second, the figure obtained is
+$68.03$ against the $67.6$ RanPAC publishes --- a difference of $0.43$. The
+$13.6$-point gap disappears.
+
+The conclusion is that the comparison table was setting results on a
+21K-only backbone against a number most likely measured on an
+ImageNet-1k fine-tuned checkpoint. That is a fault in the \emph{comparison}, not
+in the implementation. We keep the $21$K backbone throughout this report,
+because it is the one HRM-PET was trained with and every number in
+Sect.~\ref{sec:results} rests on it; what remains is to confirm against the
+original which checkpoint its ablation table used.
 
 This discrepancy does not affect the results in Sect.~\ref{sec:results}, because
 every comparison in this report is made between the proposed method and the

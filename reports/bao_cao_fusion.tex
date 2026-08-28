@@ -903,35 +903,70 @@ ImageNet-R & 56.36 & 71.8 \\
 \end{tabular}
 \end{table}
 
-Bảng \ref{tab:nophase1} ghi lại một khác biệt chưa giải thích được. Hai bộ dữ
-liệu đầu chênh $2$ đến $4$ điểm, mức có thể quy cho việc chúng tôi cố định
-$\lambda$ thay vì chọn chéo theo từng phiên như RanPAC, cùng các khác biệt nhỏ
-trong tiền xử lý ảnh. Riêng ImageNet-R chênh thêm khoảng $12$ điểm nữa.
+Bảng \ref{tab:nophase1} từng ghi lại một khác biệt chúng tôi không giải thích
+được: hai bộ dữ liệu đầu chênh $2$ đến $4$ điểm, riêng ImageNet-R chênh thêm
+khoảng $12$ điểm nữa. Khác biệt đó nay đã được giải thích, và nguyên nhân nằm ở
+phép so sánh chứ không ở cài đặt.
 
-Chúng tôi đã loại trừ sáu nguyên nhân bằng thí nghiệm trực tiếp: dữ liệu không
-thiếu ($200$ lớp, $24\,000$ ảnh huấn luyện và $6\,000$ ảnh kiểm tra); đặc trưng
-không bị thích nghi ngầm (kiểm chứng bằng một bộ trích tạo mới, kết quả trùng đến
-từng chữ số); không phải hệ quả của trình tự học liên tục (do tính bất biến thứ
-tự của $G$ và $C$); không phải do $\lambda$ (đã quét $\{10^2,\dots,10^6\}$, cực
-đại nội tại đạt $58.10$); không phải do tăng cường dữ liệu làm nhiễu thống kê
-(thống kê được tích lũy trên biến đổi tất định, đúng như RanPAC); và không phải
-sai khoảng giá trị ảnh đầu vào.
+Chúng tôi lần lượt loại trừ từng thành phần bằng thí nghiệm trực tiếp. Dữ liệu
+không thiếu ($200$ lớp, $24\,000$ ảnh huấn luyện và $6\,000$ ảnh kiểm tra). Đặc
+trưng không bị thích nghi ngầm, kiểm chứng bằng một bộ trích tạo mới. Không phải
+hệ quả của trình tự học liên tục, do tính bất biến thứ tự của $G$ và $C$. Không
+phải do tăng cường dữ liệu, vì thống kê được tích lũy trên biến đổi tất định
+đúng như RanPAC. Không phải sai khoảng giá trị ảnh đầu vào: đo cả hai phía trên
+ImageNet-R với bộ trích trần cho $55.79$ khi để nguyên và $56.36$ khi sửa, tức
+bản sửa đáng $+0.56$ điểm --- có thật nhưng nhỏ, và $56.36$ ở bảng vốn đã là con
+số đã sửa.
 
-Nguyên nhân cuối đáng nói rõ vì nó là một lỗi có thật của mã nguồn. Hàm dựng
-biến đổi ảnh gọi \texttt{ToTensor} mà không gọi \texttt{Normalize}, nên ảnh nằm
-trong khoảng $[0,1]$ trong khi checkpoint ViT-B/16 ImageNet-21K được huấn luyện
-trên khoảng $[-1,1]$. HRM-PET miễn nhiễm vì nó huấn luyện trên chính những đặc
-trưng bị lệch đó; một đầu phân lớp không huấn luyện thì không. Chúng tôi đã đo
-trực tiếp cả hai phía trên ImageNet-R với bộ trích trần: để nguyên khoảng sai cho
-Acc@1 $55.79$, sửa đúng khoảng cho $56.36$. Bản sửa vì vậy đáng $+0.56$ điểm ---
-có thật, nhưng chỉ bằng một phần hai mươi bảy khoảng cách cần giải thích, và giá
-trị $56.36$ ở Bảng \ref{tab:nophase1} vốn đã là con số \emph{đã sửa}. Cũng cần
-lưu ý mức này nhỏ hơn hẳn $+2.7$ điểm mà cùng bản sửa đem lại trên CUB-200, nên
-không thể suy từ một bộ dữ liệu sang bộ khác.
+\textbf{Bước quyết định là bỏ hẳn phép chiếu.} Đặt số chiều chiếu bằng không thì
+phương pháp thu về đúng một phép hồi quy ridge trên đặc trưng $768$ chiều đóng
+băng, tức một bộ phân lớp tuyến tính, và RanPAC công bố số cho đúng cấu hình đó.
+Kết quả: CUB-200 đạt $86.42$ so với $86.8$ của họ, trong khi ImageNet-R chỉ đạt
+$54.02$ so với $67.6$. Cùng một đoạn mã, cùng bộ trích, cùng cách chọn $\lambda$
+--- một bộ khớp, một bộ lệch $13.6$. Khoảng cách sống sót cả khi đã bỏ toàn bộ
+phần chiếu ngẫu nhiên, nên đầu phân lớp không phải nguyên nhân. Dữ liệu cũng
+không, vì baseline HRM-PET của chúng tôi trên ImageNet-R đạt $73.94$ so với
+$73.86$ mà bài gốc công bố.
 
-Khác biệt này không ảnh hưởng tới các kết quả ở Mục $6$, vì mọi so sánh trong báo
-cáo đều được thực hiện giữa phương pháp đề xuất và baseline trên cùng một đường
-trích đặc trưng và cùng một bộ dữ liệu.
+Chỉ còn lại câu hỏi checkpoint tiền huấn luyện. ImageNet-R gồm đúng $200$ lớp
+\emph{của ImageNet-1k} được vẽ lại dưới dạng tranh, tượng và hoạt hình, nên một
+mạng xương sống đã tinh chỉnh trên ImageNet-1k có sẵn đặc trưng khớp với đúng
+$200$ nhãn ấy; CUB-200 là ảnh chim, không thuộc tập lớp $1$k, nên không hưởng
+lợi tương ứng. Chúng tôi kiểm bằng cách trỏ \emph{riêng} ảnh chụp đóng băng sang
+checkpoint ImageNet-21K đã tinh chỉnh trên ImageNet-1k, giữ nguyên mọi thành
+phần khác. Bảng \ref{tab:backbone} ghi kết quả.
+
+\begin{table}[htbp]
+\centering
+\caption{Cùng cấu hình bỏ chiếu, chỉ đổi checkpoint của bộ trích đóng băng.
+Acc@1, seed 42.}
+\label{tab:backbone}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Bộ dữ liệu & ImageNet-21K & 21K + 1k & Chênh \\
+\midrule
+CUB-200    & 86.42 & 87.53 & $+1.11$ \\
+ImageNet-R & 54.02 & 68.03 & $\mathbf{+14.01}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Hai điều đọc ra. Thứ nhất, mức tăng của ImageNet-R lớn gấp mười ba lần mức tăng
+của CUB-200, đúng như dự đoán từ việc lớp của nó trùng với tập lớp $1$k, nên đây
+không phải hiệu ứng "checkpoint tốt hơn nói chung". Thứ hai, con số thu được là
+$68.03$ so với $67.6$ mà RanPAC công bố --- lệch $0.43$. Khoảng cách $13.6$ điểm
+biến mất.
+
+Kết luận: bảng đối chiếu trước đây so kết quả trên mạng xương sống ImageNet-21K
+thuần với con số nhiều khả năng được đo trên checkpoint đã tinh chỉnh ImageNet-1k.
+Đó là sai lệch của \emph{phép so sánh}, không phải của cài đặt. Chúng tôi giữ
+mạng xương sống $21$K cho toàn bộ báo cáo, vì đó là mạng mà HRM-PET được huấn
+luyện cùng và mọi số ở Mục \ref{sec:results} đều dựa trên nó; việc còn lại là đối
+chiếu với bản gốc xem bảng khảo sát của bài công bố dùng checkpoint nào.
+
+Khác biệt này không ảnh hưởng tới các kết quả ở Mục \ref{sec:results}, vì mọi so
+sánh trong báo cáo đều được thực hiện giữa phương pháp đề xuất và baseline trên
+cùng một đường trích đặc trưng và cùng một bộ dữ liệu.
 
 
 \section{Chi phí tính toán}
