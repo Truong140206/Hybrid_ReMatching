@@ -507,6 +507,49 @@ toàn bộ các seed. Chúng tôi ưu tiên tính nhất quán, vì một phươ
 tăng trung bình cao hơn nhưng thỉnh thoảng làm suy giảm chỉ số ghi nhớ khó được
 xem là cải tiến đáng tin cậy.
 
+\subsubsection{Khảo sát chung hai trọng số}
+
+Hai trọng số được chọn nối tiếp: $w$ chốt khi chưa có tầng thứ hai, $\beta$ chốt
+sau đó. Vì hai tầng tác động lên cùng một quyết định, điều này đặt ra câu hỏi
+liệu tầng thứ hai có gánh bớt phần việc của tầng thứ nhất và làm dịch giá trị tối
+ưu của $w$ hay không. Bảng \ref{tab:joint} trả lời bằng một lưới đầy đủ.
+
+\begin{table}[htbp]
+\centering
+\caption{Acc@1 trên lưới $w \times \beta$, ImageNet-R seed 42, hệ thống đầy đủ
+với cổng theo biên. Ô in đậm là cấu hình đang dùng.}
+\label{tab:joint}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+ & $\beta = 0.3$ & $\beta = 0.5$ & $\beta = 0.7$ \\
+\midrule
+$w = 0.6$ & 75.28 & 75.61 & 75.29 \\
+$w = 0.7$ & 75.22 & \textbf{75.51} & 75.24 \\
+$w = 0.8$ & 75.12 & 75.50 & 75.27 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Hai trọng số gần như không tương tác.} Giá trị $\beta = 0.5$ là tốt nhất
+ở \emph{cả ba} giá trị của $w$, và hai giá trị kề nó thua gần bằng nhau ở mọi
+hàng. Việc chỉnh nối tiếp vì vậy không gây thiệt hại --- đây là một phép đo, thay
+cho giả định trước đây.
+
+\textbf{Acc@1 gần như phẳng theo $w$, còn Acc@task thì không.} Ở $\beta = 0.5$,
+ba giá trị $w$ cho Acc@1 trải $0.11$ điểm, trong khi Acc@task trải $1.01$ điểm
+($80.39$, $79.97$, $79.37$). Hạ $w$ mua thêm độ chính xác định tuyến nhưng chỉ
+khoảng một phần chín trong đó chuyển thành Acc@1 --- chính hiện tượng đã phân
+tích ở Mục \ref{sec:analysis}, nay đo được trên một trục liên tục.
+
+\textbf{Về việc chọn giữa $0.6$ và $0.7$.} Tiêu chí ban đầu --- mọi chỉ số cải
+thiện trên mọi seed --- là tiêu chí mà chính Mục \ref{sec:limits} đánh giá là lập
+luận vòng tròn, nên chúng tôi không viện dẫn nó nữa. Xét theo Acc@1 trung bình
+bốn seed thì $w = 0.6$ hơn $0.17$ điểm, còn ở lưới trên nó hơn $0.10$ điểm; cả
+hai đều nhỏ hơn độ lệch chuẩn $0.416$ của chính mức thay đổi Acc@1 giữa các seed.
+Hai giá trị vì vậy \emph{không phân giải được} với lượng dữ liệu hiện có. Chúng
+tôi giữ $w = 0.7$ vì đó là giá trị mà mọi số liệu trong báo cáo được đo cùng, và
+nói rõ như vậy thay vì bảo vệ nó bằng tiêu chí cũ.
+
 \subsection{Tầng thứ hai: hợp nhất ở cấp phân lớp với cơ chế cổng}
 \label{sec:stage2}
 
@@ -869,6 +912,11 @@ Tăng hạng LoRA từ $8$ lên $16$
   & Acc@1 $86.46$ so với $86.53$
   & không phải giới hạn về dung lượng mô hình \\
 \addlinespace
+Chuẩn hóa đặc trưng trước khi chiếu ($\ell_2$ hoặc chia cho chuẩn trung bình)
+  & Acc@1 $74.96$ và $74.92$ so với $75.51$
+  & thang đo thô của đặc trưng không phải vấn đề; chuẩn hóa xóa mất thông tin độ
+    lớn mà nghiệm ridge đang dùng \\
+\addlinespace
 Dùng riêng đầu RP, bỏ hoàn toàn định tuyến
   & CUB-200 $87.96$ so với $86.53$; ImageNet-R $56.36$ so với $74.02$
   & bộ phân lớp không huấn luyện phụ thuộc hoàn toàn vào chất lượng đặc trưng
@@ -1122,11 +1170,11 @@ sung. Đóng góp của báo cáo là hai tầng hợp nhất ở giai đoạn s
 thể áp dụng cho bất kỳ hệ thống nào có cấu trúc định tuyến tương tự.
 
 \textbf{Cách chọn trọng số hợp nhất định tuyến.} Giá trị $w = 0.7$ được xác định
-ở giai đoạn chỉ có tầng thứ nhất (Mục \ref{sec:choose-w}) và chưa được khảo sát
-lại sau khi bổ sung tầng thứ hai. Vì tầng thứ hai đảm nhận một phần chức năng
-hiệu chỉnh mà trước đó chỉ tầng thứ nhất thực hiện, giá trị tối ưu của $w$ có thể
-đã dịch chuyển. Khảo sát lại chỉ cần thêm một số lượt đánh giá, không cần huấn
-luyện lại.
+ở giai đoạn chỉ có tầng thứ nhất. Chúng tôi đã khảo sát lại bằng một lưới
+$w \times \beta$ đầy đủ sau khi có tầng thứ hai (Bảng \ref{tab:joint}): hai
+trọng số gần như không tương tác, và không cấu hình nào vượt cấu hình đang dùng
+quá $0.10$ điểm. Hạn chế còn lại không nằm ở giá trị mà ở \emph{lượng dữ liệu}:
+$w = 0.6$ và $w = 0.7$ không phân giải được với bốn seed.
 
 \textbf{Phạm vi đánh giá.} Toàn bộ kết quả được đo ở \emph{một}
 cấu hình duy nhất: mạng xương sống ViT-B/16 tiền huấn luyện trên ImageNet-21K,

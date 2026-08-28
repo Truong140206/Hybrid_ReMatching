@@ -522,6 +522,50 @@ across seeds. We prioritise consistency, since a method with a higher average
 gain that occasionally degrades a retention metric is hard to regard as a
 reliable improvement.
 
+\subsubsection{Sweeping the Two Weights Jointly}
+
+The two weights were chosen one after the other: $w$ was fixed before the second
+stage existed, $\beta$ afterwards. Since both act on the same decision, this
+raises the question of whether the second stage took over part of the first
+stage's work and moved the optimum for $w$. Table~\ref{tab:joint} answers it
+with a full grid.
+
+\begin{table}[htbp]
+\centering
+\caption{Acc@1 over the $w \times \beta$ grid, ImageNet-R seed 42, full system
+with the margin gate. The bold cell is the configuration in use.}
+\label{tab:joint}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+ & $\beta = 0.3$ & $\beta = 0.5$ & $\beta = 0.7$ \\
+\midrule
+$w = 0.6$ & 75.28 & 75.61 & 75.29 \\
+$w = 0.7$ & 75.22 & \textbf{75.51} & 75.24 \\
+$w = 0.8$ & 75.12 & 75.50 & 75.27 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{The two weights barely interact.} $\beta = 0.5$ is the best value at
+\emph{all three} settings of $w$, and its two neighbours lose by roughly the same
+amount in every row. Tuning them sequentially therefore cost nothing --- which is
+now a measurement rather than an assumption.
+
+\textbf{Acc@1 is nearly flat in $w$; Acc@task is not.} At $\beta = 0.5$ the three
+values of $w$ span $0.11$ points of Acc@1 while Acc@task spans $1.01$ ($80.39$,
+$79.97$, $79.37$). Lowering $w$ buys routing accuracy of which only about
+one ninth converts into Acc@1 --- exactly the phenomenon analysed in
+Sect.~\ref{sec:analysis}, now measured along a continuous axis.
+
+\textbf{On choosing between $0.6$ and $0.7$.} The original criterion --- every
+metric improving on every seed --- is the one Sect.~\ref{sec:limits} itself
+identifies as circular, so we no longer invoke it. By mean Acc@1 over four seeds
+$w = 0.6$ leads by $0.17$ points, and in the grid above by $0.10$; both are
+smaller than the $0.416$ standard deviation of the Acc@1 change itself across
+seeds. The two values are therefore \emph{not resolvable} with the data we have.
+We keep $w = 0.7$ because it is the value every number in this report was
+measured with, and say so rather than defending it with the old criterion.
+
 \subsection{Second Stage: Gated Fusion at the Classification Level}
 \label{sec:stage2}
 
@@ -892,6 +936,11 @@ Raise the LoRA rank from $8$ to $16$
   & Acc@1 $86.46$ against $86.53$
   & model capacity is not the limiting factor \\
 \addlinespace
+Normalise the features before projecting ($\ell_2$, or divide by the mean norm)
+  & Acc@1 $74.96$ and $74.92$ against $75.51$
+  & the raw feature scale is not the problem; normalising discards the magnitude
+    information the ridge solution is using \\
+\addlinespace
 Use the RP head alone, dropping routing entirely
   & CUB-200 $87.96$ against $86.53$; ImageNet-R $56.36$ against $74.02$
   & a training-free classifier depends entirely on the quality of the features
@@ -1156,11 +1205,12 @@ contribution of this report is the two inference-time fusion stages, and they
 apply to any system with a comparable routing structure.
 
 \textbf{How the routing fusion weight was chosen.} The value $w = 0.7$ was
-determined at the stage where only the first stage existed
-(Sect.~\ref{sec:choose-w}) and has not been re-swept since the second stage was
-added. Because the second stage takes over part of the corrective function that
-the first stage alone previously performed, the optimum for $w$ may have shifted.
-Re-sweeping requires only a few more evaluation runs and no retraining.
+determined at the stage where only the first stage existed. We have since
+re-swept it as a full $w \times \beta$ grid with the second stage in place
+(Table~\ref{tab:joint}): the two weights barely interact, and no configuration
+beats the one in use by more than $0.10$ points. What remains is not a question
+about the value but about the \emph{amount of data}: $w = 0.6$ and $w = 0.7$ are
+not separable at four seeds.
 
 \textbf{Scope of the evaluation.} All results are measured in \emph{one}
 configuration: a ViT-B/16 backbone pre-trained on ImageNet-21K, LoRA of rank
