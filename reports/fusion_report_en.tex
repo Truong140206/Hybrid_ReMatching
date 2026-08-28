@@ -910,107 +910,97 @@ the baseline. This shows that domain adaptation is necessary, and that the LoRA
 parameter set of the first task supplies exactly that component at no additional
 training cost.
 
+Table~\ref{tab:nophase1} used to record a discrepancy we could not explain,
+with ImageNet-R alone more than ten points short. We have since traced it, and
+that table is replaced here by a controlled reproduction.
+
+The method: set the projection dimension to zero or to $10^4$ on a \emph{bare}
+extractor --- a freshly created, frozen pre-trained ViT that has never seen the
+task sequence --- and our method reduces to exactly the two ablation rows for
+which RanPAC publishes numbers: \emph{no projection, no first-session
+adaptation} and \emph{projection, no first-session adaptation}. $\lambda$ is
+chosen per task by the original's own procedure. We run this on our data path,
+with two pre-trained checkpoints: the ImageNet-21K one this system uses, and the
+ImageNet-21K one further fine-tuned on ImageNet-1k.
+
 \begin{table}[htbp]
 \centering
-\caption{The RP head on unadapted backbone features, seed 42, against RanPAC's
-published results under the same no-first-session-adaptation condition.}
+\caption{Reproduction of RanPAC's no-first-session ablations on our data path.
+Acc@1, seed 42, ten tasks. The last column is the difference between the
+$21$K$+1$k column and the published figure.}
 \label{tab:nophase1}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Dataset & RanPAC published & Ours, $21$K & Ours, $21$K$+1$k & Difference \\
+\midrule
+\multicolumn{5}{l}{\emph{No projection}}\\
+CIFAR-100  & 87.0 & 83.44 & 87.40 & $+0.40$ \\
+ImageNet-R & 67.6 & 54.02 & 68.03 & $+0.43$ \\
+CUB-200    & 86.8 & 86.42 & 87.53 & $+0.73$ \\
+\addlinespace
+\multicolumn{5}{l}{\emph{Projection, $M = 10^4$}}\\
+CIFAR-100  & 89.0 & 85.40 & 89.36 & $+0.36$ \\
+ImageNet-R & 71.8 & 58.10 & 72.68 & $+0.88$ \\
+CUB-200    & 88.7 & 87.96 & 89.15 & $+0.45$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{All six cells reproduce.} On the ImageNet-1k fine-tuned checkpoint the
+difference lies between $+0.36$ and $+0.88$ across three datasets and both
+configurations, always with the same sign. This is not merely an explanation for
+one gap; it is the original's entire no-first-session ablation rebuilt on our
+data.
+
+\textbf{The 21K column's shortfall matches, in magnitude, what the checkpoint is
+worth.} Table~\ref{tab:backbone-delta} places two independently measured
+quantities side by side: how far the 21K column falls below the published
+figure, and how much switching to the fine-tuned checkpoint gains on our own
+data. The two track each other on all three datasets. The size of the gap is
+therefore not a property of any particular dataset --- it is exactly what
+ImageNet-1k fine-tuning is worth there. ImageNet-R benefits most because it
+consists of exactly $200$ ImageNet-1k classes redrawn; CUB-200 barely benefits,
+because birds are not in that class set.
+
+\begin{table}[htbp]
+\centering
+\caption{Two independently measured quantities, averaged over the projection and
+no-projection configurations.}
+\label{tab:backbone-delta}
 \begin{tabular}{@{}lrr@{}}
 \toprule
-Dataset & Ours & RanPAC, no first session \\
+Dataset & 21K column below published & Gain from the $1$k checkpoint \\
 \midrule
-CUB-200    & 87.96 & 88.7 \\
-CIFAR-100  & 85.40 & 89.0 \\
-ImageNet-R & 56.36 & 71.8 \\
+ImageNet-R & 13.64 & 14.30 \\
+CIFAR-100  & \ \ 3.58 & \ \ 3.96 \\
+CUB-200    & \ \ 0.56 & \ \ 1.15 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Table~\ref{tab:nophase1} used to record a discrepancy we could not explain: the
-first two benchmarks differ by $2$ to $4$ points, and ImageNet-R by a further
-$12$ or so. That discrepancy is now explained, and the cause lies in the
-comparison rather than in the implementation.
+\textbf{The projection's own contribution reproduces too.} This is a
+second-order check, since it compares not absolute levels but the \emph{effect
+size} of the original's central component. On the $21$K$+1$k column, adding the
+projection is worth $+1.96$ on CIFAR-100, $+4.65$ on ImageNet-R and $+1.62$ on
+CUB-200; the corresponding figures implied by the original are $+2.0$, $+4.2$
+and $+1.9$.
 
-We eliminated the components one at a time by direct experiment. The data is
-not missing ($200$ classes, $24\,000$ training and $6\,000$ test images). The
-features are not implicitly adapted, verified with a freshly constructed
-extractor. It is not a consequence of the continual-learning sequence, by the
-order invariance of $G$ and $C$. It is not data augmentation, since the
-statistics are accumulated over deterministic transforms exactly as in RanPAC.
-And it is not a wrong input value range: measured both ways on ImageNet-R with
-the bare extractor, leaving it wrong gives $55.79$ and correcting it gives
-$56.36$, so the correction is worth $+0.56$ points --- real but small, and the
-$56.36$ in the table was already the corrected figure.
+\textbf{On which checkpoint the original used.} Its experimental section states
+that it uses \emph{two} ViT-B/16 models, one on ImageNet-21K and one with
+supervised fine-tuning on ImageNet-1K, but the results-table captions do not
+record which table used which, and the comparison between the two backbones is
+presented only as figures rather than as a table of numbers. An appendix does
+note that the better choice varies by dataset, but that section concerns
+first-session adaptation methods --- that is, the \emph{with}-Phase-1 setting ---
+so it does not govern the ablation rows at issue here. Our measurement is what
+answers for those rows, and the answer is consistent: all six cells match the
+ImageNet-1k fine-tuned checkpoint.
 
-\textbf{The decisive step was to remove the projection entirely.} Setting the
-projection dimension to zero reduces the method to a ridge regression on the
-frozen $768$-dimensional features, that is, a linear classifier --- and RanPAC
-publishes a number for exactly that configuration. The result: CUB-200 reaches
-$86.42$ against their $86.8$, while ImageNet-R reaches only $54.02$ against
-$67.6$. Same code, same extractor, same $\lambda$ selection --- one benchmark
-matches, the other is $13.6$ short. The gap survives removing the random
-projection altogether, so the classification head is not the cause. Neither is
-the data, since our HRM-PET baseline on ImageNet-R reaches $73.94$ against the
-$73.86$ the original reports.
-
-That leaves the pre-trained checkpoint. ImageNet-R consists of exactly $200$
-\emph{ImageNet-1k} classes redrawn as art, sculpture and cartoon, so a backbone
-fine-tuned on ImageNet-1k already carries features aligned with those very
-labels; CUB-200 is birds, which are not a $1$k class set, and gains no
-comparable benefit. We tested this by pointing \emph{only} the frozen snapshot
-at an ImageNet-21K checkpoint fine-tuned on ImageNet-1k, leaving every other
-component untouched. Table~\ref{tab:backbone} gives the result.
-
-\begin{table}[htbp]
-\centering
-\caption{Same no-projection configuration, changing only the frozen extractor's
-checkpoint. Acc@1, seed 42.}
-\label{tab:backbone}
-\begin{tabular}{@{}lrrr@{}}
-\toprule
-Dataset & ImageNet-21K & 21K + 1k & Change \\
-\midrule
-CUB-200    & 86.42 & 87.53 & $+1.11$ \\
-ImageNet-R & 54.02 & 68.03 & $\mathbf{+14.01}$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Two things follow. First, ImageNet-R gains thirteen times what CUB-200 gains,
-exactly as predicted from its classes coinciding with the $1$k label set, so
-this is not a generic "better checkpoint" effect. Second, the figure obtained is
-$68.03$ against the $67.6$ RanPAC publishes --- a difference of $0.43$. The
-$13.6$-point gap disappears.
-
-The conclusion is that the comparison table was setting results on a
-21K-only backbone against a number most likely measured on an
-ImageNet-1k fine-tuned checkpoint. That is a fault in the \emph{comparison}, not
-in the implementation. We keep the $21$K backbone throughout this report,
-because it is the one HRM-PET was trained with and every number in
-Sect.~\ref{sec:results} rests on it.
-
-The original confirms that this matters, and says so fairly plainly. Its
-experimental section states that it uses \emph{two} ViT-B/16 models: one
-pre-trained on ImageNet-21K, and one with supervised fine-tuning on
-ImageNet-1K. Its appendix then states outright that ``the same backbone is not
-optimal for all datasets'', giving as examples that the ImageNet-1K fine-tuned
-model is best for ImageNet-A while the ImageNet-21K model is best for CIFAR100
-and OmniBenchmark. ImageNet-R is not named in that sentence.
-
-Two things follow. First, the main results table reports the better choice
-\emph{per dataset}, so two columns of the same row may come from different
-checkpoints. Second, the comparison between the two backbones is presented only
-as \emph{figures}, never as a table of numbers, so there is no per-checkpoint
-figure to read off.
-
-The measurement in Table~\ref{tab:backbone} is therefore what supplies the
-missing number, and it is consistent with what the paper says. On CUB-200, where
-our 21K-only result is only $0.4$ points short, the two sides almost certainly
-used the same checkpoint; on ImageNet-R the 21K-only model falls $13.6$ short
-while the ImageNet-1k fine-tuned model comes out $0.43$ ahead. That is exactly
-what must happen if the published ImageNet-R figure was measured on the
-fine-tuned checkpoint --- and since ImageNet-R consists of exactly $200$
-ImageNet-1k classes, that is also the sensible choice on their side.
+We keep the $21$K backbone throughout this report, because it is the one HRM-PET
+was trained with and every number in Sect.~\ref{sec:results} rests on it. What
+changes is that the comparison with the original is no longer a quoted figure
+accompanied by an excuse, but a controlled measurement on the same data, the
+same preprocessing and the same code.
 
 This discrepancy does not affect the results in Sect.~\ref{sec:results}, because
 every comparison in this report is made between the proposed method and the
