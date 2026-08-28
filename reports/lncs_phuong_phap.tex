@@ -191,104 +191,183 @@ bất kỳ tham số nào. Hình~\ref{fig:pipeline} minh họa vị trí của c
 
 \subsection{Nguồn tín hiệu thứ hai}
 
-Nguồn thứ hai phải thỏa hai ràng buộc. Thứ nhất, nó không được thêm tham số
-huấn luyện, vì bất kỳ tham số nào cập nhật bằng gradient qua chuỗi tác vụ đều có
-thể bị tác vụ sau ghi đè. Thứ hai, nó phải giữ được giao thức không lưu mẫu.
+\subsubsection{Yêu cầu.}
+Nguồn thứ hai phải thỏa hai ràng buộc. Thứ nhất, nó không được thêm tham số huấn
+luyện, vì bất kỳ tham số nào cập nhật bằng gradient qua chuỗi tác vụ đều có thể
+bị tác vụ sau ghi đè --- tức chính vấn đề mà học liên tục đang tìm cách tránh.
+Thứ hai, nó phải giữ được giao thức không lưu mẫu. Một đầu phân lớp bậc hai theo
+kiểu RanPAC thỏa cả hai.
 
-Chúng tôi dùng một đầu phân lớp bậc hai theo kiểu RanPAC. Đặc trưng $f$ được
-trích từ \emph{một} bộ tham số LoRA cố định của HRM-PET, đóng vai trò thích nghi
-phiên đầu. Đặc trưng được chiếu lên không gian số chiều cao bằng một ma trận
-ngẫu nhiên đóng băng $W$, đi qua một hàm phi tuyến, rồi được tổng hợp thành
-thống kê bậc hai:
-\begin{align}
-h &= \mathrm{ReLU}(f W), \qquad W \text{ đóng băng, sinh lại từ seed},
-\label{eq:proj}\\
-G &= \sum_n h_n h_n^{\top}, \qquad
-C = \sum_n h_n\,\mathrm{onehot}(y_n)^{\top}.
-\label{eq:gram}
-\end{align}
-Điểm số theo lớp là nghiệm đóng của hồi quy ridge trên hai thống kê đó:
+\subsubsection{Đặc trưng đầu vào.}
+Đặc trưng $f \in \mathbb{R}^{d}$ với $d = 768$ được lấy từ tầng
+\texttt{pre\_logits} của ViT-B/16, sau khi gắn \emph{một} bộ tham số LoRA cố
+định $p_1$ của HRM-PET. Bộ này đóng vai trò thích nghi phiên đầu
+(first-session adaptation). Chỉ số bộ tham số phải cố định qua mọi tác vụ: nếu
+nó thay đổi thì ma trận Gram sẽ trộn lẫn các không gian đặc trưng không tương
+thích, và các số hạng cộng dồn mất ý nghĩa.
+
+\subsubsection{Phép chiếu ngẫu nhiên.}
+Đặc trưng được chiếu lên không gian số chiều cao $M = 10^4$ bằng một ma trận
+ngẫu nhiên $W \in \mathbb{R}^{d \times M}$ rồi đi qua một hàm phi tuyến:
 \begin{equation}
-s = h^{\top} (G + \lambda I)^{-1} C .
+h \;=\; \mathrm{ReLU}(f W) \;\in\; \mathbb{R}^{M},
+\qquad
+W \in \mathbb{R}^{d \times M} \text{ đóng băng, sinh lại từ seed cố định}.
+\label{eq:proj}
+\end{equation}
+Đi \emph{lên} chiều cao là có chủ đích. Trong không gian $768$ chiều gốc, các lớp
+chồng lấn tới mức không siêu phẳng nào tách được chúng, nên một bộ phân lớp tuyến
+tính ở đó là quá yếu. Sau khi chiếu lên $10^4$ chiều kèm phi tuyến, các lớp có
+thêm chỗ để tách rời và một bộ phân lớp tuyến tính trở nên đủ mạnh --- đây là lập
+luận quen thuộc về khả năng tách tuyến tính trong không gian mở rộng.
+
+Hàm phi tuyến là bắt buộc chứ không phải tùy chọn. Thiếu nó thì $fW$ chỉ là một
+biến đổi tuyến tính của $f$, hạng vẫn không vượt quá $d$, và việc chiếu lên $M
+\gg d$ chiều \emph{không thêm được khả năng tách nào}. Ma trận $W$ đóng băng và
+sinh lại được từ một seed nên không cần lưu trữ, và vì không bao giờ cập nhật
+nên không thể bị tác vụ sau ghi đè.
+
+\subsubsection{Thống kê bậc hai.}
+Sau khi học xong mỗi tác vụ, đặc trưng đã chiếu của tác vụ đó được cộng dồn vào
+hai ma trận:
+\begin{align}
+G &\;=\; \sum_n h_n h_n^{\top} \;\in\; \mathbb{R}^{M \times M},
+\label{eq:gram}\\
+C &\;=\; \sum_n h_n\, \mathrm{onehot}(y_n)^{\top}
+   \;\in\; \mathbb{R}^{M \times |\mathcal{Y}|},
+\label{eq:proto}
+\end{align}
+trong đó $\mathrm{onehot}(y_n) \in \mathbb{R}^{|\mathcal{Y}|}$. Ma trận $G$ là
+Gram của các đặc trưng đã mở rộng, còn $C$ gom nguyên mẫu theo lớp. Tổng chạy
+trên mọi mẫu đã gặp từ đầu chuỗi.
+
+\subsubsection{Giải hồi quy ridge.}
+Trọng số đầu ra là nghiệm đóng của bài toán bình phương tối thiểu có điều chuẩn,
+và điểm số theo lớp là tích của đặc trưng đã chiếu với trọng số đó:
+\begin{equation}
+W_{\mathrm{out}} = (G + \lambda I)^{-1} C \in \mathbb{R}^{M \times |\mathcal{Y}|},
+\qquad
+s = h^{\top} W_{\mathrm{out}} \in \mathbb{R}^{|\mathcal{Y}|} .
 \label{eq:ridge}
 \end{equation}
 
-Ba nhận xét về thiết kế này. Ma trận chiếu ngẫu nhiên và đóng băng không phải
-một sự đánh đổi mà là điều kiện cần: sinh lại được từ một seed cố định nên không
-cần lưu trữ, và không bao giờ thay đổi nên không thể bị ghi đè. Hàm phi tuyến là
-bắt buộc, vì thiếu nó thì phép chiếu chỉ là một biến đổi tuyến tính và không
-thêm được khả năng tách lớp nào. Nghịch đảo ma trận Gram khử tương quan giữa các
-chiều đã mở rộng, việc mà hiệp phương sai theo từng lớp trong không gian gốc
-không làm được.
+\emph{Không có bước giảm chiều riêng biệt.} Chính $W_{\mathrm{out}}$ đảm nhiệm
+việc đó: nhân $h$ với nó là gộp $M = 10^4$ chiều xuống $|\mathcal{Y}|$ trong đúng
+một phép nhân ma trận. Toàn bộ hành trình số chiều là
 
-Quan trọng nhất, $G$ và $C$ ở (\ref{eq:gram}) đều là \emph{tổng} trên các mẫu.
-Phép cộng có tính giao hoán, nên kết quả không phụ thuộc thứ tự các tác vụ được
-học: đầu phân lớp này không quên theo đúng nghĩa cấu trúc, chứ không phải nhờ một
-cơ chế chống quên nào. Và vì chỉ giữ hai ma trận tổng hợp, không giữ đặc trưng
-của từng mẫu, giao thức không lưu mẫu được bảo toàn.
+\begin{center}
+$\underbrace{768}_{f}
+\;\xrightarrow{\;\text{chiếu} + \text{ReLU}\;}\;
+\underbrace{10^4}_{h}
+\;\xrightarrow{\;W_{\mathrm{out}}\;}\;
+\underbrace{|\mathcal{Y}|}_{s}$
+\end{center}
+
+Ta đi lên chiều cao \emph{để cho phép} bước tuyến tính đi xuống hoạt động được,
+chứ không phải đi lên rồi phải tìm cách quay về.
+
+Nghịch đảo ma trận Gram là thành phần khiến điều này chạy được. Các chiều sau
+ReLU tương quan với nhau rất mạnh; $(G + \lambda I)^{-1}$ khử tương quan đó, việc
+mà một hiệp phương sai theo từng lớp trong không gian gốc không làm được. Hệ số
+$\lambda$ điều chuẩn phép nghịch đảo và giữ cho nó ổn định về số học khi $G$ gần
+suy biến.
+
+\subsubsection{Bất biến thứ tự.}
+Cả $G$ lẫn $C$ ở (\ref{eq:gram}) và (\ref{eq:proto}) đều là \emph{tổng} trên các
+mẫu, và phép cộng có tính giao hoán. Do đó $W_{\mathrm{out}}$ không phụ thuộc thứ
+tự các tác vụ được học: học tác vụ $A$ rồi $B$ cho ra đúng trọng số như học $B$
+rồi $A$. Đầu phân lớp này không quên theo đúng nghĩa \emph{cấu trúc}, chứ không
+phải nhờ một cơ chế chống quên nào được thêm vào.
+
+\subsubsection{Chi phí lưu trữ.}
+Kích thước của $G$ là $M \times M$ và của $C$ là $M \times |\mathcal{Y}|$,
+\emph{không phụ thuộc số mẫu đã gặp}. Đặc trưng của từng mẫu không bao giờ được
+giữ lại: chúng được cộng vào hai ma trận rồi bỏ đi. Giao thức không lưu mẫu vì
+vậy được bảo toàn bởi cấu trúc của phép tính, chứ không phải bởi một lập luận
+kèm theo.
 
 \subsection{Hợp nhất hai tầng}
 
+Cả hai tầng đều trộn hai véc-tơ điểm số nằm trên hai thang đo khác nhau: điểm
+ridge $s$ trải khoảng một đơn vị trong khi logit $\ell$ trải khoảng ba mươi lăm.
+Trộn thẳng sẽ để $\ell$ lấn át ở mọi trọng số, nên mỗi nguồn được chuẩn hóa trên
+từng mẫu trước khi trộn. Với véc-tơ $v$ trên tập lớp hợp lệ,
+\begin{equation}
+z(v) = \frac{v - \mathrm{mean}(v)}{\mathrm{std}(v)} ,
+\label{eq:znorm}
+\end{equation}
+trong đó trung bình và độ lệch chuẩn tính riêng cho từng mẫu và chỉ trên các lớp
+đã gặp. Sau phép này, trọng số trộn có nghĩa đúng như tên gọi của nó.
+
 \subsubsection{Tầng thứ nhất: hợp nhất ở cấp định tuyến.}
-Cả TII lẫn đầu chiếu ngẫu nhiên đều sinh điểm số theo lớp, trong khi định tuyến
-cần điểm số theo tác vụ. Chúng tôi quy đổi bằng cách lấy giá trị lớn nhất trên
-tập lớp của mỗi tác vụ:
+Cả TII lẫn đầu chiếu ngẫu nhiên đều sinh điểm số theo \emph{lớp}, trong khi định
+tuyến cần điểm số theo \emph{tác vụ}. Chúng tôi quy đổi bằng cách lấy giá trị lớn
+nhất trên tập lớp của mỗi tác vụ:
 \begin{equation}
 \ell^{\mathrm{task}}_t = \max_{c \,\in\, \mathcal{C}_t} \ell_c ,
 \qquad
-s^{\mathrm{task}}_t = \max_{c \,\in\, \mathcal{C}_t} s_c .
+s^{\mathrm{task}}_t = \max_{c \,\in\, \mathcal{C}_t} s_c ,
+\qquad t = 1,\dots,\hat{T},
 \label{eq:taskscore}
 \end{equation}
-Hai véc-tơ này nằm trên hai thang đo khác nhau: điểm ridge trải khoảng một đơn
-vị trong khi logit trải khoảng ba mươi lăm. Trộn thẳng sẽ để TII lấn át ở mọi
-trọng số, nên mỗi nguồn được chuẩn hóa về trung bình không và phương sai đơn vị
-trên từng mẫu bằng toán tử $z(\cdot)$ trước khi trộn:
+với $\hat{T}$ là số tác vụ đã gặp; hai véc-tơ kết quả thuộc
+$\mathbb{R}^{\hat{T}}$. Lấy giá trị lớn nhất là lựa chọn tự nhiên vì một tác vụ
+đáng được chọn khi \emph{một} lớp nào đó của nó có điểm cao, không phải khi trung
+bình các lớp của nó cao. Hai véc-tơ được trộn sau khi chuẩn hóa:
 \begin{equation}
-\mathrm{fused} = w\, z(\ell^{\mathrm{TII}}) + (1-w)\, z(s^{\mathrm{RP}}),
+\mathrm{fused} = w\, z(\ell^{\mathrm{task}}) + (1-w)\, z(s^{\mathrm{task}}),
+\qquad
+\hat{t}_f = \arg\max_t\, \mathrm{fused}_t ,
 \qquad w = 0.7 .
 \label{eq:route}
 \end{equation}
-Định danh tác vụ $\arg\max_t \mathrm{fused}_t$ được trao cho DRM và CRM như một
-điểm khởi đầu. Chúng tôi thay \emph{đúng một} thứ là bước đối sánh đầu tiên; mọi
-cơ chế phía sau của HRM-PET giữ nguyên. Tại $w = 1.0$, biểu
-thức~(\ref{eq:route}) trả về đúng thứ tự của $\ell^{\mathrm{TII}}$, nên phương
-pháp thu về baseline một cách chính xác.
+Định danh $\hat{t}_f$ thay thế đầu ra của (\ref{eq:tii}) và được trao cho DRM và
+CRM như một điểm khởi đầu tốt hơn. Chúng tôi thay \emph{đúng một} khối là bước
+đối sánh đầu tiên; mọi cơ chế phía sau của HRM-PET giữ nguyên không sửa một dòng.
+Tại $w = 1.0$, biểu thức (\ref{eq:route}) trả về đúng thứ tự của
+$z(\ell^{\mathrm{task}})$, mà chuẩn hóa là phép affine tăng nên thứ tự đó trùng
+với $\ell^{\mathrm{task}}$: phương pháp thu về baseline một cách chính xác.
 
 \subsubsection{Tầng thứ hai: hợp nhất ở cấp phân lớp với cơ chế cổng.}
-Định tuyến tốt hơn không tự động thành phân lớp tốt hơn. Đầu phân lớp dùng chung
-thường đã đoán đúng lớp bất chấp định tuyến sai, nên sửa định tuyến ở những mẫu
-đó không đổi được dự đoán. Chúng tôi vì vậy dùng chính đầu chiếu ngẫu nhiên làm
-bộ phân lớp thứ hai.
+Định tuyến tốt hơn không tự động thành phân lớp tốt hơn. Như đã nêu ở
+(\ref{eq:logits}), $\ell$ đến từ đầu phân lớp \emph{dùng chung}, nên với nhiều
+mẫu nó đã đoán đúng lớp bất chấp định tuyến sai; sửa định tuyến ở những mẫu đó
+không đổi được dự đoán. Chúng tôi vì vậy dùng chính đầu chiếu ngẫu nhiên làm bộ
+phân lớp thứ hai, lần này lấy điểm số theo lớp $s \in \mathbb{R}^{|\mathcal{Y}|}$
+thay vì điểm số theo tác vụ.
 
-Một trọng số cố định là sai. Nó chi cùng một phần quyết định cho mẫu mà đầu
-chính gọi tên ở mức $p = 0.97$ như cho mẫu nó đang phân vân, mà loại thứ nhất
-chiếm đa số áp đảo; trả giá ở đó chỉ làm phẳng một đỉnh vốn đã đúng. Hợp nhất
-chỉ đổi được dự đoán bằng cách lật đổ lớp đứng đầu, và đối thủ khả dĩ nhất của
-nó là lớp đứng thứ hai. Do đó trọng số được đặt tỉ lệ nghịch với biên giữa hai
-lớp cao nhất của chính đầu chính:
+Một trọng số cố định là sai. Nó chi cùng một phần quyết định cho mẫu mà đầu chính
+gọi tên ở mức $p = 0.97$ như cho mẫu nó đang phân vân, mà loại thứ nhất chiếm đa
+số áp đảo; trả giá ở đó chỉ làm phẳng một đỉnh vốn đã đúng, tức mất mát entropy
+chéo mà không đổi được argmax. Hợp nhất chỉ đổi được dự đoán bằng cách lật đổ lớp
+đứng đầu, và đối thủ khả dĩ nhất của nó là lớp đứng thứ hai. Do đó trọng số được
+đặt tỉ lệ nghịch với biên giữa hai lớp cao nhất của chính đầu chính:
 \begin{equation}
 \beta_i = \beta \left( 1 - \frac{p_{(1)} - p_{(2)}}{p_{(1)} + p_{(2)}} \right),
 \qquad \beta = 0.5 ,
 \label{eq:gate}
 \end{equation}
-trong đó $p_{(1)}$ và $p_{(2)}$ là hai xác suất lớn nhất của đầu chính. Chia cho
-tổng chứ không phải cho một khiến đại lượng này chỉ phụ thuộc tỉ số
-$p_{(2)}/p_{(1)}$, tức đo mức độ lớp đứng đầu bị đe dọa, độc lập với khối lượng
-xác suất mà cặp đó nắm giữ.
+trong đó $p_{(1)} \geq p_{(2)}$ là hai xác suất lớn nhất của $\mathrm{softmax}
+(\ell)$ trên các lớp đã gặp. Chia cho tổng chứ không phải cho một khiến đại lượng
+này chỉ phụ thuộc tỉ số $p_{(2)}/p_{(1)}$, tức đo mức độ lớp đứng đầu bị đe dọa,
+độc lập với khối lượng xác suất mà cặp đó nắm giữ. Cổng đóng lại ở mẫu đầu chính
+đã chắc chắn, và mở ra ở mẫu đang tranh chấp.
 
-Phép trộn dùng lại phép chuẩn hóa của tầng thứ nhất, rồi đưa kết quả về đúng
-thang đo của $\ell$:
+Phép trộn dùng lại chuẩn hóa (\ref{eq:znorm}), rồi đưa kết quả về đúng thang đo
+của $\ell$:
 \begin{align}
 m_i &= (1 - \beta_i)\, z(\ell_i) + \beta_i\, z(s_i),
 \label{eq:mix}\\
-\hat{\ell}_i &= m_i \cdot \mathrm{std}(\ell_i) + \mathrm{mean}(\ell_i).
+\hat{\ell}_i &= m_i \cdot \mathrm{std}(\ell_i) + \mathrm{mean}(\ell_i)
+   \;\in\; \mathbb{R}^{|\mathcal{Y}|}.
 \label{eq:affine}
 \end{align}
-Bước đưa về ở~(\ref{eq:affine}) là một phép biến đổi affine theo từng mẫu, nên
-thứ hạng và do đó độ chính xác không đổi; nó chỉ khiến hàm mất mát so sánh được
-với baseline, vì chuẩn hóa đặt hỗn hợp ở phương sai đơn vị, một thang đo sai cho
-entropy chéo. Tại $\beta = 0$ thì $\hat{\ell} = \ell$ đúng từng phần tử, nên
-tầng này cũng thu về baseline một cách chính xác.
+Bước đưa về ở (\ref{eq:affine}) là một phép biến đổi affine theo từng mẫu với hệ
+số dương, nên thứ hạng --- và do đó độ chính xác --- không đổi. Nó chỉ cần thiết
+cho hàm mất mát: chuẩn hóa đặt hỗn hợp ở phương sai đơn vị, một thang đo sai cho
+entropy chéo, khiến Loss suy giảm dù độ chính xác cải thiện. Tại $\beta = 0$ thì
+$\beta_i = 0$ với mọi mẫu và $\hat{\ell} = \ell$ đúng từng phần tử, nên tầng này
+cũng thu về baseline một cách chính xác.
 
 \begin{figure}
 \centering
