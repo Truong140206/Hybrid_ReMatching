@@ -25,6 +25,12 @@ for env in MATH:
 body = re.sub(r'\\\[.*?\\\]', '', body, flags=re.S)
 body = re.sub(r'\$[^$]*\$', '', body)
 body = re.sub(r'(?<!\\)%.*', '', body)
+# Doi so cua nhung lenh nay la KHOA, khong bao gio duoc dat chu, nen dau gach
+# duoi trong do hop le. Mau samplepaper.tex cua Springer cung dat khoa kieu
+# ref_article1, nen bo qua chung moi dung.
+body = re.sub(
+    r'\\(?:label|ref|eqref|pageref|autoref|cite|citep|citet|bibitem|url)'
+    r'(?:\[[^\]]*\])?\{[^}]*\}', '', body)
 
 for ch in ['_', '&', '#']:
     spots = list(re.finditer(r'(?<!\\)' + re.escape(ch), body))

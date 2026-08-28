@@ -1,43 +1,69 @@
-% =====================================================================
-%  Trinh bay theo mau Springer LNCS.
+% This paper follows the LLNCS macro package for Springer Computer Science
+% proceedings; based on samplepaper.tex, Version 2.21 of 2022/01/12.
 %
-%  KHAC MOT DIEM SO VOI samplepaper.tex: mau goc dung [T1]{fontenc},
-%  ma T1 KHONG co bang ma tieng Viet -- moi dau thanh se hong. Neu bai
-%  viet bang tieng Viet thi phai dung [T5]{fontenc} nhu duoi day, hoac
-%  chuyen sang XeLaTeX voi fontspec. Neu nop cho mot hoi nghi Springer
-%  that thi bai phai bang tieng Anh, va luc do tra [T1] lai nhu cu.
-%
-%  Bo cuc: phat bieu bai toan va quy trinh co so nam o Muc 1, nen Muc 3
-%  chi con phan cai tien.
-% =====================================================================
 \documentclass[runningheads]{llncs}
-
+%
+% ---------------------------------------------------------------------
+% LUU Y VE BANG MA FONT
+% Mau goc dung \usepackage[T1]{fontenc}. T1 KHONG co bang ma tieng Viet,
+% moi dau thanh se hong. Bai nay viet bang tieng Viet nen dung T5.
+% Neu nop cho mot hoi nghi Springer that thi ban thao phai bang tieng Anh,
+% va luc do tra lai [T1] dung nhu mau.
+% ---------------------------------------------------------------------
 \usepackage[utf8]{inputenc}
 \usepackage[T5]{fontenc}
+%
 \usepackage{graphicx}
 \usepackage{amsmath}
 \usepackage{amssymb}
+% Hinh quy trinh ve bang TikZ, tuc do hoa vec-to, dung nhu mau khuyen nghi
+% cho so do va luoc do.
 \usepackage{tikz}
 \usetikzlibrary{arrows.meta, positioning}
-
+%
 \begin{document}
-
-\title{Hợp nhất hai tầng cho định tuyến và phân lớp\\
-trong học liên tục dựa trên tinh chỉnh hiệu quả tham số}
-
+%
+\title{Hợp nhất hai tầng cho định tuyến và phân lớp trong học liên tục
+dựa trên tinh chỉnh hiệu quả tham số}
+%
+\titlerunning{Hợp nhất hai tầng cho học liên tục dựa trên PET}
+%
+% Chua co ORCID nen tam bo \orcidID{}; dien vao truoc khi nop chinh thuc.
 \author{Nguyễn Thiên Trường \and Tống Quang Thái}
+%
 \authorrunning{N. T. Trường và T. Q. Thái}
-\institute{Trường Đại học Công nghệ, Đại học Quốc gia Hà Nội}
-
+%
+% Dien dia chi email truoc khi nop.
+\institute{Trường Đại học Công nghệ, Đại học Quốc gia Hà Nội,\\
+Hà Nội, Việt Nam}
+%
 \maketitle
-
+%
 \begin{abstract}
-Phần tóm tắt viết sau, khi đã chốt số liệu.
+Các phương pháp học liên tục dựa trên tinh chỉnh hiệu quả tham số duy trì một kho
+tham số nhẹ, mỗi tác vụ một bộ, và khi suy luận phải chọn bộ nào gắn vào mạng
+xương sống trước khi phân lớp. Lựa chọn đó sinh ra từ một nguồn tín hiệu duy
+nhất, nên toàn bộ chất lượng phía sau bị chặn bởi chất lượng của một khối. Chúng
+tôi chỉ ra rằng một nguồn tín hiệu thứ hai đã nằm sẵn trong chính mô hình đã huấn
+luyện, và khai thác được mà không cần huấn luyện thêm tham số nào: một đầu phân
+lớp bậc hai dựng trên phép chiếu ngẫu nhiên đóng băng của đặc trưng LoRA có sẵn.
+Nguồn này được hợp nhất ở hai vị trí, cả hai đặt ở giai đoạn suy luận. Tầng thứ
+nhất trộn nó với tín hiệu định tuyến gốc sau khi chuẩn hóa hai nguồn về cùng
+thang đo. Tầng thứ hai dùng chính nó làm bộ phân lớp thứ hai, với trọng số theo
+từng mẫu tỉ lệ nghịch với mức độ chắc chắn của đầu phân lớp chính, nên phép trộn
+chỉ mở ra ở những mẫu đang tranh chấp. Trên ba bộ dữ liệu học liên tục và bốn
+seed, độ chính xác định tuyến tăng từ $+1.10$ đến $+2.26$ điểm và độ chính xác
+phân lớp tăng từ $+0.69$ đến $+1.50$ điểm; ở cả hai trục, mức tăng lớn hơn độ
+lệch chuẩn giữa các seed nhiều lần. Hai chỉ số ghi nhớ không cho thấy thay đổi
+phân biệt được với không. Chi phí tăng thêm đúng bằng một lượt truyền xuôi trên
+mỗi mẫu.
 
-\keywords{Học liên tục \and Tinh chỉnh hiệu quả tham số \and Định tuyến
-tham số \and Chiếu ngẫu nhiên.}
+\keywords{Học liên tục \and Tinh chỉnh hiệu quả tham số \and Định tuyến tham số
+\and Chiếu ngẫu nhiên \and Hợp nhất tín hiệu.}
 \end{abstract}
-
+%
+%
+%
 \section{Giới thiệu}
 
 \emph{Phần dẫn nhập và đóng góp viết sau.}
@@ -53,16 +79,18 @@ Ba ràng buộc định nghĩa thiết lập. Tại thời điểm $t$ chỉ $\m
 cho huấn luyện. Các tập lớp không chồng lấn,
 $\mathcal{C}_t \cap \mathcal{C}_{t'} = \emptyset$ với mọi $t \neq t'$, và khi suy
 luận thì \emph{định danh tác vụ không được biết}: mô hình phải phân biệt mọi lớp
-đã gặp bằng một đầu phân lớp dùng chung. Cuối cùng, báo cáo làm việc trong thiết
+đã gặp bằng một đầu phân lớp dùng chung. Cuối cùng, bài này làm việc trong thiết
 lập không lưu mẫu: ảnh của các tác vụ đã qua không bao giờ được giữ lại.
 
-Trong các phương pháp dựa trên tinh chỉnh hiệu quả tham số (PET), mạng xương sống
-tiền huấn luyện $h_{\mathrm{ptm}}$ với tham số $\theta_{\mathrm{ptm}}$ được đóng
-băng, và một kho tham số nhẹ $\mathcal{P}=\{p_1,\dots,p_T\}$ được duy trì, mỗi bộ
-huấn luyện riêng cho một tác vụ. Đầu phân lớp dùng chung ký hiệu $g_{\theta_g}$.
-Vì định danh tác vụ không biết khi suy luận, hệ thống buộc phải \emph{chọn} bộ
-tham số nào gắn vào mạng xương sống trước khi phân lớp, và toàn bộ chất lượng
-phía sau phụ thuộc vào lựa chọn đó.
+Trong các phương pháp dựa trên tinh chỉnh hiệu quả tham số
+(PET)~\cite{ref_l2p,ref_dualprompt,ref_hide}, mạng xương sống tiền huấn luyện
+$h_{\mathrm{ptm}}$ với tham số $\theta_{\mathrm{ptm}}$ được đóng băng, và một kho
+tham số nhẹ $\mathcal{P}=\{p_1,\dots,p_T\}$ được duy trì, mỗi bộ huấn luyện riêng
+cho một tác vụ; ở đây mỗi $p_t$ là một bộ điều hợp LoRA~\cite{ref_lora}. Đầu phân
+lớp dùng chung ký hiệu $g_{\theta_g}$. Vì định danh tác vụ không biết khi suy
+luận, hệ thống buộc phải \emph{chọn} bộ tham số nào gắn vào mạng xương sống trước
+khi phân lớp, và toàn bộ chất lượng phía sau phụ thuộc vào lựa chọn
+đó. Bảng~\ref{tab:notation} tổng hợp ký hiệu dùng trong bài.
 
 \begin{table}
 \caption{Ký hiệu dùng trong bài.}\label{tab:notation}
@@ -87,8 +115,8 @@ $z(\cdot)$ & chuẩn hóa về trung bình không, phương sai đơn vị trên
 
 \subsection{Quy trình cơ sở HRM-PET}
 
-Chúng tôi lấy HRM-PET làm cơ sở. Quy trình suy luận của nó gồm bốn khối nối
-tiếp, trình bày theo đúng thứ tự dữ liệu đi qua.
+Chúng tôi lấy HRM-PET~\cite{ref_hrmpet} làm cơ sở. Quy trình suy luận của nó gồm
+bốn khối nối tiếp, trình bày theo đúng thứ tự dữ liệu đi qua.
 
 \subsubsection{Suy luận định danh tác vụ (TII).}
 Ảnh vào được đưa qua mạng xương sống \emph{trần}, không gắn bộ điều hợp nào, để
@@ -191,7 +219,8 @@ Hình~\ref{fig:pipeline} minh họa vị trí của chúng.
 
 Nguồn thứ hai phải thỏa hai ràng buộc: không thêm tham số huấn luyện, vì tham số
 cập nhật bằng gradient qua chuỗi tác vụ có thể bị tác vụ sau ghi đè; và giữ được
-giao thức không lưu mẫu. Một đầu phân lớp bậc hai theo kiểu RanPAC thỏa cả hai.
+giao thức không lưu mẫu. Một đầu phân lớp bậc hai theo kiểu RanPAC~\cite{ref_ranpac}
+thỏa cả hai.
 
 Đặc trưng đầu vào $f \in \mathbb{R}^{d}$ với $d = 768$ lấy từ tầng đặc trưng cuối
 của ViT-B/16 sau khi gắn \emph{một} bộ tham số LoRA cố định, đóng vai trò thích
@@ -363,4 +392,51 @@ nét đứt).}
 Đầu chiếu ngẫu nhiên cần đúng một lượt truyền xuôi trên mỗi mẫu, và cùng kết quả
 đó phục vụ cả hai tầng.
 
+%
+\begin{credits}
+\subsubsection{\ackname}
+Nhóm tác giả cảm ơn giảng viên hướng dẫn đã góp ý cho bản thảo.
+
+\subsubsection{\discintname}
+Các tác giả tuyên bố không có xung đột lợi ích nào liên quan đến nội dung bài
+viết này.
+\end{credits}
+%
+% ---- Bibliography ----
+%
+% LUU Y: cac muc duoi day duoc chep lai tu danh muc tham khao cua bai HRM-PET.
+% Truoc khi nop chinh thuc phai doi chieu lai voi ban goc tung bai: nam xuat
+% ban va cach viet ten tac gia co the sai lech. Neu dung BibTeX thi khai
+% \bibliographystyle{splncs04}.
+%
+\begin{thebibliography}{8}
+
+\bibitem{ref_hrmpet}
+Wang, W., Jia, G., Liu, X., Lin, L., Yang, J.: Hybrid re-matching for continual
+learning with parameter-efficient tuning. In: NeurIPS (2025)
+
+\bibitem{ref_ranpac}
+McDonnell, M.D., Gong, D., Parvaneh, A., Abbasnejad, E., van den Hengel, A.:
+RanPAC: random projections and pre-trained models for continual learning. In:
+NeurIPS (2023)
+
+\bibitem{ref_hide}
+Wang, L., Xie, J., Zhang, X., Huang, M., Su, H., Zhu, J.: Hierarchical
+decomposition of prompt-based continual learning: rethinking obscured
+sub-optimality. In: NeurIPS (2023)
+
+\bibitem{ref_l2p}
+Wang, Z., Zhang, Z., Lee, C.Y., Zhang, H., Sun, R., Ren, X., Su, G., Perot, V.,
+Dy, J., Pfister, T.: Learning to prompt for continual learning. In: CVPR (2022)
+
+\bibitem{ref_dualprompt}
+Wang, Z., Zhang, Z., Ebrahimi, S., Sun, R., Zhang, H., Lee, C.Y., Ren, X., Su,
+G., Perot, V., Dy, J., et al.: DualPrompt: complementary prompting for
+rehearsal-free continual learning. In: ECCV (2022)
+
+\bibitem{ref_lora}
+Hu, E.J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., Chen,
+W.: LoRA: low-rank adaptation of large language models. In: ICLR (2022)
+
+\end{thebibliography}
 \end{document}
