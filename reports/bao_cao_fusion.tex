@@ -991,6 +991,34 @@ seed --- tự nó đã là một phép đếm số ô cải thiện. Chọn cấ
 một đại lượng rồi báo cáo chính đại lượng đó như phát hiện là một vòng tròn. Đây
 là lý do Mục \ref{sec:results} phát biểu theo ba trục thay vì đếm gộp số ô.
 
+\textbf{Đã thử phương án tự chọn, và nó kém hơn.} RanPAC không dùng
+$\lambda$ cố định: ở mỗi tác vụ, bài gốc chia dữ liệu \emph{của chính tác vụ đó}
+theo tỉ lệ 80:20, quét $\lambda$ qua 17 bậc độ lớn và giữ giá trị cho sai số bình
+phương nhỏ nhất trên phần giữ lại, không đụng dữ liệu tác vụ cũ. Chúng tôi đã cài
+lại đúng quy trình đó. Sai số kiểm định khai triển được thành
+$n_{\mathrm{val}} - 2\,\mathrm{tr}(W^{\top} C_{\mathrm{val}})
++ \mathrm{tr}(W^{\top} G_{\mathrm{val}} W)$ với nhãn one-hot, và thống kê giữ lại
+là hiệu giữa bộ đầy đủ với bộ $80\,\%$, nên cả phép quét ở dạng đóng trên những
+đại lượng vốn đã cộng dồn: không đặc trưng nào phải lưu, và tính không lưu mẫu
+được bảo toàn.
+
+Trên ImageNet-R seed 42, quy trình này chọn $\lambda = 10^5$ ở cả mười tác vụ và
+cho Acc@1 $75.0795$, kém giá trị chỉnh tay $0.43$ điểm. Chúng tôi thử tiếp một
+tiêu chí thứ hai, bất biến với thang đo của $W$ ---
+$\mathrm{tr}(W^{\top} C_{\mathrm{val}}) /
+\sqrt{\mathrm{tr}(W^{\top} G_{\mathrm{val}} W)\, n_{\mathrm{val}}}$ --- vì phép
+chuẩn hóa ở (\ref{eq:affine}) loại bỏ mọi thông tin về độ lớn. Tiêu chí này chọn
+đúng cùng giá trị $10^5$ và cho kết quả trùng đến từng chữ số.
+
+Hai tiêu chí độc lập cùng hội tụ về một giá trị cho thấy vấn đề không nằm ở cách
+đo. Trên dữ liệu này $\lambda = 10^5$ thật sự cho nghiệm ridge khớp dữ liệu giữ
+lại tốt nhất; điều không đúng là giả định rằng chất lượng khớp \emph{của riêng
+đầu RP} dự báo được chất lượng của hệ hợp nhất. Đầu RP ở đây không hoạt động độc
+lập mà được chuẩn hóa rồi trộn vào đầu phân lớp đã định tuyến, nên đại lượng đáng
+tối ưu là mức bổ trợ chứ không phải mức khớp. Chọn theo mục tiêu thật đòi hỏi
+đánh giá toàn hệ cho từng $\lambda$, tức đắt gấp mười bảy lần một lượt chạy đầy
+đủ. Chúng tôi vì vậy giữ giá trị cố định và khai báo rõ như trên.
+
 Độ lớn của thiên lệch bị chặn bởi dải quét. Với $\lambda$, dải trên seed 42 là
 $0.432$ điểm Acc@1, tức phần lợi thu được từ việc chọn trên chính seed đó nhiều
 nhất là $0.432$ cho một trong bốn seed, khoảng $0.11$ điểm trên trung bình, so
