@@ -30,6 +30,10 @@
 % moc \AtBeginDocument, dat o preamble se bi ghi de.
 % Neu chuyen ban thao sang tieng Anh de nop thi xoa nguyen khoi nay.
 % ---------------------------------------------------------------------
+% \andname la tu noi giua hai tac gia tren dong tac gia. llncs dat cung mot chu
+% "and"; khong doi thi bai tieng Viet in ra "Nguyen Thien Truong and Tong Quang
+% Thai" ngay dong dau.
+\renewcommand{\andname}{và}
 \renewcommand{\abstractname}{Tóm tắt.}
 \renewcommand{\keywordname}{{\bf Từ khóa:}}
 \renewcommand{\figurename}{Hình}
@@ -232,6 +236,57 @@ Chúng tôi bổ sung một nguồn tín hiệu thứ hai và hai vị trí đ�
 được huấn luyện thêm và không mô hình nào phải huấn luyện lại.
 Hình~\ref{fig:pipeline} minh họa vị trí của chúng.
 
+% [!ht] thay cho \begin{figure} tran nhu mau: cau nhac toi hinh nay la cau cuoi
+% cua doan mo dau muc, nen hinh phai nam ngay duoi no. Mac dinh tbp cho phep no
+% troi di vai trang so voi cho duoc nhac.
+\begin{figure}[!ht]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\footnotesize,
+  >={Stealth[length=2mm]},
+  box/.style={draw, minimum height=8mm, minimum width=1.6cm, inner xsep=4pt, align=center},
+  hl/.style={box, very thick, fill=black!6}
+]
+% Cac o duoc noi chuoi theo canh phai cua o dung truoc, tuc cai duoc quy dinh la
+% KHOANG HO chu khong phai toa do tam. Dat theo tam khong the dung: be rong o
+% phu thuoc do dai nhan, nen chu dai ra la an mat khoang ho ma khong bao gi.
+% Ban tieng Anh tung tut xuong 1.49pt trong khi dau mui ten 2mm = 5.69pt, tuc
+% mui ten ve han vao trong o ben canh. 9mm giu moi khoang ho o 25.61pt.
+\node[box] (in) at (0, 0) {Ảnh vào};
+\coordinate (up) at (0, 0.85);
+\coordinate (dn) at (0,-0.85);
+\coordinate (r1) at ([xshift=9mm]in.east);
+\node[box, anchor=west] (tii) at (r1 |- up) {TII};
+\node[box, anchor=west] (rp)  at (r1 |- dn) {Đầu RP};
+% neo theo rp chu khong theo tii: rp mang nhan dai hon nen no moi la rang buoc
+% quyet dinh neu sau nay co ai sua nhan.
+\coordinate (r2) at ([xshift=9mm]rp.east);
+\node[hl,  anchor=west] (f1) at (r2 |- in) {Tầng 1\\Hợp nhất định tuyến};
+\node[box, anchor=west] (lo) at ([xshift=9mm]f1.east) {Chọn LoRA};
+\node[box, anchor=west] (dr) at ([xshift=9mm]lo.east) {DRM / CRM};
+\node[box, anchor=west] (cl) at ([xshift=9mm]dr.east) {Đầu phân lớp};
+\node[hl]  (f2) at ([yshift=-2.1cm]cl.center) {Tầng 2\\Hợp nhất phân lớp};
+\node[box] (out) at ([yshift=-3.7cm]cl.center) {Dự đoán};
+\draw[->] (in) -- (tii);
+\draw[->] (in) -- (rp);
+\draw[->] (tii) -- (f1);
+\draw[->] (rp) -- (f1);
+\draw[->] (f1) -- (lo);
+\draw[->] (lo) -- (dr);
+\draw[->] (dr) -- (cl);
+\draw[->] (cl) -- (f2);
+\draw[->] (f2) -- (out);
+\draw[->, dashed] (rp.south) |- node[pos=0.75, above, font=\scriptsize]
+      {điểm số theo lớp của đầu RP} (f2.west);
+\end{tikzpicture}}
+\caption{Quy trình suy luận. Các khối viền đậm là hai thành phần được bổ sung.
+Đầu chiếu ngẫu nhiên được tính một lần duy nhất và cấp tín hiệu cho cả hai tầng:
+điểm số theo tác vụ cho tầng thứ nhất, điểm số theo lớp cho tầng thứ hai (đường
+nét đứt).}
+\label{fig:pipeline}
+\end{figure}
+
 \subsection{Nguồn tín hiệu thứ hai}
 
 Nguồn thứ hai phải thỏa hai ràng buộc: không thêm tham số huấn luyện, vì tham số
@@ -368,43 +423,6 @@ sai đơn vị, một thang đo sai cho entropy chéo. Tại $\beta = 0$ thì
 $\hat{\ell} = \ell$ đúng từng phần tử, nên tầng này cũng thu về đúng phương pháp cơ
 sở.
 
-\begin{figure}
-\centering
-\resizebox{\textwidth}{!}{%
-\begin{tikzpicture}[
-  font=\footnotesize,
-  >={Stealth[length=2mm]},
-  box/.style={draw, minimum height=8mm, minimum width=1.6cm, inner xsep=4pt, align=center},
-  hl/.style={box, very thick, fill=black!6}
-]
-\node[box] (in) at (0.0, 0.0)    {Ảnh vào};
-\node[box] (tii) at (2.7, 0.85)  {TII};
-\node[box] (rp) at (2.7, -0.85)  {Đầu RP};
-\node[hl]  (f1) at (5.9, 0.0)    {Tầng 1\\Hợp nhất định tuyến};
-\node[box] (lo) at (8.9, 0.0)    {Chọn LoRA};
-\node[box] (dr) at (11.3, 0.0)   {DRM / CRM};
-\node[box] (cl) at (13.9, 0.0)   {Đầu phân lớp};
-\node[hl]  (f2) at (13.9, -2.1)  {Tầng 2\\Hợp nhất phân lớp};
-\node[box] (out) at (13.9, -3.7) {Dự đoán};
-\draw[->] (in) -- (tii);
-\draw[->] (in) -- (rp);
-\draw[->] (tii) -- (f1);
-\draw[->] (rp) -- (f1);
-\draw[->] (f1) -- (lo);
-\draw[->] (lo) -- (dr);
-\draw[->] (dr) -- (cl);
-\draw[->] (cl) -- (f2);
-\draw[->] (f2) -- (out);
-\draw[->, dashed] (rp.south) |- node[pos=0.75, above, font=\scriptsize]
-      {điểm số theo lớp của đầu RP} (f2.west);
-\end{tikzpicture}}
-\caption{Quy trình suy luận. Các khối viền đậm là hai thành phần được bổ sung.
-Đầu chiếu ngẫu nhiên được tính một lần duy nhất và cấp tín hiệu cho cả hai tầng:
-điểm số theo tác vụ cho tầng thứ nhất, điểm số theo lớp cho tầng thứ hai (đường
-nét đứt).}
-\label{fig:pipeline}
-\end{figure}
-
 \subsubsection{Chi phí.}
 Đầu chiếu ngẫu nhiên cần đúng một lượt truyền xuôi trên mỗi mẫu, và cùng kết quả
 đó phục vụ cả hai tầng.
@@ -414,9 +432,11 @@ nét đứt).}
 \subsubsection{\ackname}
 Nhóm tác giả cảm ơn giảng viên hướng dẫn đã góp ý cho bản thảo.
 
-\subsubsection{\discintname}
-Các tác giả tuyên bố không có xung đột lợi ích nào liên quan đến nội dung bài
-viết này.
+% Khoi Tuyen bo xung dot loi ich da bo theo yeu cau. Springer bat buoc phai co
+% khi nop hoi nghi that, nen khoi phuc lai truoc khi nop:
+%   \subsubsection{\discintname}
+%   Cac tac gia tuyen bo khong co xung dot loi ich nao lien quan den noi dung
+%   bai viet nay.
 \end{credits}
 %
 % ---- Bibliography ----

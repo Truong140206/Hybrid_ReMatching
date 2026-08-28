@@ -22,6 +22,7 @@ from engines.random_projection_head import (
     _ridge_solve,
     _select_lambda,
     accumulate_rp_statistics,
+    begin_rp_task,
     get_rp_state,
     project_features,
     reset_rp_head,
@@ -532,11 +533,16 @@ def _separable(n=400, dim_in=16, classes=5, seed=0):
 def _rescale_predictions(state, scale):
     """Scale W without touching the validation target.
 
-    W solves (G + lambda I) W = C_fit, so scaling C_fit scales W. The held-out
-    target is C_val = prototypes - prototypes_fit, and adjusting the total by
-    the same amount leaves it exactly where it was. Scaling both accumulators
-    together would not work: that scales C_val too, and then every term of both
-    criteria moves in step and neither choice shifts.
+    W solves (G + lambda I) W = C_fit, so scaling C_fit scales W. C_val is its
+    own accumulator and is deliberately left alone here. Scaling both together
+    would not work: that scales C_val too, and then every term of both criteria
+    moves in step and neither choice shifts.
+
+    The running total is adjusted alongside so that (total - fit) still equals
+    C_val. Nothing in the search reads that identity any more, but
+    test_the_validation_accumulator_still_equals_the_old_subtraction does, and
+    keeping it true here means that test is checking the accumulator rather
+    than an artefact of this helper.
     """
     state['prototypes'] = (state['prototypes']
                            + (scale - 1.0) * state['prototypes_fit'])
@@ -589,3 +595,104 @@ def test_squared_error_chases_the_magnitude_instead():
     """
     small, large = _choose('mse', 0.01), _choose('mse', 100.0)
     assert small < _choose('mse', 1.0) < large
+
+
+# --------------------------------------------------------------------------
+# Which data the lambda sweep ranges over
+# --------------------------------------------------------------------------
+
+
+def _accumulate_repeats(args, features, targets, classes, repeats, batch=32):
+    """Feed the same task through `repeats` times without resetting."""
+    reset_rp_head()
+    for _ in range(repeats):
+        for start in range(0, features.shape[0], batch):
+            accumulate_rp_statistics(features[start:start + batch],
+                                     targets[start:start + batch],
+                                     args, DEVICE, classes)
+
+
+def test_task_scope_is_the_default():
+    """The faithful procedure is what runs unless somebody asks otherwise."""
+    args = _rp_args(rp_dim=32, rp_lambda_search=True)
+    assert getattr(args, 'rp_lambda_scope', 'task') == 'task'
+
+
+def test_the_validation_accumulator_still_equals_the_old_subtraction():
+    """Guards the refactor: pooled statistics must be arithmetically unchanged.
+
+    The held-out copy used to be computed as (total - fit). It is an explicit
+    accumulator now, and in pooled mode -- where nothing is ever cleared -- the
+    two must still agree, or every number measured under the old code becomes
+    incomparable with everything measured under the new code.
+    """
+    args = _rp_args(rp_dim=32, rp_lambda_search=True, rp_lambda_scope='pooled')
+    features, targets = _separable()
+    _accumulate(args, features, targets, 5)
+    state = get_rp_state()
+
+    assert torch.allclose(state['gram_val'],
+                          state['gram'] - state['gram_fit'], atol=1e-9)
+    assert torch.allclose(state['prototypes_val'],
+                          state['prototypes'] - state['prototypes_fit'],
+                          atol=1e-9)
+    assert state['count_val'] == state['count'] - state['count_fit']
+
+
+def test_begin_rp_task_clears_the_split_but_not_the_head():
+    """The head must keep every sample; only the sweep's copy starts over.
+
+    Clearing the running Gram would destroy the order invariance the whole head
+    rests on, so this asserts the boundary explicitly rather than trusting it.
+    """
+    args = _rp_args(rp_dim=32, rp_lambda_search=True)
+    features, targets = _separable(n=200)
+    _accumulate(args, features, targets, 5)
+    state = get_rp_state()
+    gram_after_first = state['gram'].clone()
+
+    begin_rp_task(args)
+    assert state['count_fit'] == 0 and state['count_val'] == 0
+    assert float(state['gram_fit'].abs().sum()) == 0.0
+    assert float(state['gram_val'].abs().sum()) == 0.0
+    # Untouched: this is what the head is actually solved from.
+    assert torch.equal(state['gram'], gram_after_first)
+    assert state['count'] == 200
+
+
+def test_pooled_scope_leaves_the_split_alone():
+    args = _rp_args(rp_dim=32, rp_lambda_search=True, rp_lambda_scope='pooled')
+    features, targets = _separable(n=200)
+    _accumulate(args, features, targets, 5)
+    state = get_rp_state()
+    begin_rp_task(args)
+    assert state['count_fit'] == 160 and state['count_val'] == 40
+
+
+def test_pooling_the_sweep_biases_lambda_upward():
+    """The reason rp_lambda_scope exists, as an exact statement.
+
+    Feed the identical task a hundred times. Nothing about the problem has
+    changed -- same features, same classes, same 80:20 split -- but every
+    accumulator is a hundred times larger. Since G and C both scale by k,
+
+        W_k(lambda) = (kG + lambda I)^-1 (kC) = W_1(lambda / k)
+
+    so the pooled objective at lambda equals k times the single-task objective
+    at lambda / k, and the chosen lambda moves up by exactly the factor k. On a
+    grid of decades that is two decades, with no rounding to argue about.
+
+    This is the bias the ImageNet-R lambda-search run was measured under: by
+    task ten its sweep was ranging over ten tasks pooled, and it pinned the top
+    of the range at every task.
+    """
+    features, targets = _separable()
+    args = _rp_args(rp_dim=32, rp_lambda_search=True)
+
+    _accumulate(args, features, targets, 5)
+    one_task = _select_lambda(args, DEVICE)
+
+    _accumulate_repeats(args, features, targets, 5, repeats=100)
+    hundred_tasks = _select_lambda(args, DEVICE)
+
+    assert hundred_tasks == pytest.approx(one_task * 100.0, rel=1e-9)

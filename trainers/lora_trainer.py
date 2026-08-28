@@ -12,7 +12,8 @@ from engines.hrm_lora_wtp_and_tap_engine import (
     reset_replay_statistics, restore_real_feature_memory,
     set_replay_task_router, train_and_evaluate,
 )
-from engines.random_projection_head import reset_rp_head, solve_rp_head
+from engines.random_projection_head import (
+    begin_rp_task, reset_rp_head, solve_rp_head)
 from engines.layer_stat_router import reset_layer_stats
 from engines.replay_logit_calibration import calibrate_task_logits
 from engines.replay_task_router import train_replay_task_router
@@ -310,6 +311,9 @@ def train(args):
                     )
             elif rp_head_enabled:
                 pin_rp_extractor(original_model, args)
+                # Open a fresh 80:20 split for this task before accumulating it;
+                # no-op unless the lambda search is on and scoped per task.
+                begin_rp_task(args)
                 print('Accumulating RP-head statistics for task', task_id + 1)
                 compute_rp_statistics(
                     model=model, original_model=original_model,

@@ -1,0 +1,486 @@
+% This paper follows the LLNCS macro package for Springer Computer Science
+% proceedings; based on samplepaper.tex, Version 2.21 of 2022/01/12.
+%
+% English edition of reports/lncs_phuong_phap.tex. The Vietnamese file is kept
+% as-is; the two are meant to stay in step, so a change to one belongs in the
+% other as well.
+%
+\documentclass[runningheads]{llncs}
+%
+% ---------------------------------------------------------------------
+% FONT ENCODING
+% The body of this paper is English, for which the sample's [T1] would be
+% correct. We keep [T5] for one reason only: the author names carry Vietnamese
+% diacritics that T1 cannot render. T5 covers the full ASCII range, so English
+% text sets exactly as it would under T1.
+% ---------------------------------------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+%
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+% The pipeline figure is drawn in TikZ, i.e. vector graphics, as the sample
+% recommends for diagrams and schematics.
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning}
+%
+\begin{document}
+%
+% No \renewcommand block here: llncs already labels everything in English.
+%
+\title{Two-Stage Fusion for Routing and Classification in
+Parameter-Efficient Continual Learning}
+%
+\titlerunning{Two-Stage Fusion for PET-Based Continual Learning}
+%
+% ORCID iDs not yet available; \orcidID{} omitted for now. Fill in before
+% the final submission.
+\author{Nguyễn Thiên Trường \and Tống Quang Thái}
+%
+\authorrunning{N. T. Trường and T. Q. Thái}
+%
+% Add e-mail addresses before submitting.
+\institute{University of Engineering and Technology,\\
+Vietnam National University, Hanoi, Vietnam}
+%
+\maketitle
+%
+\begin{abstract}
+Continual learning methods built on parameter-efficient tuning maintain a
+lightweight parameter pool, one set per task, and at inference must decide which
+set to attach to the backbone before classifying. That decision is made from a
+single source of evidence, so everything downstream is capped by the quality of
+one module. We show that a second source of evidence is already present inside
+the trained model and can be exploited without training a single additional
+parameter: a second-order classification head built on a frozen random
+projection of the existing LoRA features. This source is fused at two points,
+both at inference time. The first stage blends it with the original routing
+signal after standardising the two sources onto a common scale. The second stage
+uses it as a secondary classifier, weighted per sample in inverse proportion to
+how decided the primary classifier already is, so that the blend opens only on
+contested samples. Across three continual-learning benchmarks and four seeds,
+routing accuracy rises by $+1.10$ to $+2.26$ points and classification accuracy
+by $+0.69$ to $+1.50$ points; on both axes the gain is several times the
+seed-to-seed standard deviation. The two retention metrics show no change
+distinguishable from zero. The added cost is exactly one forward pass per
+sample.
+
+\keywords{Continual learning \and Parameter-efficient tuning \and Parameter
+routing \and Random projection \and Signal fusion.}
+\end{abstract}
+%
+%
+%
+\section{Introduction}
+
+\emph{Opening and contributions to be written.}
+
+\subsection{Problem Statement}
+
+Class-incremental learning (CIL) learns a sequence of $T$ tasks without
+forgetting earlier ones. The $t$-th task consists of $n_t$ samples
+$\mathcal{D}_t=\{(x^t_i,y^t_i)\}_{i=1}^{n_t}$ drawn from a class set
+$\mathcal{C}_t$, where $x^t_i \in \mathcal{X}$ is an input image and
+$y^t_i \in \mathcal{Y}$ its label.
+
+Three constraints define the setting. At step $t$ only $\mathcal{D}_t$ is
+available for training. The class sets are disjoint,
+$\mathcal{C}_t \cap \mathcal{C}_{t'} = \emptyset$ for all $t \neq t'$, and at
+inference the \emph{task identity is unknown}: the model must discriminate among
+all classes seen so far through a single shared classification head. Finally,
+this work operates in the exemplar-free setting: images from past tasks are
+never retained.
+
+In methods based on parameter-efficient tuning
+(PET)~\cite{ref_l2p,ref_dualprompt,ref_hide}, a pre-trained backbone
+$h_{\mathrm{ptm}}$ with parameters $\theta_{\mathrm{ptm}}$ is frozen and a
+lightweight parameter pool $\mathcal{P}=\{p_1,\dots,p_T\}$ is maintained, each
+set trained on one task; here every $p_t$ is a LoRA adapter~\cite{ref_lora}. The
+shared classification head is denoted $g_{\theta_g}$. Because the task identity
+is unknown at inference, the system is forced to \emph{choose} which parameter
+set to attach to the backbone before classifying, and everything downstream
+depends on that choice. Table~\ref{tab:notation} summarises the notation used
+throughout.
+
+\begin{table}
+\caption{Notation used in this paper.}\label{tab:notation}
+\begin{tabular}{ll}
+\hline
+Symbol & Meaning\\
+\hline
+$\mathcal{D}_t$, $\mathcal{C}_t$ & data and class set of task $t$\\
+$h_{\mathrm{ptm}}$, $\theta_{\mathrm{ptm}}$ & pre-trained backbone, frozen\\
+$\mathcal{P}=\{p_1,\dots,p_T\}$ & LoRA parameter pool, one set per task\\
+$g_{\theta_g}$, $g_\omega$ & shared classification head; auxiliary classifier of TII\\
+$q(x)$ & query feature from the bare backbone\\
+$\hat{d}(x)$, $\tilde{d}(x)$ & class distribution of TII; of the routed classifier\\
+$\mathcal{T}(\cdot)$ & map from class to task identity\\
+$\hat{t}_f$, $\hat{t}_s$ & task identity at first matching and after re-matching\\
+$\ell \in \mathbb{R}^{|\mathcal{Y}|}$ & class scores of the routed classifier\\
+$s \in \mathbb{R}^{|\mathcal{Y}|}$ & class scores of the random-projection head\\
+$z(\cdot)$ & per-sample standardisation to zero mean and unit variance\\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{The HRM-PET Baseline Pipeline}
+
+We take HRM-PET~\cite{ref_hrmpet} as our baseline. Its inference pipeline
+consists of four modules in sequence, presented in the order the data passes
+through them.
+
+\subsubsection{Task-identity inference (TII).}
+The input image is passed through the \emph{bare} backbone, with no adapter
+attached, to obtain a query feature. That feature enters an auxiliary classifier
+$g_\omega$ trained with cross-entropy, producing a distribution over classes:
+\begin{equation}
+q(x) = h(x;\theta_{\mathrm{ptm}}),
+\qquad
+\hat{d}(x) = g\!\left(q(x); \theta_\omega\right).
+\label{eq:tii}
+\end{equation}
+The initial task identity is the task containing the highest-probability class,
+with $\mathcal{T}$ the class-to-task map.
+
+\subsubsection{Direct re-matching (DRM).}
+Thanks to the knowledge shared across the parameter pool, for some samples the
+class predicted by the classifier \emph{already} belongs to the correct task
+even when the initial match was wrong. Such samples are identifiable because the
+predicted class does not belong to the matched task:
+\begin{align}
+\hat{t}_f &= \mathcal{T}\!\left(\arg\max_i\, g(q(x);\theta_\omega)\right),
+\label{eq:tf}\\
+\hat{t}_s &= \mathcal{T}\!\left(\arg\max_i\,
+   g\!\left(h(x; p_{\hat{t}_f}, \theta_{\mathrm{ptm}}); \theta_g\right)\right),
+\label{eq:ts}
+\end{align}
+and HRM-PET substitutes only when the two disagree:
+\begin{equation}
+\hat{y} =
+\begin{cases}
+\arg\max_i\, g\!\left(h(x; p_{\hat{t}_s}, \theta_{\mathrm{ptm}}); \theta_g\right),
+  & \text{if } \hat{t}_f \neq \hat{t}_s,\\[2pt]
+\arg\max_i\, g\!\left(h(x; p_{\hat{t}_f}, \theta_{\mathrm{ptm}}); \theta_g\right),
+  & \text{otherwise.}
+\end{cases}
+\label{eq:drm}
+\end{equation}
+If $\hat{t}_s$ is correct, routing accuracy improves; if it is wrong, the worst
+outcome is a wrong prediction that $\hat{t}_f$ was already going to produce. The
+design therefore cannot degrade performance.
+
+\subsubsection{Confidence-based re-matching (CRM).}
+When $\hat{t}_f = \hat{t}_s$, DRM has nothing to substitute. For those samples
+HRM-PET relies on the observation that each parameter set was trained only
+alongside the classes of its own task, so for a mismatched sample the predictive
+distribution tends to be less decided. The confidence $E(\cdot)$ is computed as a
+generalised posterior entropy, requiring no extra training, and a detector
+compares it against a threshold $\tau$:
+\begin{equation}
+De(x) =
+\begin{cases}
+0, & \text{if } E(\tilde{d}(x)) \leq \tau \quad (\text{suspected mismatch}),\\
+1, & \text{otherwise.}
+\end{cases}
+\label{eq:detect}
+\end{equation}
+Since no sharp boundary can be drawn by $\tau$ alone, HRM-PET does not replace
+$\hat{t}_f$ outright but compares confidences across a candidate set $\Gamma$ of
+the $N$ highest-probability classes in $\hat{d}(x)$:
+\begin{equation}
+\hat{t}_s = \arg\max_{i \,\in\, \Gamma}\;
+   E\!\left(g\!\left(h(x; p_{\mathcal{T}(i)}, \theta_{\mathrm{ptm}});
+   \theta_g\right)\right),
+\qquad N = 2 .
+\label{eq:crm}
+\end{equation}
+Each candidate costs one additional forward pass, so $N$ is kept small.
+
+\subsubsection{Shared classification head.}
+The selected parameter set is attached to the backbone, and the shared head
+produces a score vector over all classes seen so far:
+\begin{equation}
+\ell = g\!\left(h(x; p_{\hat{t}}, \theta_{\mathrm{ptm}}); \theta_g\right)
+   \in \mathbb{R}^{|\mathcal{Y}|},
+\qquad
+\hat{y} = \arg\max_c\, \ell_c ,
+\label{eq:logits}
+\end{equation}
+where $\hat{t}$ is the identity after DRM and CRM. Classes not yet seen are
+masked with $-\infty$.
+
+\subsubsection{Two weaknesses of this structure.}
+First, the whole four-module chain depends on \emph{one} routing signal,
+produced at (\ref{eq:tii}); DRM and CRM only refine it and add no further
+source. Second, $\ell$ in (\ref{eq:logits}) comes from the \emph{shared} head,
+so it frequently predicts the correct class in spite of a wrong routing
+decision --- improved routing therefore does not automatically translate into
+improved classification. These two points lead directly to the two components
+proposed in Sect.~\ref{sec:method}.
+
+\section{Related Work}
+
+\emph{To be written.}
+
+\section{Method}
+\label{sec:method}
+
+We add a second source of evidence and two places at which to fuse it in, one
+for each weakness above. Both sit at inference time: no parameter is trained and
+no model is retrained. Figure~\ref{fig:pipeline} shows where they go.
+
+% [!ht] rather than the sample's bare \begin{figure}: the reference to this
+% figure is the last sentence of the section opening, so the figure has to sit
+% directly under it. The default tbp lets it drift pages away from its mention.
+\begin{figure}[!ht]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\footnotesize,
+  >={Stealth[length=2mm]},
+  box/.style={draw, minimum height=8mm, minimum width=1.6cm, inner xsep=4pt, align=center},
+  hl/.style={box, very thick, fill=black!6}
+]
+% Each box is chained off the previous one's east edge, so what is specified is
+% the GAP and the width is free to be whatever the label needs. Fixed centre
+% coordinates cannot work here: box width depends on label length, so longer
+% words silently eat the gap. With the old centres the LoRA-to-DRM gap fell to
+% 1.49pt against a 2mm (5.69pt) arrow tip, i.e. the arrowhead was drawn inside
+% the neighbouring box. 9mm keeps every gap at 25.61pt in both languages.
+\node[box] (in) at (0, 0) {Input image};
+\coordinate (up) at (0, 0.85);
+\coordinate (dn) at (0,-0.85);
+\coordinate (r1) at ([xshift=9mm]in.east);
+\node[box, anchor=west] (tii) at (r1 |- up) {TII};
+\node[box, anchor=west] (rp)  at (r1 |- dn) {RP head};
+% anchored on rp, not tii: rp carries the longer label of the two, so it is the
+% binding constraint if either label is ever edited.
+\coordinate (r2) at ([xshift=9mm]rp.east);
+\node[hl,  anchor=west] (f1) at (r2 |- in) {Stage 1\\Routing fusion};
+\node[box, anchor=west] (lo) at ([xshift=9mm]f1.east) {LoRA selection};
+\node[box, anchor=west] (dr) at ([xshift=9mm]lo.east) {DRM / CRM};
+\node[box, anchor=west] (cl) at ([xshift=9mm]dr.east) {Classifier head};
+\node[hl]  (f2) at ([yshift=-2.1cm]cl.center) {Stage 2\\Classification fusion};
+\node[box] (out) at ([yshift=-3.7cm]cl.center) {Prediction};
+\draw[->] (in) -- (tii);
+\draw[->] (in) -- (rp);
+\draw[->] (tii) -- (f1);
+\draw[->] (rp) -- (f1);
+\draw[->] (f1) -- (lo);
+\draw[->] (lo) -- (dr);
+\draw[->] (dr) -- (cl);
+\draw[->] (cl) -- (f2);
+\draw[->] (f2) -- (out);
+\draw[->, dashed] (rp.south) |- node[pos=0.75, above, font=\scriptsize]
+      {class scores of the RP head} (f2.west);
+\end{tikzpicture}}
+\caption{The inference pipeline. The bold-outlined blocks are the two added
+components. The random-projection head is computed exactly once and feeds both
+stages: task scores for the first, class scores for the second (dashed line).}
+\label{fig:pipeline}
+\end{figure}
+
+\subsection{The Second Source of Evidence}
+
+The second source must satisfy two constraints: it must add no trainable
+parameters, since parameters updated by gradients across a task sequence can be
+overwritten by later tasks; and it must preserve the exemplar-free protocol. A
+second-order classification head in the style of RanPAC~\cite{ref_ranpac}
+satisfies both.
+
+The input feature $f \in \mathbb{R}^{d}$ with $d = 768$ is taken from the final
+feature layer of ViT-B/16 after attaching \emph{one} fixed LoRA parameter set,
+which serves as first-session adaptation. The index of that parameter set must be
+fixed across all tasks; otherwise the accumulated terms below would mix
+incompatible feature spaces.
+
+\subsubsection{Projection and second-order statistics.}
+The feature is projected into a high-dimensional space of size $M = 10^4$ and
+passed through a nonlinearity, and the projected features are accumulated into
+two matrices:
+\begin{align}
+h &= \mathrm{ReLU}(f W) \in \mathbb{R}^{M},
+\qquad W \in \mathbb{R}^{d \times M} \text{ frozen, drawn from a fixed seed},
+\label{eq:proj}\\
+G &= \sum_n h_n h_n^{\top} \in \mathbb{R}^{M \times M},
+\qquad
+C = \sum_n h_n\, \mathbf{e}_{y_n}^{\top}
+   \in \mathbb{R}^{M \times |\mathcal{Y}|},
+\label{eq:gram}
+\end{align}
+where $\mathbf{e}_{y}$ is the basis vector of class $y$. The sums run over every
+sample seen since the start of the sequence.
+
+Going up in dimension is deliberate: in the original $768$-dimensional space the
+classes overlap to the point that no hyperplane separates them, whereas after
+the expansion a linear classifier becomes expressive enough. The nonlinearity is
+mandatory rather than optional --- without it $fW$ is merely a linear transform
+of $f$, of rank at most $d$, and projecting into $M \gg d$ dimensions adds no
+separating power whatsoever.
+
+\subsubsection{Classification by ridge regression.}
+The output weights are the closed-form solution of a regularised least-squares
+problem:
+\begin{equation}
+W_{\mathrm{out}} = (G + \lambda I)^{-1} C \in \mathbb{R}^{M \times |\mathcal{Y}|},
+\qquad
+s = h^{\top} W_{\mathrm{out}} \in \mathbb{R}^{|\mathcal{Y}|} .
+\label{eq:ridge}
+\end{equation}
+There is no separate dimensionality-reduction step: $W_{\mathrm{out}}$ performs
+it, collapsing $M$ dimensions down to $|\mathcal{Y}|$ in a single matrix
+product. The trajectory of dimensions is
+\begin{center}
+$\underbrace{768}_{f}
+\;\xrightarrow{\;\text{projection} + \text{nonlinearity}\;}\;
+\underbrace{10^4}_{h}
+\;\xrightarrow{\;W_{\mathrm{out}}\;}\;
+\underbrace{|\mathcal{Y}|}_{s}$
+\end{center}
+We go up \emph{in order to make} the linear step down work. The Gram inverse is
+the component that makes it work: the post-nonlinearity dimensions are strongly
+correlated, and $(G + \lambda I)^{-1}$ decorrelates them.
+
+\subsubsection{Two inherited properties.}
+Both $G$ and $C$ in (\ref{eq:gram}) are \emph{sums} over samples, and addition
+commutes. Consequently $W_{\mathrm{out}}$ does not depend on the order in which
+the tasks were learned: this head does not forget, in a structural sense, rather
+than by virtue of some anti-forgetting mechanism added on top. At the same time
+the sizes of the two matrices do not depend on how many samples have been seen,
+and no per-sample feature is ever retained, so the exemplar-free protocol is
+preserved by the structure of the computation itself.
+
+\subsection{Two-Stage Fusion}
+
+Both stages blend two vectors that live on different scales: the ridge scores $s$
+span roughly one unit while the logits $\ell$ span roughly thirty-five, so a
+direct blend would let $\ell$ dominate at every weight. Each source is therefore
+standardised per sample before blending:
+\begin{equation}
+z(v) = \frac{v - \mathrm{mean}(v)}{\mathrm{std}(v)} ,
+\label{eq:znorm}
+\end{equation}
+with the mean and standard deviation computed separately for each sample, over
+the classes seen so far only.
+
+\subsubsection{First stage: fusion at the routing level.}
+Both sources emit scores over \emph{classes}, whereas routing needs scores over
+\emph{tasks}. We convert by taking the maximum over each task's class set, since
+a task deserves to be selected when \emph{some} class of its own scores highly,
+not when its classes score highly on average:
+\begin{equation}
+\ell^{\mathrm{task}}_t = \max_{c \in \mathcal{C}_t} \ell_c ,
+\qquad
+s^{\mathrm{task}}_t = \max_{c \in \mathcal{C}_t} s_c ,
+\qquad t = 1,\dots,\hat{T},
+\label{eq:taskscore}
+\end{equation}
+with $\hat{T}$ the number of tasks seen so far. The two vectors are blended
+after standardisation:
+\begin{equation}
+\mathrm{fused} = w\, z(\ell^{\mathrm{task}}) + (1-w)\, z(s^{\mathrm{task}}),
+\qquad
+\hat{t}_f = \arg\max_t\, \mathrm{fused}_t ,
+\qquad w = 0.7 .
+\label{eq:route}
+\end{equation}
+The identity $\hat{t}_f$ replaces the output of (\ref{eq:tii}) and is handed to
+DRM and CRM as a better starting point. We replace \emph{exactly one} module, the
+first matching step; every downstream mechanism is left untouched. At $w = 1.0$,
+(\ref{eq:route}) returns exactly the ordering of $\ell^{\mathrm{task}}$, so the
+method reduces to the baseline.
+
+\subsubsection{Second stage: gated fusion at the classification level.}
+Because $\ell$ comes from the shared head, it frequently predicts the correct
+class in spite of a wrong routing decision. We therefore use the
+random-projection head itself as a secondary classifier, this time taking its
+class scores $s$.
+
+A fixed weight is the wrong instrument. It spends the same share of the decision
+on a sample the primary head has already named with certainty as on one it is
+hesitating over, and the former outnumber the latter overwhelmingly; paying there
+only flattens a peak that was already correct. Fusion can change a prediction
+only by unseating the top-ranked class, and its most plausible challenger is the
+runner-up, so the weight is set in inverse proportion to the margin between the
+two highest-scoring classes:
+\begin{equation}
+\beta_i = \beta \left( 1 - \frac{p_{(1)} - p_{(2)}}{p_{(1)} + p_{(2)}} \right),
+\qquad \beta = 0.5 ,
+\label{eq:gate}
+\end{equation}
+where $p_{(1)} \geq p_{(2)}$ are the two largest probabilities of
+$\mathrm{softmax}(\ell)$ over the classes seen so far. Dividing by the sum makes
+the quantity depend only on the ratio $p_{(2)}/p_{(1)}$, that is, it measures how
+threatened the top class is, independently of how much probability mass the pair
+holds. The gate closes on decided samples and opens on contested ones.
+
+The blend reuses (\ref{eq:znorm}) and then maps the result back onto the scale of
+$\ell$:
+\begin{align}
+m_i &= (1 - \beta_i)\, z(\ell_i) + \beta_i\, z(s_i),
+\label{eq:mix}\\
+\hat{\ell}_i &= m_i \cdot \mathrm{std}(\ell_i) + \mathrm{mean}(\ell_i)
+   \in \mathbb{R}^{|\mathcal{Y}|}.
+\label{eq:affine}
+\end{align}
+The map-back in (\ref{eq:affine}) is a per-sample affine transform with a
+positive coefficient, so the ranking is unchanged; it is needed only for the loss,
+because standardisation leaves the mixture at unit variance, which is the wrong
+scale for cross-entropy. At $\beta = 0$ we have $\hat{\ell} = \ell$
+element-wise, so this stage also reduces exactly to the baseline.
+
+\subsubsection{Cost.}
+The random-projection head requires exactly one forward pass per sample, and the
+same result serves both stages.
+
+%
+\begin{credits}
+\subsubsection{\ackname}
+We thank our supervisor for comments on this manuscript.
+
+% The Disclosure of Interests block was removed on request. Springer requires
+% it for an actual proceedings submission, so restore it before submitting:
+%   \subsubsection{\discintname}
+%   The authors declare that they have no competing interests related to the
+%   content of this article.
+\end{credits}
+%
+% ---- Bibliography ----
+%
+% NOTE: the entries below were transcribed from the reference list of the
+% HRM-PET paper. Before the final submission each one must be checked against
+% the original publication: years and author-name spellings may differ. If
+% BibTeX is used, declare \bibliographystyle{splncs04}.
+%
+\begin{thebibliography}{8}
+
+\bibitem{ref_hrmpet}
+Wang, W., Jia, G., Liu, X., Lin, L., Yang, J.: Hybrid re-matching for continual
+learning with parameter-efficient tuning. In: NeurIPS (2025)
+
+\bibitem{ref_ranpac}
+McDonnell, M.D., Gong, D., Parvaneh, A., Abbasnejad, E., van den Hengel, A.:
+RanPAC: random projections and pre-trained models for continual learning. In:
+NeurIPS (2023)
+
+\bibitem{ref_hide}
+Wang, L., Xie, J., Zhang, X., Huang, M., Su, H., Zhu, J.: Hierarchical
+decomposition of prompt-based continual learning: rethinking obscured
+sub-optimality. In: NeurIPS (2023)
+
+\bibitem{ref_l2p}
+Wang, Z., Zhang, Z., Lee, C.Y., Zhang, H., Sun, R., Ren, X., Su, G., Perot, V.,
+Dy, J., Pfister, T.: Learning to prompt for continual learning. In: CVPR (2022)
+
+\bibitem{ref_dualprompt}
+Wang, Z., Zhang, Z., Ebrahimi, S., Sun, R., Zhang, H., Lee, C.Y., Ren, X., Su,
+G., Perot, V., Dy, J., et al.: DualPrompt: complementary prompting for
+rehearsal-free continual learning. In: ECCV (2022)
+
+\bibitem{ref_lora}
+Hu, E.J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., Chen,
+W.: LoRA: low-rank adaptation of large language models. In: ICLR (2022)
+
+\end{thebibliography}
+\end{document}

@@ -34,13 +34,19 @@ _state = {
     'projection': None,
     'gram': None,
     'prototypes': None,
-    # Second copy of the statistics over an 80% subset of the current task, so
-    # lambda can be chosen against the held-out 20% instead of being a constant
-    # somebody tuned once. See _select_lambda.
+    # Second copy of the statistics over an 80% subset, so lambda can be chosen
+    # against the held-out 20% instead of being a constant somebody tuned once.
+    # The two halves are accumulated separately rather than one being derived by
+    # subtracting the other from the running total: with rp_lambda_scope='task'
+    # they are cleared every task while the running total is not, so the
+    # subtraction identity no longer holds. See _select_lambda.
     'gram_fit': None,
     'prototypes_fit': None,
+    'gram_val': None,
+    'prototypes_val': None,
     'count': 0,
     'count_fit': 0,
+    'count_val': 0,
     'split_index': 0,
     'dim': None,
     'seen_classes': set(),
@@ -53,8 +59,11 @@ def reset_rp_head():
     _state['prototypes'] = None
     _state['gram_fit'] = None
     _state['prototypes_fit'] = None
+    _state['gram_val'] = None
+    _state['prototypes_val'] = None
     _state['count'] = 0
     _state['count_fit'] = 0
+    _state['count_val'] = 0
     _state['split_index'] = 0
     _state['dim'] = None
     _state['seen_classes'] = set()
@@ -164,13 +173,57 @@ def accumulate_rp_statistics(features, targets, args, device, nb_classes):
             (dim, dim), dtype=torch.float64, device=device)
         _state['prototypes_fit'] = torch.zeros(
             (dim, nb_classes), dtype=torch.float64, device=device)
+        _state['gram_val'] = torch.zeros(
+            (dim, dim), dtype=torch.float64, device=device)
+        _state['prototypes_val'] = torch.zeros(
+            (dim, nb_classes), dtype=torch.float64, device=device)
     keep = (index % 5) != 4
-    if not bool(keep.any()):
+    if bool(keep.any()):
+        fit_projected = projected[keep]
+        _state['gram_fit'] += fit_projected.T @ fit_projected
+        _state['prototypes_fit'] += fit_projected.T @ onehot[keep]
+        _state['count_fit'] += int(keep.sum())
+    held = ~keep
+    if bool(held.any()):
+        val_projected = projected[held]
+        _state['gram_val'] += val_projected.T @ val_projected
+        _state['prototypes_val'] += val_projected.T @ onehot[held]
+        _state['count_val'] += int(held.sum())
+
+
+def begin_rp_task(args):
+    """Open a fresh held-out split for the task about to be accumulated.
+
+    This is the difference between running RanPAC's procedure and running
+    something adjacent to it. RanPAC calls its ridge search with the *current
+    task's* features and rebuilds the 80:20 split from scratch every task; the
+    accumulated Gram it finally solves with is a separate, larger object. We
+    previously let the 80:20 statistics accumulate across the whole sequence
+    too, so by task ten the sweep was ranging over ten tasks pooled.
+
+    That is not a neutral difference. The norm of a Gram matrix grows linearly
+    with the number of samples in it, and the ridge that best balances fit
+    against regularisation grows with that norm, so sweeping over ten pooled
+    tasks is biased toward a larger lambda than sweeping over one. The pooled
+    variant duly pinned the top of the range at every task.
+
+    Only the fit/validation copies are cleared. The running `gram` and
+    `prototypes` -- the ones the head is actually solved from -- keep
+    accumulating, because their order invariance is what makes the head immune
+    to forgetting.
+    """
+    if not bool(getattr(args, 'rp_lambda_search', False)):
         return
-    fit_projected = projected[keep]
-    _state['gram_fit'] += fit_projected.T @ fit_projected
-    _state['prototypes_fit'] += fit_projected.T @ onehot[keep]
-    _state['count_fit'] += int(keep.sum())
+    if str(getattr(args, 'rp_lambda_scope', 'task')) != 'task':
+        return
+    for key in ('gram_fit', 'prototypes_fit', 'gram_val', 'prototypes_val'):
+        if _state[key] is not None:
+            # In place: at rp_dim=10000 each of these is 800 MB and reallocating
+            # four of them every task would churn 3.2 GB for nothing.
+            _state[key].zero_()
+    _state['count_fit'] = 0
+    _state['count_val'] = 0
+    _state['split_index'] = 0
 
 
 def _ridge(gram, lam):
@@ -221,13 +274,19 @@ def _select_lambda(args, device):
     'mse' is theirs: minimise the held-out squared error. Measured on ImageNet-R
     seed 42 it picks 1e5 at every one of the ten tasks and lands on Acc@1
     75.0795, against 75.5116 for the hand-tuned 1e4 -- the worst of the five
-    values in our own lambda sweep. The reason is that Y is one-hot, so shrinking
-    W toward zero shrinks the residual too; squared error rewards magnitude
-    shrinkage that argmax does not care about. In RanPAC the ridge scores are the
-    final classifier, so magnitude is part of the answer and the criterion fits.
-    Here they are standardised per sample and blended into a routed head, which
-    discards magnitude entirely -- so 'mse' optimises a quantity the next step
-    throws away.
+    values in our own lambda sweep.
+
+    Read that measurement with care: it predates rp_lambda_scope and was taken
+    with the pooled split, so the sweep saw up to ten tasks at once and was
+    biased toward large lambda for the reason given in begin_rp_task. The
+    explanation offered at the time -- that Y is one-hot, so shrinking W toward
+    zero shrinks the residual, and squared error therefore rewards a magnitude
+    shrinkage that argmax ignores -- is a real property of the criterion, and it
+    does apply here: in RanPAC the ridge scores are the final classifier, so
+    magnitude is part of the answer, whereas here they are standardised per
+    sample and blended into a routed head, which discards magnitude entirely.
+    But it is not established that this, rather than the pooling, is what drove
+    the choice. Rerun with scope='task' before repeating that diagnosis.
 
     'cosine' fixes exactly that by being invariant to the scale of W:
 
@@ -243,13 +302,13 @@ def _select_lambda(args, device):
         raise RuntimeError(
             'rp_lambda_search is on but no 80% statistics were accumulated; '
             'accumulate_rp_statistics must run with the same flag set')
-    n_val = int(_state['count']) - int(_state['count_fit'])
+    n_val = int(_state['count_val'])
     if n_val <= 0:
         raise RuntimeError('rp_lambda_search has an empty validation split')
 
     prototypes_fit = _state['prototypes_fit']
-    gram_val = _state['gram'] - gram_fit
-    prototypes_val = _state['prototypes'] - prototypes_fit
+    gram_val = _state['gram_val']
+    prototypes_val = _state['prototypes_val']
 
     criterion = str(getattr(args, 'rp_lambda_criterion', 'mse'))
     if criterion not in ('mse', 'cosine'):
@@ -275,15 +334,16 @@ def _select_lambda(args, device):
         if best_score is None or score > best_score:
             best_lambda, best_score = lam, score
         del weights
-    del gram_val, prototypes_val
+    # gram_val and prototypes_val are state now, not temporaries built here, so
+    # there is nothing to free.
 
     if best_lambda is None:
         raise RuntimeError('rp_lambda_search: every lambda failed to solve')
     curve = ' '.join('%.0e:%.4f' % (lam, value) for lam, value in tried)
-    print('RP head lambda search [%s]: chose %.3g over %d values '
+    print('RP head lambda search [%s, scope=%s]: chose %.3g over %d values '
           '(%d fit / %d val samples)\n  curve: %s'
-          % (criterion, best_lambda, len(tried),
-             _state['count_fit'], n_val, curve))
+          % (criterion, str(getattr(args, 'rp_lambda_scope', 'task')),
+             best_lambda, len(tried), _state['count_fit'], n_val, curve))
     return best_lambda
 
 
