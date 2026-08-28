@@ -48,6 +48,7 @@ RP_FUSE="${RP_FUSE:-0}"
 RP_FUSE_W="${RP_FUSE_W:-0.5}"
 RP_FUSE_DRM="${RP_FUSE_DRM:-0}"
 RP_LSEARCH="${RP_LSEARCH:-0}"
+RP_LCRIT="${RP_LCRIT:-mse}"
 
 if [[ -z "${RUN_DIR}" ]]; then echo "Usage: DATASET=... TII_DIR=... $0 RUN_DIR" >&2; exit 64; fi
 if [[ -z "${DATASET}" ]]; then echo "Set DATASET (e.g. Split-CUB200)" >&2; exit 64; fi
@@ -77,7 +78,7 @@ RAMP_TAG=""; [[ "${RP_RAMP}" != "0.0" ]] && RAMP_TAG="r$(tag "${RP_RAMP}")"
 [[ "${RP_RAMP}" != "0.0" && "${RP_RAMP_SCOPE}" != "both" ]] && RAMP_TAG="${RAMP_TAG}s${RP_RAMP_SCOPE}"
 CAL_FLAG=""; [[ "${CALIBRATE}" == "1" ]] && CAL_FLAG="--rp_calibrate"
 LSEARCH_FLAG=""; LSEARCH_TAG=""
-[[ "${RP_LSEARCH}" == "1" ]] && LSEARCH_FLAG="--rp_lambda_search" && LSEARCH_TAG="lsearch"
+[[ "${RP_LSEARCH}" == "1" ]] && LSEARCH_FLAG="--rp_lambda_search --rp_lambda_criterion ${RP_LCRIT}" && LSEARCH_TAG="lsearch${RP_LCRIT}"
 PIN_FLAG=""; [[ "${RP_PIN}" == "1" ]] && PIN_FLAG="--rp_pin_extractor"
 [[ "${RP_BARE}" == "1" ]] && PIN_FLAG="--rp_pin_extractor --rp_bare_extractor"
 BARE_TAG=""; [[ "${RP_BARE}" == "1" ]] && BARE_TAG="bare"

@@ -514,3 +514,78 @@ def test_ridge_helper_equals_the_dense_identity_form():
     gram = gram @ gram.T
     assert torch.equal(_ridge(gram, 7.5),
                        gram + 7.5 * torch.eye(12, dtype=torch.float64))
+
+
+def _separable(n=400, dim_in=16, classes=5, seed=0):
+    """Features that actually predict the label, so ridge has something to fit.
+
+    On pure noise the squared-error criterion runs to the top of the grid no
+    matter what, which would hide the effect these tests are about.
+    """
+    generator = torch.Generator().manual_seed(seed)
+    centres = torch.randn(classes, dim_in, generator=generator) * 3.0
+    targets = torch.randint(0, classes, (n,), generator=generator)
+    features = centres[targets] + torch.randn(n, dim_in, generator=generator)
+    return features, targets
+
+
+def _rescale_predictions(state, scale):
+    """Scale W without touching the validation target.
+
+    W solves (G + lambda I) W = C_fit, so scaling C_fit scales W. The held-out
+    target is C_val = prototypes - prototypes_fit, and adjusting the total by
+    the same amount leaves it exactly where it was. Scaling both accumulators
+    together would not work: that scales C_val too, and then every term of both
+    criteria moves in step and neither choice shifts.
+    """
+    state['prototypes'] = (state['prototypes']
+                           + (scale - 1.0) * state['prototypes_fit'])
+    state['prototypes_fit'] = scale * state['prototypes_fit']
+
+
+def test_mse_stays_the_default_criterion():
+    """RanPAC's criterion remains what runs unless somebody asks otherwise."""
+    args = _rp_args(rp_dim=32, rp_lambda_search=True)
+    assert getattr(args, 'rp_lambda_criterion', 'mse') == 'mse'
+
+
+def test_unknown_criterion_raises():
+    args = _rp_args(rp_dim=32, rp_lambda_search=True,
+                    rp_lambda_criterion='khong-co')
+    features, targets = _separable()
+    _accumulate(args, features, targets, 5)
+    with pytest.raises(ValueError, match='rp_lambda_criterion'):
+        _select_lambda(args, DEVICE)
+
+
+def _choose(criterion, scale):
+    features, targets = _separable()
+    args = _rp_args(rp_dim=32, rp_lambda_search=True,
+                    rp_lambda_criterion=criterion)
+    _accumulate(args, features, targets, 5)
+    _rescale_predictions(get_rp_state(), scale)
+    return _select_lambda(args, DEVICE)
+
+
+def test_cosine_ignores_the_magnitude_of_the_predictions():
+    """The property the criterion exists for, stated as an exact invariance.
+
+    Write a for the cross term and e for the energy term. Scaling W by s sends
+    a to s*a and e to s^2*e, so cosine becomes s*a / sqrt(s^2*e*n), the scale
+    cancels identically, and the argmax cannot move.
+    """
+    assert _choose('cosine', 0.01) == _choose('cosine', 1.0)
+    assert _choose('cosine', 100.0) == _choose('cosine', 1.0)
+
+
+def test_squared_error_chases_the_magnitude_instead():
+    """Same rescaling, and the squared-error choice walks several decades.
+
+    n - 2*s*a + s^2*e has no such cancellation, so the criterion spends its
+    freedom picking a lambda whose implied magnitude fits the targets. That is
+    the whole diagnosis of why 'mse' settled on 1e5 at every task on ImageNet-R
+    and cost 0.43 Acc@1: the blend standardises each sample's scores before
+    mixing, so magnitude is discarded and only the ranking survives.
+    """
+    small, large = _choose('mse', 0.01), _choose('mse', 100.0)
+    assert small < _choose('mse', 1.0) < large

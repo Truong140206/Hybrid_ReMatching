@@ -215,6 +215,28 @@ def _select_lambda(args, device):
 
     The sweep is the expensive part -- 17 Cholesky factorisations of a dim x dim
     matrix per task. RanPAC's own write-up names the same step as its bottleneck.
+
+    Two criteria, because RanPAC's own one is wrong for how we use the scores.
+
+    'mse' is theirs: minimise the held-out squared error. Measured on ImageNet-R
+    seed 42 it picks 1e5 at every one of the ten tasks and lands on Acc@1
+    75.0795, against 75.5116 for the hand-tuned 1e4 -- the worst of the five
+    values in our own lambda sweep. The reason is that Y is one-hot, so shrinking
+    W toward zero shrinks the residual too; squared error rewards magnitude
+    shrinkage that argmax does not care about. In RanPAC the ridge scores are the
+    final classifier, so magnitude is part of the answer and the criterion fits.
+    Here they are standardised per sample and blended into a routed head, which
+    discards magnitude entirely -- so 'mse' optimises a quantity the next step
+    throws away.
+
+    'cosine' fixes exactly that by being invariant to the scale of W:
+
+        cos = tr(W^T C_val) / sqrt( tr(W^T G_val W) * n_val )
+
+    which is the Frobenius cosine between the predictions HW and the targets Y.
+    Multiply W by any positive constant and numerator and denominator move
+    together. Still closed-form in the statistics already kept, so it costs
+    nothing extra and stores no features.
     """
     gram_fit = _state.get('gram_fit')
     if gram_fit is None:
@@ -229,7 +251,11 @@ def _select_lambda(args, device):
     gram_val = _state['gram'] - gram_fit
     prototypes_val = _state['prototypes'] - prototypes_fit
 
-    best_lambda, best_error = None, None
+    criterion = str(getattr(args, 'rp_lambda_criterion', 'mse'))
+    if criterion not in ('mse', 'cosine'):
+        raise ValueError('unknown rp_lambda_criterion: %s' % criterion)
+
+    best_lambda, best_score = None, None
     tried = []
     for exponent in range(-8, 9):
         lam = float(10.0 ** exponent)
@@ -239,21 +265,25 @@ def _select_lambda(args, device):
             # Tiny lambda on a rank-deficient Gram. Not a failure, just a value
             # the data cannot support; skip it rather than abort the sweep.
             continue
-        error = (float(n_val)
-                 - 2.0 * float((weights * prototypes_val).sum())
-                 + float((weights * (gram_val @ weights)).sum()))
-        tried.append((lam, error))
-        if best_error is None or error < best_error:
-            best_lambda, best_error = lam, error
+        agreement = float((weights * prototypes_val).sum())    # <HW, Y>
+        energy = float((weights * (gram_val @ weights)).sum())  # ||HW||^2
+        if criterion == 'mse':
+            score = -(float(n_val) - 2.0 * agreement + energy)
+        else:
+            score = agreement / math.sqrt(max(energy * float(n_val), 1e-30))
+        tried.append((lam, score))
+        if best_score is None or score > best_score:
+            best_lambda, best_score = lam, score
         del weights
     del gram_val, prototypes_val
 
     if best_lambda is None:
         raise RuntimeError('rp_lambda_search: every lambda failed to solve')
-    print('RP head lambda search: chose %.3g over %d values '
-          '(val MSE %.6g, %d fit / %d val samples)'
-          % (best_lambda, len(tried), best_error,
-             _state['count_fit'], n_val))
+    curve = ' '.join('%.0e:%.4f' % (lam, value) for lam, value in tried)
+    print('RP head lambda search [%s]: chose %.3g over %d values '
+          '(%d fit / %d val samples)\n  curve: %s'
+          % (criterion, best_lambda, len(tried),
+             _state['count_fit'], n_val, curve))
     return best_lambda
 
 
