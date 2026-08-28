@@ -1,0 +1,424 @@
+% =====================================================================
+%  Bien dich: pdfLaTeX (mac dinh cua Overleaf) -- khong can chinh gi.
+%  Neu muon dung font he thong thi doi compiler sang XeLaTeX va thay
+%  ba dong inputenc/fontenc/lmodern ben duoi bang:
+%      \usepackage{fontspec}
+%      \setmainfont{TeX Gyre Termes}
+% =====================================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage{lmodern}
+
+\usepackage[margin=2.6cm]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning}
+\usepackage[hidelinks]{hyperref}
+
+\renewcommand{\tablename}{Bảng}
+\renewcommand{\figurename}{Hình}
+\renewcommand{\abstractname}{Tóm tắt}
+\renewcommand{\refname}{Tài liệu tham khảo}
+\renewcommand{\contentsname}{Nội dung}
+\renewcommand{\appendixname}{Phụ lục}
+
+\captionsetup[table]{skip=6pt}
+\captionsetup[figure]{skip=8pt}
+\newcolumntype{R}{>{\raggedleft\arraybackslash}p{2.7cm}}
+
+\title{\bfseries Hợp nhất hai tầng cho HRM-PET:\\
+định tuyến đa nguồn và phân lớp bổ sung với cơ chế cổng theo biên}
+\author{Nguyễn Thiện Trường}
+\date{Tháng 8, 2026}
+
+\begin{document}
+
+\begin{center}
+{\large\bfseries Phần phương pháp}\\[2pt]
+{\small Trích từ báo cáo kỹ thuật, gồm phân tích hạn chế và phương pháp đề
+xuất. Phần thiết lập thí nghiệm, kết quả và khảo sát loại bỏ thành phần nằm ở
+báo cáo đầy đủ.}
+\end{center}
+
+\bigskip
+
+\section{Phân tích hai hạn chế}
+\label{sec:analysis}
+
+\subsection{Hạn chế thứ nhất: tín hiệu định tuyến chưa tối ưu}
+
+Chúng tôi xây dựng một đầu phân lớp dựa trên phép chiếu ngẫu nhiên (random
+projection, viết tắt là đầu RP) trên chính đặc trưng LoRA của HRM-PET. Đầu RP
+cho độ chính xác định tuyến cao hơn TII ở cả ba bộ dữ liệu. Quan trọng hơn,
+\emph{hợp} của hai bộ định tuyến vượt xa kết quả mà HRM-PET đạt được sau khi đã
+tinh chỉnh bằng DRM và CRM.
+
+\begin{table}[htbp]
+\centering
+\caption{Độ chính xác định tuyến (\%), seed 42. Hàng cuối biểu thị tỉ lệ mẫu mà
+ít nhất một trong hai bộ định tuyến cho kết quả đúng, tức là giới hạn trên có
+thể đạt được khi kết hợp hai nguồn.}
+\label{tab:routing}
+\begin{tabular}{lrrr}
+\toprule
+Nguồn định tuyến & ImageNet-R & CIFAR-100 & CUB-200 \\
+\midrule
+TII                        & 63.80 & 81.21 & 92.96 \\
+HRM-PET sau DRM và CRM     & 77.79 & 89.82 & 93.21 \\
+Đầu RP                     & 77.12 & 89.51 & 94.02 \\
+\midrule
+Hợp của TII và đầu RP      & \textbf{82.99} & \textbf{92.86} & \textbf{96.26} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Hai bộ định tuyến cho kết quả sai trên những tập mẫu khác nhau. Trên ImageNet-R,
+đầu RP định tuyến đúng $19.2\,\%$ số mẫu mà TII định tuyến sai. Tính bổ trợ này
+là điều kiện cần để việc hợp nhất có ý nghĩa: nếu hai nguồn cùng sai trên một
+tập mẫu, hợp của chúng sẽ không cao hơn nguồn mạnh hơn.
+
+\subsection{Hạn chế thứ hai: định tuyến tốt hơn không đồng nghĩa phân lớp tốt hơn}
+
+Sau khi cải thiện tầng định tuyến, một hiện tượng khác xuất hiện: mức tăng của
+độ chính xác định tuyến chỉ chuyển hóa thành độ chính xác phân lớp với tỉ lệ
+$14$--$21\,\%$, và trên CUB-200 thì hoàn toàn không chuyển hóa.
+
+Nguyên nhân nằm ở kiến trúc. Đầu phân lớp dùng chung trải trên \emph{toàn bộ}
+các lớp đã quan sát, nên một mẫu bị định tuyến sai vẫn thường được phân lớp
+đúng. Trong trường hợp đó, việc sửa lại đường định tuyến không đem lại lợi ích
+nào; ngược lại, định tuyến lại một mẫu vốn đã được phân lớp đúng có thể làm kết
+quả trở nên sai.
+
+Tuy nhiên, đầu RP không chỉ là một bộ định tuyến. Bản thân nó là một bộ phân lớp
+hoàn chỉnh mà tầng định tuyến đã bỏ qua. Bảng \ref{tab:cls} đo mức bổ trợ giữa
+hai bộ phân lớp.
+
+\begin{table}[htbp]
+\centering
+\caption{Tính bổ trợ ở cấp phân lớp (\%), seed 42. Cột cuối biểu thị tỉ lệ mẫu
+mà đầu phân lớp sau định tuyến cho kết quả sai còn đầu RP cho kết quả đúng.}
+\label{tab:cls}
+\begin{tabular}{lrrrr}
+\toprule
+Bộ dữ liệu & Đầu sau định tuyến & Đầu RP & Hợp & Phần đầu RP bổ trợ \\
+\midrule
+ImageNet-R & 74.31 & 70.08 & 78.89 & $+4.58$ \\
+CIFAR-100  & 89.97 & 88.76 & 92.40 & $+2.43$ \\
+CUB-200    & 86.48 & 87.50 & 90.35 & $+3.87$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Ngay trên ImageNet-R, nơi đầu RP có độ chính xác tổng thể thấp hơn $4$ điểm, nó
+vẫn phân lớp đúng $4.58\,\%$ số mẫu mà đầu phân lớp chính không xử lý được.
+
+\section{Phương pháp đề xuất}
+
+\subsection{Nguồn tín hiệu thứ hai}
+
+\subsubsection{Ý tưởng}
+
+Ý tưởng nền tảng là mở rộng không gian biểu diễn trước khi phân lớp tuyến tính.
+Trong không gian đặc trưng $768$ chiều, các lớp chồng lấn nhau tới mức một siêu
+phẳng không tách được chúng. Sau khi chiếu lên không gian $10^4$ chiều và áp một
+hàm phi tuyến, các lớp có thêm không gian để tách rời, và một bộ phân lớp tuyến
+tính trong không gian mới trở nên đủ mạnh.
+
+Ma trận chiếu hoàn toàn ngẫu nhiên và không được huấn luyện. Đây không phải một
+sự đánh đổi mà là điều kiện cần: bất kỳ tham số nào được cập nhật bằng gradient
+qua chuỗi tác vụ đều có thể bị ghi đè bởi tác vụ sau, trong khi một ma trận đóng
+băng sinh từ seed cố định không bao giờ thay đổi và cũng không cần lưu trữ. Việc
+loại bỏ hoàn toàn tham số huấn luyện là tiền đề cho tính chất bất biến thứ tự
+trình bày ở Mục \ref{sec:order}.
+
+Nguồn tín hiệu thứ hai gồm một phép chiếu ngẫu nhiên đóng băng, sinh lại được từ
+một seed cố định, theo sau là hàm phi tuyến ReLU và một lời giải hồi quy ridge
+trên ma trận Gram tích lũy. Không có tham số nào được huấn luyện. Đặc trưng $f$
+được trích từ \emph{một} bộ tham số LoRA cố định của HRM-PET, đóng vai trò thích
+nghi phiên đầu (first-session adaptation):
+\begin{align}
+h &= \mathrm{ReLU}(f W), \qquad W \text{ đóng băng, sinh lại từ seed},\\
+G &= \sum_n h_n h_n^{\top}, \qquad
+C = \sum_n h_n\,\mathrm{onehot}(y_n)^{\top},\\
+s &= h^{\top} (G + \lambda I)^{-1} C .
+\label{eq:rp}
+\end{align}
+
+Hệ thống chỉ lưu hai đại lượng tổng hợp $G$ và $C$; ma trận chiếu $W$ được sinh
+lại từ seed. Không có đặc trưng của từng mẫu hay ảnh của các tác vụ trước được
+lưu trữ, nên giao thức không lưu mẫu vẫn được bảo toàn.
+
+\begin{table}[H]
+\centering
+\caption{Ký hiệu trong ba phương trình ở trên. Kích thước ghi theo cấu hình dùng
+trong báo cáo: $L = 768$ là số chiều đặc trưng, $M = 10^4$ là số chiều sau khi
+chiếu, $K$ là số lớp đã quan sát, $n$ là chỉ số chạy trên các mẫu huấn luyện.}
+\label{tab:notation}
+\begin{tabular}{@{}llp{7.4cm}@{}}
+\toprule
+Ký hiệu & Kích thước & Ý nghĩa \\
+\midrule
+$f$        & $L$          & đặc trưng ảnh, trích từ một bộ tham số LoRA cố định \\
+$W$        & $L \times M$ & ma trận chiếu ngẫu nhiên, đóng băng, sinh lại được từ seed \\
+$h$        & $M$          & biểu diễn sau khi chiếu và áp ReLU \\
+$y_n$      & ---          & nhãn của mẫu thứ $n$ \\
+$G$        & $M \times M$ & ma trận Gram, cộng dồn qua mọi mẫu đã quan sát \\
+$C$        & $M \times K$ & ma trận tương quan giữa chiều biểu diễn và lớp \\
+$\lambda$  & vô hướng     & hệ số điều chuẩn của hồi quy ridge \\
+$I$        & $M \times M$ & ma trận đơn vị \\
+$s$        & $K$          & điểm số cho từng lớp, đầu ra của nguồn tín hiệu thứ hai \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Ba phương trình tương ứng với ba bước. Phương trình thứ nhất chiếu đặc trưng lên
+không gian $M$ chiều rồi áp hàm phi tuyến. Phương trình thứ hai cộng dồn hai đại
+lượng thống kê bậc hai: $G$ ghi lại mức đồng xuất hiện giữa các chiều biểu diễn,
+$C$ ghi lại liên hệ giữa chiều biểu diễn và lớp. Cả hai được cập nhật ngay khi
+mỗi tác vụ được học và không bao giờ cần đọc lại dữ liệu cũ. Phương trình thứ ba
+giải hồi quy ridge, cho ma trận trọng số $W_o = (G + \lambda I)^{-1} C$ và điểm
+số $s = h^{\top} W_o$; bước này chỉ thực hiện một lần vào cuối mỗi tác vụ.
+
+\subsubsection{Vai trò bắt buộc của hàm phi tuyến}
+
+Nếu bỏ ReLU khỏi \eqref{eq:rp}, ánh xạ $h = fW$ trở thành tuyến tính. Khi đó, dù
+$h$ có $10^4$ chiều, không gian sinh của nó vẫn là một không gian con có số chiều
+tối đa bằng hạng của $W$, tức $768$. Hồi quy ridge trên $h$ khi đó tương đương về
+mặt toán học với hồi quy ridge trên $f$, và phép chiếu không đóng góp gì ngoài
+chi phí bộ nhớ. Chính phép cắt của ReLU mới đưa biểu diễn ra khỏi không gian con
+đó và sinh ra các chiều đặc trưng thực sự mới.
+
+\subsubsection{Vai trò của nghịch đảo ma trận Gram}
+
+Nếu chỉ sử dụng $C$ mà bỏ qua $(G + \lambda I)^{-1}$, mô hình quy về một bộ phân
+lớp theo nguyên mẫu lớp. Cách làm này không hiệu quả trên đặc trưng ViT vì tồn
+tại một số hướng có năng lượng lớn xuất hiện ở mọi lớp, khiến các nguyên mẫu
+tương quan mạnh với nhau và phần thông tin phân biệt bị lấn át. Nghịch đảo Gram
+thực hiện phép tẩy trắng (whitening): những hướng phổ biến có giá trị lớn trong
+$G$ sẽ bị giảm trọng số, để lại các hướng thực sự phân biệt được lớp.
+
+Kết quả thực nghiệm ủng hộ lập luận này: một biến thể tái chấm điểm bằng khoảng
+cách Mahalanobis trong không gian $768$ chiều gốc, với cả hiệp phương sai riêng
+lẫn hiệp phương sai chung, cho độ chính xác định tuyến $84.3$ so với $93.21$ của
+baseline trên CUB-200.
+
+\subsubsection{Tính bất biến thứ tự và hệ quả về quên thảm khốc}
+\label{sec:order}
+
+Cả $G$ và $C$ đều là tổng cộng dồn qua các mẫu, và phép cộng có tính giao hoán.
+Do đó
+\begin{equation}
+G = \sum_{t=1}^{T} G_t
+\end{equation}
+không phụ thuộc vào thứ tự các tác vụ, và lời giải sau tác vụ cuối cùng trùng
+khớp với lời giải thu được khi huấn luyện tuyến tính trên toàn bộ dữ liệu cùng
+lúc. Nguồn tín hiệu thứ hai vì vậy \emph{không thể} quên theo nghĩa của quên thảm
+khốc: đây là một tính chất đại số, không phải một kết quả thực nghiệm.
+
+\subsubsection{Ràng buộc về bộ trích đặc trưng}
+\label{sec:fixed-extractor}
+
+Đặc trưng $f$ bắt buộc phải đến từ một bộ trích \emph{cố định trong suốt chuỗi
+tác vụ}. Có hai lý do độc lập.
+
+Thứ nhất, $G$ và $C$ được cộng dồn qua mọi tác vụ. Phép cộng chỉ có ý nghĩa khi
+các số hạng cùng nằm trong một không gian đặc trưng. Nếu mỗi tác vụ sử dụng một
+bộ tham số LoRA khác nhau, các vector $h$ sẽ thuộc những không gian không tương
+thích và ma trận Gram trở nên vô nghĩa. Hàm phi tuyến ReLU làm vấn đề trầm trọng
+hơn: cùng một ảnh qua hai bộ điều hợp khác nhau sẽ kích hoạt hai tập chiều khác
+nhau, tức là một thay đổi rời rạc trong cấu trúc vector chứ không phải một sai
+lệch nhỏ và đều.
+
+Thứ hai, ràng buộc nhân quả. Thống kê của tác vụ đầu tiên phải được tích lũy ngay
+tại thời điểm học tác vụ đó, vì giao thức không lưu mẫu không cho phép truy cập
+lại dữ liệu cũ. Tại thời điểm ấy, các bộ tham số LoRA của những tác vụ sau chưa
+tồn tại.
+
+Hai ràng buộc kết hợp lại chỉ để lại hai lựa chọn: mạng xương sống chưa thích
+nghi, hoặc bộ tham số LoRA của tác vụ đầu tiên. Chúng tôi chọn phương án thứ hai;
+Số liệu so sánh giữa hai phương án nằm ở phần khảo sát các hướng đã loại bỏ của báo cáo đầy đủ.
+
+\subsubsection{Đối chiếu với TII}
+\begin{table}[htbp]
+\centering
+\caption{Đối chiếu hai bộ định tuyến. Hai nguồn khai thác hai loại bằng chứng
+khác nhau về cùng một câu hỏi, đây là cơ sở để kỳ vọng chúng cho kết quả sai trên
+những tập mẫu khác nhau.}
+\label{tab:tii-vs-rp}
+\begin{tabular}{@{}p{3.3cm}p{4.9cm}p{5.2cm}@{}}
+\toprule
+ & TII & Đầu RP \\
+\midrule
+Bằng chứng sử dụng
+  & prompt của từng tác vụ
+  & đặc trưng ảnh $768$ chiều \\
+Đại lượng đo
+  & độ bất định của mô hình khi gắn từng bộ prompt
+  & mức tương đồng giữa đặc trưng và nguyên mẫu lớp \\
+Cách xác định tham số
+  & lan truyền ngược qua nhiều epoch
+  & lời giải dạng đóng, một bước \\
+Tham số được huấn luyện
+  & có
+  & không \\
+Chịu ảnh hưởng của quên
+  & có
+  & không, do tính bất biến thứ tự \\
+Acc@task, ImageNet-R
+  & $63.80$
+  & $77.12$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Điểm khác biệt cốt lõi nằm ở hàng thứ hai: TII đánh giá mức độ tự tin của mô hình
+khi gắn từng bộ prompt, còn đầu RP đánh giá mức tương đồng giữa đặc trưng của mẫu
+và nguyên mẫu của từng lớp. Hai tiêu chí khác nhau về bản chất, nên không có lý
+do để chúng cùng thất bại trên một tập mẫu.
+
+\subsection{Tầng thứ nhất: hợp nhất ở cấp định tuyến}
+\label{sec:stage1}
+
+\subsubsection{Quy đổi điểm số theo lớp thành điểm số theo tác vụ}
+
+Cả hai nguồn đều xuất ra điểm số theo \emph{lớp}. Để dùng cho định tuyến, điểm số
+của một tác vụ được lấy bằng giá trị lớn nhất trong các lớp thuộc tác vụ đó:
+\begin{equation}
+\ell^{\mathrm{task}}_t = \max_{c \,\in\, \mathcal{C}_t} \ell_c ,
+\qquad
+s^{\mathrm{task}}_t = \max_{c \,\in\, \mathcal{C}_t} s_c ,
+\label{eq:taskscore}
+\end{equation}
+với $\mathcal{C}_t$ là tập lớp của tác vụ $t$, $\ell$ là logit theo lớp của TII
+và $s$ là điểm số theo lớp của đầu RP. Cùng một phép rút gọn được áp dụng cho cả
+hai nguồn; hai vector thu được chính là $\ell^{\mathrm{TII}}$ và
+$s^{\mathrm{RP}}$ xuất hiện trong \eqref{eq:route}. Phép lấy cực đại phù hợp với câu
+hỏi cần trả lời --- \emph{tác vụ này có chứa lớp đúng hay không} --- trong khi
+phép lấy tổng hoặc trung bình sẽ ưu tiên những tác vụ có nhiều lớp cùng đạt mức
+tương đồng trung bình hơn là một lớp đạt mức tương đồng cao.
+
+\subsubsection{Hợp nhất và chuẩn hóa}
+
+Ký hiệu $z(\cdot)$ là phép chuẩn hóa về trung bình $0$ và phương sai $1$, tính
+riêng cho từng mẫu trên tập các tác vụ đã quan sát. Điểm số theo tác vụ của hai
+nguồn được kết hợp tuyến tính; tác vụ có điểm cao nhất được chọn, và kết quả
+định tuyến này được đưa vào các cơ chế DRM, CRM cùng đầu phân lớp sẵn có của
+HRM-PET:
+\begin{equation}
+\mathrm{fused} = w\, z(\ell^{\mathrm{TII}}) + (1-w)\, z(s^{\mathrm{RP}}),
+\qquad w = 0.7 .
+\label{eq:route}
+\end{equation}
+
+Phép chuẩn hóa ở đây là bắt buộc. Logit của TII có độ phân tán lớn hơn nhiều bậc
+so với điểm số hồi quy ridge. Nếu kết hợp trực tiếp, TII sẽ chi phối kết quả ở
+mọi giá trị trọng số, và độ chính xác định tuyến giảm xuống \emph{thấp hơn} cả
+mức của riêng đầu RP: $68.24$ so với $77.12$. Hiện tượng kết quả hợp nhất thấp
+hơn từng nguồn thành phần là dấu hiệu đặc trưng của sai lệch thang đo.
+
+\subsubsection{Lựa chọn trọng số hợp nhất}
+\label{sec:choose-w}
+
+Trọng số $w$ đặt trên TII, nên $w = 1.0$ tương ứng với baseline. Giá trị $w = 0.7$
+được chọn theo tiêu chí \emph{mọi chỉ số cải thiện trên mọi seed}, chứ không theo
+tiêu chí cực đại hóa Acc@1 trung bình.
+
+\begin{table}[htbp]
+\centering
+\caption{Cơ sở lựa chọn $w$, đo trên ImageNet-R với bốn seed, ở giai đoạn chỉ có
+tầng hợp nhất định tuyến.}
+\label{tab:choose-w}
+\begin{tabular}{@{}p{5.4cm}p{4.6cm}p{2.6cm}@{}}
+\toprule
+ & $w = 0.6$ & $w = 0.7$ \\
+\midrule
+Acc@1 trung bình & $+0.48$ & $+0.31$ \\
+Cải thiện đồng thời cả sáu chỉ số trên mọi seed
+  & không (Forgetting và Backward suy giảm ở seed 43) & có \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Cấu hình $w = 0.6$ cho mức tăng Acc@1 trung bình cao hơn nhưng không ổn định trên
+toàn bộ các seed. Chúng tôi ưu tiên tính nhất quán, vì một phương pháp có mức
+tăng trung bình cao hơn nhưng thỉnh thoảng làm suy giảm chỉ số ghi nhớ khó được
+xem là cải tiến đáng tin cậy.
+
+\subsection{Tầng thứ hai: hợp nhất ở cấp phân lớp với cơ chế cổng}
+\label{sec:stage2}
+
+Phiên bản đầu tiên kết hợp hai bộ phân lớp bằng một trọng số $\beta$ cố định cho
+mọi mẫu. Cách làm này gây ra một suy giảm có tính hệ thống: giá trị hàm mất mát
+entropy chéo (cross-entropy) trên CIFAR-100 tăng $+0.019 \pm 0.003$, dù độ chính
+xác vẫn được cải thiện.
+
+Nguyên nhân là trọng số cố định xử lý như nhau hai loại mẫu có bản chất khác
+hẳn: mẫu mà đầu phân lớp chính dự đoán với xác suất $p = 0.97$, và mẫu mà nó
+chưa phân định rõ giữa các lớp. Trên CIFAR-100, loại thứ nhất chiếm đa số. Việc
+dành $30\,\%$ trọng số quyết định cho nguồn thứ hai trên chính những mẫu đó chỉ
+làm phẳng phân bố xác suất tại một dự đoán vốn đã đúng: cross-entropy tăng ngay,
+trong khi kết quả $\arg\max$ không thay đổi.
+
+Giải pháp là cho $\beta$ thay đổi theo từng mẫu, tỉ lệ nghịch với mức độ chắc
+chắn của đầu phân lớp chính. Đại lượng dùng để đo mức độ chắc chắn là biên
+(margin) giữa hai lớp có điểm cao nhất của chính nó. Cơ sở của lựa chọn này:
+việc hợp nhất chỉ có thể thay đổi dự đoán bằng cách thay thế lớp xếp thứ nhất,
+mà ứng viên thay thế khả dĩ nhất là lớp xếp thứ hai. Gọi $p_{(1)}$ và $p_{(2)}$
+là hai xác suất lớn nhất của đầu phân lớp sau định tuyến:
+\begin{equation}
+\beta_i = \beta \left( 1 - \frac{p_{(1)} - p_{(2)}}{p_{(1)} + p_{(2)}} \right),
+\qquad \beta = 0.5 .
+\label{eq:gate}
+\end{equation}
+
+Biên được chuẩn hóa theo tổng của hai xác suất lớn nhất chứ không theo $1$. Đặt
+$r = p_{(2)}/p_{(1)}$, biểu thức trong ngoặc trở thành $1 - (1-r)/(1+r)$, tức
+\emph{chỉ phụ thuộc vào tỉ số giữa hai lớp dẫn đầu} và độc lập với phần khối
+lượng xác suất mà chúng chiếm. Đây là tính chất mong muốn: mức độ đe dọa của lớp
+xếp thứ hai được đo bằng vị thế tương đối của nó, không bằng giá trị tuyệt đối.
+
+Điểm số cuối cùng được kết hợp rồi đưa trở lại thang đo của logit ban đầu:
+\begin{align}
+m_i &= (1 - \beta_i)\, z(\ell_i) + \beta_i\, z(s_i),\\
+\hat{\ell}_i &= m_i \cdot \mathrm{std}(\ell_i) + \mathrm{mean}(\ell_i).
+\label{eq:affine}
+\end{align}
+
+\begin{table}[htbp]
+\centering
+\caption{Trọng số hiệu dụng của cơ chế cổng theo \eqref{eq:gate} với
+$\beta = 0.5$.}
+\label{tab:gate-example}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Trạng thái của đầu phân lớp chính & $p_{(1)}$ & $p_{(2)}$ & Biên & $\beta_i$ \\
+\midrule
+Dự đoán rất chắc chắn   & 0.97 & 0.01 & 0.980 & 0.010 \\
+Dự đoán chắc chắn       & 0.90 & 0.02 & 0.957 & 0.022 \\
+Chưa phân định rõ       & 0.35 & 0.30 & 0.077 & 0.462 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Bảng \ref{tab:gate-example} cho thấy cơ chế hoạt động đúng như thiết kế: trên các
+mẫu đã được dự đoán chắc chắn, nguồn thứ hai chỉ giữ khoảng $2\,\%$ quyền quyết
+định; trên các mẫu chưa phân định, tỉ lệ này lên tới $46\,\%$. Cơ chế cổng không
+đưa thêm siêu tham số nào và áp dụng một quy tắc duy nhất cho cả ba bộ dữ liệu.
+
+Phép biến đổi \eqref{eq:affine} là biến đổi affine theo từng mẫu với hệ số nhân
+dương, do đó đơn điệu tăng: thứ tự xếp hạng giữa các lớp được bảo toàn và mọi
+chỉ số độ chính xác không thay đổi. Vai trò duy nhất của nó là đưa thang đo của
+logit về mức so sánh được với baseline khi tính cross-entropy. Việc chọn mô-men
+của $\ell$ làm mốc còn bảo đảm rằng tại $\beta_i = 0$, phương pháp trả về đúng
+logit gốc.
+
+\end{document}
