@@ -325,26 +325,44 @@ def _select_lambda(args, device):
     if criterion not in ('mse', 'cosine'):
         raise ValueError('unknown rp_lambda_criterion: %s' % criterion)
 
+    # _ridge_solve clones the Gram to add lambda, which at rp_dim=10000 is a
+    # 800 MB temporary -- seventeen times per task, on top of the factorisation
+    # itself. That is what killed a bare-extractor run at task 4. Writing the
+    # diagonal in place removes the clone. Restoring it by copying a saved copy
+    # rather than subtracting lambda back off keeps the accumulator bit-exact:
+    # (x + lam) - lam is not x in floating point once lam dominates x, and this
+    # matrix has to survive the whole task sequence.
+    saved_diagonal = gram_fit.diagonal().clone()
+
     best_lambda, best_score = None, None
     tried = []
-    for exponent in range(-8, 9):
-        lam = float(10.0 ** exponent)
-        try:
-            weights = _ridge_solve(gram_fit, prototypes_fit, lam)
-        except torch.linalg.LinAlgError:
-            # Tiny lambda on a rank-deficient Gram. Not a failure, just a value
-            # the data cannot support; skip it rather than abort the sweep.
-            continue
-        agreement = float((weights * prototypes_val).sum())    # <HW, Y>
-        energy = float((weights * (gram_val @ weights)).sum())  # ||HW||^2
-        if criterion == 'mse':
-            score = -(float(n_val) - 2.0 * agreement + energy)
-        else:
-            score = agreement / math.sqrt(max(energy * float(n_val), 1e-30))
-        tried.append((lam, score))
-        if best_score is None or score > best_score:
-            best_lambda, best_score = lam, score
-        del weights
+    try:
+        for exponent in range(-8, 9):
+            lam = float(10.0 ** exponent)
+            gram_fit.diagonal().copy_(saved_diagonal).add_(lam)
+            try:
+                chol = torch.linalg.cholesky(gram_fit)
+                weights = torch.cholesky_solve(prototypes_fit, chol)
+                del chol
+            except torch.linalg.LinAlgError:
+                # Tiny lambda on a rank-deficient Gram. Not a failure, just a
+                # value the data cannot support; skip it rather than abort.
+                continue
+            agreement = float((weights * prototypes_val).sum())    # <HW, Y>
+            energy = float((weights * (gram_val @ weights)).sum())  # ||HW||^2
+            if criterion == 'mse':
+                score = -(float(n_val) - 2.0 * agreement + energy)
+            else:
+                score = agreement / math.sqrt(max(energy * float(n_val), 1e-30))
+            tried.append((lam, score))
+            if best_score is None or score > best_score:
+                best_lambda, best_score = lam, score
+            del weights
+    finally:
+        # Unconditional: an out-of-memory escaping mid-sweep would otherwise
+        # leave a stray lambda on the diagonal, and every later task would build
+        # on a corrupted accumulator without any error to show for it.
+        gram_fit.diagonal().copy_(saved_diagonal)
     # gram_val and prototypes_val are state now, not temporaries built here, so
     # there is nothing to free.
 

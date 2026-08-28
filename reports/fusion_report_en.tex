@@ -919,7 +919,7 @@ published results under the same no-first-session-adaptation condition.}
 \toprule
 Dataset & Ours & RanPAC, no first session \\
 \midrule
-CUB-200    & 87.96 & $\sim$90 \\
+CUB-200    & 87.96 & 88.7 \\
 CIFAR-100  & 85.40 & 89.0 \\
 ImageNet-R & 56.36 & 71.8 \\
 \bottomrule
@@ -1157,7 +1157,7 @@ ImageNet-R the two retention axes carry no evidence in either direction.
 
 \textbf{Position relative to published methods.} This report measures the
 improvement over HRM-PET; it does not aim to establish state of the art. Under
-the $T = 10$ protocol, RanPAC reports $92.2$ on CIFAR-100, $78.1$ on ImageNet-R
+the $T = 10$ protocol, RanPAC reports $92.2$ on CIFAR-100, $77.9$ on ImageNet-R
 and $90.3$ on CUB-200, above our results ($90.47$, $75.18$, $87.88$) on all
 three. The difference lies in the first-session adaptation component: RanPAC
 trains a dedicated PETL adapter on the first task, whereas we reuse HRM-PET's
