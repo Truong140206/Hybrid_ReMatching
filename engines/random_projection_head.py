@@ -239,6 +239,22 @@ def begin_rp_task(args):
     """
     if not bool(getattr(args, 'rp_lambda_search', False)):
         return
+
+    # Unconditional, and deliberately before the scope check. Held-out FEATURES
+    # are per-sample data; carrying them past a task boundary would be retaining
+    # old-task examples, which the exemplar-free protocol forbids outright. The
+    # scope setting decides how much *statistics* the sweep sees, and statistics
+    # are not examples -- it must never be able to authorise keeping features.
+    #
+    # This is also the better proxy, not merely the legal one. With pooled
+    # statistics the ridge solution spans every class seen so far, so scoring
+    # the current task's held-out fifth against all seen classes measures the
+    # problem the deployed head actually faces. Scoping both to one task
+    # measures a 20-way problem while deployment is up to 200-way, and the best
+    # regularisation for one is not the best for the other.
+    _state['val_features'] = None
+    _state['val_targets'] = None
+
     if str(getattr(args, 'rp_lambda_scope', 'task')) != 'task':
         return
     for key in ('gram_fit', 'prototypes_fit', 'gram_val', 'prototypes_val'):
@@ -249,11 +265,6 @@ def begin_rp_task(args):
     _state['count_fit'] = 0
     _state['count_val'] = 0
     _state['split_index'] = 0
-    # Drop the previous task's held-out features outright rather than zeroing:
-    # holding them past the task boundary is exactly what the exemplar-free
-    # protocol forbids.
-    _state['val_features'] = None
-    _state['val_targets'] = None
 
 
 def _ridge(gram, lam):

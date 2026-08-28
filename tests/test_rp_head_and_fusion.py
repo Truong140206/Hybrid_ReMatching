@@ -774,3 +774,28 @@ def test_mse_is_still_the_default_and_keeps_no_features():
     features, targets = _separable(n=200)
     _accumulate(args, features, targets, 5)
     assert get_rp_state()['val_features'] is None
+
+
+def test_pooled_scope_still_drops_the_held_out_features():
+    """The protocol boundary: statistics may pool across tasks, features may not.
+
+    G and C are aggregates and pooling them is what makes the head order
+    invariant. The held-out features are per-sample data, and keeping them past
+    a task boundary would be retaining old-task examples no matter what the
+    scope setting says.
+    """
+    args = _rp_args(rp_dim=32, rp_lambda_search=True,
+                    rp_lambda_criterion='accuracy', rp_lambda_scope='pooled')
+    features, targets = _separable(n=200)
+    _accumulate(args, features, targets, 5)
+    state = get_rp_state()
+    assert state['val_features']
+    pooled_count_before = state['count_fit']
+
+    begin_rp_task(args)
+
+    assert state['val_features'] is None, 'features leaked across a task boundary'
+    assert state['val_targets'] is None
+    # Statistics, by contrast, must survive: that is what 'pooled' means.
+    assert state['count_fit'] == pooled_count_before
+    assert float(state['gram_fit'].abs().sum()) > 0.0
