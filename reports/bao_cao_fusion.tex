@@ -963,14 +963,26 @@ thuần với con số nhiều khả năng được đo trên checkpoint đã ti
 mạng xương sống $21$K cho toàn bộ báo cáo, vì đó là mạng mà HRM-PET được huấn
 luyện cùng và mọi số ở Mục \ref{sec:results} đều dựa trên nó.
 
-Bản gốc xác nhận điều này là có cơ sở. Phần thí nghiệm của bài viết rằng họ dùng
-\emph{hai} mô hình ViT-B/16: một tiền huấn luyện trên ImageNet-21K, một tinh
-chỉnh có giám sát trên ImageNet-1K. Chú thích của cả hai bảng kết quả đều không
-ghi bảng nào dùng checkpoint nào, và cũng không tuyên bố lấy kết quả tốt hơn
-giữa hai bản. Phép so sánh vì vậy chưa bao giờ được bảo đảm là cùng điều kiện, và
-chính phép đo ở Bảng \ref{tab:backbone} mới là thứ xác định được checkpoint: bản
-tinh chỉnh trên ImageNet-1K tái lập con số công bố tới $0.43$ điểm, còn bản $21$K
-thuần kém $13.6$ điểm.
+Bản gốc xác nhận điều này là có cơ sở, và nói khá rõ. Phần thí nghiệm cho biết họ
+dùng \emph{hai} mô hình ViT-B/16: một tiền huấn luyện trên ImageNet-21K, một tinh
+chỉnh có giám sát trên ImageNet-1K. Phụ lục của bài viết thẳng rằng ``cùng một
+mạng xương sống không phải là tốt nhất cho mọi bộ dữ liệu'', rồi nêu ví dụ: bản
+tinh chỉnh ImageNet-1K tốt nhất cho ImageNet-A, còn bản ImageNet-21K tốt nhất cho
+CIFAR100 và OmniBenchmark. ImageNet-R không được nêu tên trong câu đó.
+
+Hai hệ quả. Thứ nhất, bảng kết quả chính báo cáo lựa chọn tốt nhất \emph{theo
+từng bộ dữ liệu}, nên hai cột khác nhau của cùng một hàng có thể đến từ hai
+checkpoint khác nhau. Thứ hai, phần đối chiếu giữa hai mạng xương sống chỉ được
+trình bày dưới dạng \emph{đồ thị}, không phải bảng số, nên không có con số theo
+từng checkpoint để đọc ra.
+
+Vì vậy chính phép đo ở Bảng \ref{tab:backbone} mới là thứ cung cấp con số còn
+thiếu. Nó cũng nhất quán với những gì bài nói: trên CUB-200, nơi kết quả $21$K
+thuần của chúng tôi chỉ kém $0.4$ điểm, hai bên gần như chắc chắn dùng chung một
+checkpoint; còn trên ImageNet-R, bản $21$K thuần kém $13.6$ điểm trong khi bản
+tinh chỉnh ImageNet-1K vượt $0.43$ điểm. Đó đúng là điều phải xảy ra nếu con số
+ImageNet-R công bố được đo trên bản tinh chỉnh --- và ImageNet-R gồm đúng $200$
+lớp của ImageNet-1k thì đó cũng là lựa chọn hợp lý về phía họ.
 
 Khác biệt này không ảnh hưởng tới các kết quả ở Mục \ref{sec:results}, vì mọi so
 sánh trong báo cáo đều được thực hiện giữa phương pháp đề xuất và baseline trên

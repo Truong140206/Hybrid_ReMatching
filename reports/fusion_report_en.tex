@@ -989,14 +989,28 @@ in the implementation. We keep the $21$K backbone throughout this report,
 because it is the one HRM-PET was trained with and every number in
 Sect.~\ref{sec:results} rests on it.
 
-The original confirms that this matters. Its experimental section states that it
-uses \emph{two} ViT-B/16 models: one pre-trained on ImageNet-21K, and one with
-supervised fine-tuning on ImageNet-1K. Neither results-table caption records
-which checkpoint produced which number, and neither claims to report the better
-of the two. The comparison was therefore never guaranteed to be like-for-like,
-and it is the measurement in Table~\ref{tab:backbone} that identifies the
-checkpoint: the ImageNet-1k fine-tuned model reproduces the published figure to
-within $0.43$ points, while the 21K-only model falls $13.6$ short.
+The original confirms that this matters, and says so fairly plainly. Its
+experimental section states that it uses \emph{two} ViT-B/16 models: one
+pre-trained on ImageNet-21K, and one with supervised fine-tuning on
+ImageNet-1K. Its appendix then states outright that ``the same backbone is not
+optimal for all datasets'', giving as examples that the ImageNet-1K fine-tuned
+model is best for ImageNet-A while the ImageNet-21K model is best for CIFAR100
+and OmniBenchmark. ImageNet-R is not named in that sentence.
+
+Two things follow. First, the main results table reports the better choice
+\emph{per dataset}, so two columns of the same row may come from different
+checkpoints. Second, the comparison between the two backbones is presented only
+as \emph{figures}, never as a table of numbers, so there is no per-checkpoint
+figure to read off.
+
+The measurement in Table~\ref{tab:backbone} is therefore what supplies the
+missing number, and it is consistent with what the paper says. On CUB-200, where
+our 21K-only result is only $0.4$ points short, the two sides almost certainly
+used the same checkpoint; on ImageNet-R the 21K-only model falls $13.6$ short
+while the ImageNet-1k fine-tuned model comes out $0.43$ ahead. That is exactly
+what must happen if the published ImageNet-R figure was measured on the
+fine-tuned checkpoint --- and since ImageNet-R consists of exactly $200$
+ImageNet-1k classes, that is also the sensible choice on their side.
 
 This discrepancy does not affect the results in Sect.~\ref{sec:results}, because
 every comparison in this report is made between the proposed method and the
