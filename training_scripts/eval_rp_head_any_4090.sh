@@ -51,6 +51,7 @@ RP_FUSE_DRM="${RP_FUSE_DRM:-0}"
 RP_LSEARCH="${RP_LSEARCH:-0}"
 RP_LCRIT="${RP_LCRIT:-mse}"
 RP_LSCOPE="${RP_LSCOPE:-task}"
+RP_BARE_MODEL="${RP_BARE_MODEL:-}"
 
 if [[ -z "${RUN_DIR}" ]]; then echo "Usage: DATASET=... TII_DIR=... $0 RUN_DIR" >&2; exit 64; fi
 if [[ -z "${DATASET}" ]]; then echo "Set DATASET (e.g. Split-CUB200)" >&2; exit 64; fi
@@ -84,6 +85,10 @@ LSEARCH_FLAG=""; LSEARCH_TAG=""
 PIN_FLAG=""; [[ "${RP_PIN}" == "1" ]] && PIN_FLAG="--rp_pin_extractor"
 [[ "${RP_BARE}" == "1" ]] && PIN_FLAG="--rp_pin_extractor --rp_bare_extractor"
 BARE_TAG=""; [[ "${RP_BARE}" == "1" ]] && BARE_TAG="bare"
+BAREM_FLAG=""
+# Tag by the last chunk of the model name so two bare runs on different
+# checkpoints cannot land on the same log path.
+[[ -n "${RP_BARE_MODEL}" ]] && BAREM_FLAG="--rp_bare_model ${RP_BARE_MODEL}" && BARE_TAG="${BARE_TAG}m${RP_BARE_MODEL##*_}"
 AUDIT_FLAG=""; [[ "${RP_ROUTE_AUDIT}" == "1" ]] && AUDIT_FLAG="--rp_route_audit"
 [[ "${RP_COST}" == "1" ]] && AUDIT_FLAG="${AUDIT_FLAG} --report_conventional_cost"
 [[ "${RP_CLS_AUDIT}" == "1" ]] && AUDIT_FLAG="${AUDIT_FLAG} --classifier_union_audit"
@@ -107,7 +112,7 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --num_tasks "${NUM_TASKS}" --rp_head --rp_dim "${RP_DIM}" \
   --rp_activation "${RP_ACT}" --rp_lambda "${RP_LAMBDA}" \
   --rp_feature_source "${RP_SOURCE}" --rp_normalize "${RP_NORM}" \
-  --rp_lora_task "${RP_LORA_TASK}" --rp_logit_blend "${RP_BLEND}" --rp_input_norm "${RP_INORM}" ${CAL_FLAG} ${PIN_FLAG} ${AUDIT_FLAG} ${FUSE_FLAG} ${LSEARCH_FLAG} \
+  --rp_lora_task "${RP_LORA_TASK}" --rp_logit_blend "${RP_BLEND}" --rp_input_norm "${RP_INORM}" ${CAL_FLAG} ${PIN_FLAG} ${AUDIT_FLAG} ${FUSE_FLAG} ${LSEARCH_FLAG} ${BAREM_FLAG} \
   --strict_exemplar_free --eval --output_dir "${RUN_DIR}" 2>&1 | tee "${LOG_PATH}"
 printf 'Hybrid RP head wall time seconds: %s\n' "$(( $(date +%s) - START_TIME ))" | tee -a "${LOG_PATH}"
 echo "Final hybrid metrics:"; grep "Average accuracy till task${NUM_TASKS}" "${LOG_PATH}" | tail -n 1 || true

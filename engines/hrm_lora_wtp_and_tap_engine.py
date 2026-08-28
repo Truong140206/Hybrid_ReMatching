@@ -709,8 +709,16 @@ def pin_rp_extractor(original_model, args):
     if _rp_frozen_extractor['model'] is None:
         if bool(getattr(args, 'rp_bare_extractor', False)):
             from timm.models import create_model
+            # --rp_bare_model overrides the checkpoint for THIS snapshot
+            # only. Everything else keeps args.original_model, which is
+            # what the LoRA and TII checkpoints were trained against.
+            bare_name = (str(getattr(args, 'rp_bare_model', '') or '')
+                         .strip() or args.original_model)
+            if bare_name != args.original_model:
+                print('RP head: bare snapshot uses', bare_name,
+                      'instead of', args.original_model)
             snapshot = create_model(
-                args.original_model,
+                bare_name,
                 pretrained=True,
                 num_classes=args.nb_classes,
                 mlp_structure=args.original_model_mlp_structure,

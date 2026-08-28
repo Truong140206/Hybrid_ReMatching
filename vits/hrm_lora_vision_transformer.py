@@ -54,7 +54,8 @@ from vits.base import MlpHead
 _logger = logging.getLogger(__name__)
 
 __all__ = ['vit_base_patch16_224_21k_ibot', 'vit_base_patch16_224_mae', 'vit_base_patch16_224_mocov3', 'vit_base_patch16_224_ibot', 'vit_base_patch16_224_dino',
-           'vit_base_patch16_224_in21k', '_create_vision_transformer', 'vit_base_patch16_224']
+           'vit_base_patch16_224_in21k', 'vit_base_patch16_224_augreg_in1k',
+           '_create_vision_transformer', 'vit_base_patch16_224']
 
 
 def _cfg(url='', **kwargs):
@@ -142,6 +143,13 @@ default_cfgs = {
     'vit_base_patch32_224_in21k': _cfg(
         url='https://storage.googleapis.com/vit_models/augreg/B_32-i21k-300ep-lr_0.001-aug_medium1-wd_0.03-do_0.0-sd_0.0.npz',
         num_classes=21843),
+    # ImageNet-21k pre-trained AND ImageNet-1k fine-tuned. The repo had
+    # this URL commented out over 'vit_base_patch16_224'; it lives under
+    # its own name so nothing already trained changes checkpoint under it.
+    'vit_base_patch16_224_augreg_in1k': _cfg(
+        url='https://storage.googleapis.com/vit_models/augreg/'
+            'B_16-i21k-300ep-lr_0.001-aug_medium1-wd_0.1-do_0.0-sd_0.0'
+            '--imagenet2012-steps_20k-lr_0.01-res_224.npz'),
     'vit_base_patch16_224_in21k': _cfg(
         url='https://storage.googleapis.com/vit_models/augreg/B_16-i21k-300ep-lr_0.001-aug_medium1-wd_0.1-do_0.0-sd_0.0.npz',
         num_classes=21843),
@@ -1256,6 +1264,19 @@ def vit_base_patch32_224_in21k(pretrained=False, **kwargs):
     model_kwargs = dict(patch_size=32, embed_dim=768, depth=12, num_heads=12, **kwargs)
     model = _create_vision_transformer('vit_base_patch32_224_in21k', pretrained=pretrained, **model_kwargs)
     return model
+
+
+@register_model
+def vit_base_patch16_224_augreg_in1k(pretrained=False, **kwargs):
+    """ViT-B/16, ImageNet-21k pre-trained then ImageNet-1k fine-tuned.
+
+    Only for --rp_bare_model, to test whether the published ImageNet-R
+    ablation numbers were measured on a 1k-fine-tuned backbone. Never
+    used for training.
+    """
+    model_kwargs = dict(patch_size=16, embed_dim=768, depth=12, num_heads=12, **kwargs)
+    return _create_vision_transformer(
+        'vit_base_patch16_224_augreg_in1k', pretrained=pretrained, **model_kwargs)
 
 
 @register_model
