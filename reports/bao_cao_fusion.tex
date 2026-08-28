@@ -961,8 +961,16 @@ Kết luận: bảng đối chiếu trước đây so kết quả trên mạng x
 thuần với con số nhiều khả năng được đo trên checkpoint đã tinh chỉnh ImageNet-1k.
 Đó là sai lệch của \emph{phép so sánh}, không phải của cài đặt. Chúng tôi giữ
 mạng xương sống $21$K cho toàn bộ báo cáo, vì đó là mạng mà HRM-PET được huấn
-luyện cùng và mọi số ở Mục \ref{sec:results} đều dựa trên nó; việc còn lại là đối
-chiếu với bản gốc xem bảng khảo sát của bài công bố dùng checkpoint nào.
+luyện cùng và mọi số ở Mục \ref{sec:results} đều dựa trên nó.
+
+Bản gốc xác nhận điều này là có cơ sở. Phần thí nghiệm của bài viết rằng họ dùng
+\emph{hai} mô hình ViT-B/16: một tiền huấn luyện trên ImageNet-21K, một tinh
+chỉnh có giám sát trên ImageNet-1K. Chú thích của cả hai bảng kết quả đều không
+ghi bảng nào dùng checkpoint nào, và cũng không tuyên bố lấy kết quả tốt hơn
+giữa hai bản. Phép so sánh vì vậy chưa bao giờ được bảo đảm là cùng điều kiện, và
+chính phép đo ở Bảng \ref{tab:backbone} mới là thứ xác định được checkpoint: bản
+tinh chỉnh trên ImageNet-1K tái lập con số công bố tới $0.43$ điểm, còn bản $21$K
+thuần kém $13.6$ điểm.
 
 Khác biệt này không ảnh hưởng tới các kết quả ở Mục \ref{sec:results}, vì mọi so
 sánh trong báo cáo đều được thực hiện giữa phương pháp đề xuất và baseline trên
