@@ -1,0 +1,224 @@
+% =====================================================================
+%  Phan Phuong phap, trinh bay theo mau Springer LNCS.
+%
+%  KHAC MOT DIEM SO VOI samplepaper.tex: mau goc dung [T1]{fontenc},
+%  ma T1 KHONG co bang ma tieng Viet -- moi dau thanh se hong. Neu bai
+%  viet bang tieng Viet thi phai dung [T5]{fontenc} nhu duoi day, hoac
+%  chuyen sang XeLaTeX voi fontspec. Neu nop cho mot hoi nghi Springer
+%  that thi bai phai bang tieng Anh, va luc do tra [T1] lai nhu cu.
+%
+%  Muc 1 va Muc 2 de trong co y, chi de so mucchay dung: phan Phuong
+%  phap ra dung Muc 3, giong bai goc.
+% =====================================================================
+\documentclass[runningheads]{llncs}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning}
+
+\begin{document}
+
+\title{Hợp nhất hai tầng cho định tuyến và phân lớp\\
+trong học liên tục dựa trên tinh chỉnh hiệu quả tham số}
+
+\author{Nguyễn Thiện Trường}
+\authorrunning{N. T. Trường}
+\institute{Trường Đại học Công nghệ, Đại học Quốc gia Hà Nội}
+
+\maketitle
+
+\begin{abstract}
+Phần tóm tắt viết sau, khi đã chốt số liệu.
+
+\keywords{Học liên tục \and Tinh chỉnh hiệu quả tham số \and Định tuyến
+tham số \and Chiếu ngẫu nhiên.}
+\end{abstract}
+
+\section{Giới thiệu}
+
+\emph{Để trống. Nội dung lấy từ báo cáo kỹ thuật.}
+
+\section{Công trình liên quan}
+
+\emph{Để trống.}
+
+\section{Phương pháp}
+
+\subsection{Phát biểu bài toán}
+
+Học liên tục theo lớp (CIL) học một chuỗi $T$ tác vụ mà không quên tác vụ cũ.
+Tác vụ thứ $t$ gồm $n_t$ mẫu $\mathcal{D}_t=\{(x^t_i,y^t_i)\}_{i=1}^{n_t}$
+thuộc tập lớp $\mathcal{C}_t$, trong đó $x^t_i \in \mathcal{X}$ là ảnh vào và
+$y^t_i \in \mathcal{Y}$ là nhãn. Tại thời điểm $t$ chỉ $\mathcal{D}_t$ khả dụng
+cho huấn luyện. Các tập lớp không chồng lấn, $\mathcal{C}_t \cap \mathcal{C}_{t'}
+= \emptyset$ với $t \neq t'$, và định danh tác vụ \emph{không} được biết khi suy
+luận. Báo cáo này làm việc trong thiết lập không lưu mẫu: ảnh của các tác vụ đã
+qua không bao giờ được giữ lại.
+
+Trong các phương pháp dựa trên tinh chỉnh hiệu quả tham số (PET), một mạng xương
+sống tiền huấn luyện $h_{\mathrm{ptm}}$ được đóng băng, và một kho tham số nhẹ
+$\mathcal{P}=\{p_1,\dots,p_T\}$ được duy trì, mỗi bộ ứng với một tác vụ. Khi suy
+luận, hệ thống phải \emph{chọn} bộ tham số nào để gắn vào mạng xương sống trước
+khi phân lớp.
+
+Chúng tôi lấy HRM-PET làm cơ sở. Với ảnh vào $x$, đặc trưng truy vấn
+$q(x)=h(x;\theta_{\mathrm{ptm}})$ được đưa qua một bộ phân lớp phụ để suy ra
+định danh tác vụ ban đầu; bước này gọi là suy luận định danh tác vụ (TII).
+HRM-PET tinh chỉnh kết quả đó bằng hai cơ chế đối sánh lại, DRM và CRM, rồi gắn
+bộ tham số đã chọn vào mạng xương sống và sinh véc-tơ điểm số theo lớp
+$\ell \in \mathbb{R}^{|\mathcal{Y}|}$ từ một đầu phân lớp dùng chung. Lớp dự
+đoán là $\hat{y}=\arg\max_c \ell_c$.
+
+Toàn bộ chuỗi xử lý này phụ thuộc vào \emph{một} tín hiệu định tuyến duy nhất,
+sinh ra tại khối đầu tiên. Mục này đề xuất một nguồn tín hiệu thứ hai và hai vị
+trí để hợp nhất nó vào, cả hai đặt ở giai đoạn suy luận nên không cần huấn luyện
+lại bất kỳ tham số nào. Hình~\ref{fig:pipeline} minh họa vị trí của chúng.
+
+\subsection{Nguồn tín hiệu thứ hai}
+
+Nguồn thứ hai phải thỏa hai ràng buộc. Thứ nhất, nó không được thêm tham số
+huấn luyện, vì bất kỳ tham số nào cập nhật bằng gradient qua chuỗi tác vụ đều có
+thể bị tác vụ sau ghi đè. Thứ hai, nó phải giữ được giao thức không lưu mẫu.
+
+Chúng tôi dùng một đầu phân lớp bậc hai theo kiểu RanPAC. Đặc trưng $f$ được
+trích từ \emph{một} bộ tham số LoRA cố định của HRM-PET, đóng vai trò thích nghi
+phiên đầu. Đặc trưng được chiếu lên không gian số chiều cao bằng một ma trận
+ngẫu nhiên đóng băng $W$, đi qua một hàm phi tuyến, rồi được tổng hợp thành
+thống kê bậc hai:
+\begin{align}
+h &= \mathrm{ReLU}(f W), \qquad W \text{ đóng băng, sinh lại từ seed},
+\label{eq:proj}\\
+G &= \sum_n h_n h_n^{\top}, \qquad
+C = \sum_n h_n\,\mathrm{onehot}(y_n)^{\top}.
+\label{eq:gram}
+\end{align}
+Điểm số theo lớp là nghiệm đóng của hồi quy ridge trên hai thống kê đó:
+\begin{equation}
+s = h^{\top} (G + \lambda I)^{-1} C .
+\label{eq:ridge}
+\end{equation}
+
+Ba nhận xét về thiết kế này. Ma trận chiếu ngẫu nhiên và đóng băng không phải
+một sự đánh đổi mà là điều kiện cần: sinh lại được từ một seed cố định nên không
+cần lưu trữ, và không bao giờ thay đổi nên không thể bị ghi đè. Hàm phi tuyến là
+bắt buộc, vì thiếu nó thì phép chiếu chỉ là một biến đổi tuyến tính và không
+thêm được khả năng tách lớp nào. Nghịch đảo ma trận Gram khử tương quan giữa các
+chiều đã mở rộng, việc mà hiệp phương sai theo từng lớp trong không gian gốc
+không làm được.
+
+Quan trọng nhất, $G$ và $C$ đều là \emph{tổng} trên các mẫu. Phép cộng có tính
+giao hoán, nên kết quả không phụ thuộc thứ tự các tác vụ được học: đầu phân lớp
+này không quên theo đúng nghĩa cấu trúc, chứ không phải nhờ một cơ chế chống
+quên nào. Và vì chỉ giữ hai ma trận tổng hợp, không giữ đặc trưng của từng mẫu,
+giao thức không lưu mẫu được bảo toàn.
+
+\subsection{Hợp nhất hai tầng}
+
+\subsubsection{Tầng thứ nhất: hợp nhất ở cấp định tuyến.}
+Cả TII lẫn đầu chiếu ngẫu nhiên đều sinh điểm số theo lớp, trong khi định tuyến
+cần điểm số theo tác vụ. Chúng tôi quy đổi bằng cách lấy giá trị lớn nhất trên
+tập lớp của mỗi tác vụ:
+\begin{equation}
+\ell^{\mathrm{task}}_t = \max_{c \,\in\, \mathcal{C}_t} \ell_c ,
+\qquad
+s^{\mathrm{task}}_t = \max_{c \,\in\, \mathcal{C}_t} s_c .
+\label{eq:taskscore}
+\end{equation}
+Hai véc-tơ này nằm trên hai thang đo khác nhau: điểm ridge trải khoảng một đơn
+vị trong khi logit trải khoảng ba mươi lăm. Trộn thẳng sẽ để TII lấn át ở mọi
+trọng số, nên mỗi nguồn được chuẩn hóa về trung bình không và phương sai đơn vị
+trên từng mẫu bằng toán tử $z(\cdot)$ trước khi trộn:
+\begin{equation}
+\mathrm{fused} = w\, z(\ell^{\mathrm{TII}}) + (1-w)\, z(s^{\mathrm{RP}}),
+\qquad w = 0.7 .
+\label{eq:route}
+\end{equation}
+Định danh tác vụ $\arg\max_t \mathrm{fused}_t$ được trao cho DRM và CRM như một
+điểm khởi đầu. Chúng tôi thay \emph{đúng một} thứ là bước đối sánh đầu tiên; mọi
+cơ chế phía sau của HRM-PET giữ nguyên. Tại $w = 1.0$, biểu
+thức~(\ref{eq:route}) trả về đúng thứ tự của $\ell^{\mathrm{TII}}$, nên phương
+pháp thu về baseline một cách chính xác.
+
+\subsubsection{Tầng thứ hai: hợp nhất ở cấp phân lớp với cơ chế cổng.}
+Định tuyến tốt hơn không tự động thành phân lớp tốt hơn. Đầu phân lớp dùng chung
+thường đã đoán đúng lớp bất chấp định tuyến sai, nên sửa định tuyến ở những mẫu
+đó không đổi được dự đoán. Chúng tôi vì vậy dùng chính đầu chiếu ngẫu nhiên làm
+bộ phân lớp thứ hai.
+
+Một trọng số cố định là sai. Nó chi cùng một phần quyết định cho mẫu mà đầu
+chính gọi tên ở mức $p = 0.97$ như cho mẫu nó đang phân vân, mà loại thứ nhất
+chiếm đa số áp đảo; trả giá ở đó chỉ làm phẳng một đỉnh vốn đã đúng. Hợp nhất
+chỉ đổi được dự đoán bằng cách lật đổ lớp đứng đầu, và đối thủ khả dĩ nhất của
+nó là lớp đứng thứ hai. Do đó trọng số được đặt tỉ lệ nghịch với biên giữa hai
+lớp cao nhất của chính đầu chính:
+\begin{equation}
+\beta_i = \beta \left( 1 - \frac{p_{(1)} - p_{(2)}}{p_{(1)} + p_{(2)}} \right),
+\qquad \beta = 0.5 ,
+\label{eq:gate}
+\end{equation}
+trong đó $p_{(1)}$ và $p_{(2)}$ là hai xác suất lớn nhất của đầu chính. Chia cho
+tổng chứ không phải cho một khiến đại lượng này chỉ phụ thuộc tỉ số
+$p_{(2)}/p_{(1)}$, tức đo mức độ lớp đứng đầu bị đe dọa, độc lập với khối lượng
+xác suất mà cặp đó nắm giữ.
+
+Phép trộn dùng lại phép chuẩn hóa của tầng thứ nhất, rồi đưa kết quả về đúng
+thang đo của $\ell$:
+\begin{align}
+m_i &= (1 - \beta_i)\, z(\ell_i) + \beta_i\, z(s_i),
+\label{eq:mix}\\
+\hat{\ell}_i &= m_i \cdot \mathrm{std}(\ell_i) + \mathrm{mean}(\ell_i).
+\label{eq:affine}
+\end{align}
+Bước đưa về ở~(\ref{eq:affine}) là một phép biến đổi affine theo từng mẫu, nên
+thứ hạng và do đó độ chính xác không đổi; nó chỉ khiến hàm mất mát so sánh được
+với baseline, vì chuẩn hóa đặt hỗn hợp ở phương sai đơn vị, một thang đo sai cho
+entropy chéo. Tại $\beta = 0$ thì $\hat{\ell} = \ell$ đúng từng phần tử, nên
+tầng này cũng thu về baseline một cách chính xác.
+
+\begin{figure}
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\footnotesize,
+  >={Stealth[length=2mm]},
+  box/.style={draw, minimum height=8mm, minimum width=1.6cm, inner xsep=4pt, align=center},
+  hl/.style={box, very thick, fill=black!6}
+]
+\node[box] (in) at (0.0, 0.0)    {Ảnh vào};
+\node[box] (tii) at (2.7, 0.85)  {TII};
+\node[box] (rp) at (2.7, -0.85)  {Đầu RP};
+\node[hl]  (f1) at (5.9, 0.0)    {Tầng 1\\Hợp nhất định tuyến};
+\node[box] (lo) at (8.9, 0.0)    {Chọn LoRA};
+\node[box] (dr) at (11.3, 0.0)   {DRM / CRM};
+\node[box] (cl) at (13.9, 0.0)   {Đầu phân lớp};
+\node[hl]  (f2) at (13.9, -2.1)  {Tầng 2\\Hợp nhất phân lớp};
+\node[box] (out) at (13.9, -3.7) {Dự đoán};
+\draw[->] (in) -- (tii);
+\draw[->] (in) -- (rp);
+\draw[->] (tii) -- (f1);
+\draw[->] (rp) -- (f1);
+\draw[->] (f1) -- (lo);
+\draw[->] (lo) -- (dr);
+\draw[->] (dr) -- (cl);
+\draw[->] (cl) -- (f2);
+\draw[->] (f2) -- (out);
+\draw[->, dashed] (rp.south) |- node[pos=0.75, above, font=\scriptsize]
+      {điểm số theo lớp của đầu RP} (f2.west);
+\end{tikzpicture}}
+\caption{Quy trình suy luận. Các khối viền đậm là hai thành phần được bổ sung.
+Đầu chiếu ngẫu nhiên được tính một lần duy nhất và cấp tín hiệu cho cả hai tầng:
+điểm số theo tác vụ cho tầng thứ nhất, điểm số theo lớp cho tầng thứ hai (đường
+nét đứt).}
+\label{fig:pipeline}
+\end{figure}
+
+\subsubsection{Chi phí.}
+Đầu chiếu ngẫu nhiên cần đúng một lượt truyền xuôi trên mỗi mẫu, và cùng một
+kết quả đó phục vụ cả hai tầng. Không tham số nào được huấn luyện thêm, và không
+checkpoint nào phải huấn luyện lại.
+
+\end{document}
