@@ -11,7 +11,10 @@ path = sys.argv[1]
 s = io.open(path, encoding='utf-8', newline='').read()
 
 counts = Counter()
-for kind, name in re.findall(r'\\(begin|end)\{([a-zA-Z*]+)\}', s):
+# Dem tren ban da bo chu thich: mot dong % nhac toi \begin{document} khong
+# phai mot moi truong that.
+nocomment = re.sub(r'(?<!\\)%.*', '', s)
+for kind, name in re.findall(r'\\(begin|end)\{([a-zA-Z*]+)\}', nocomment):
     counts[name] += 1 if kind == 'begin' else -1
 bad = {k: v for k, v in counts.items() if v != 0}
 print('moi truong lech:', bad if bad else 'khong co')

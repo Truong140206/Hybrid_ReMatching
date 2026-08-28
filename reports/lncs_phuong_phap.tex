@@ -23,6 +23,23 @@
 %
 \begin{document}
 %
+% ---------------------------------------------------------------------
+% Bai viet bang tieng Viet nen phai doi cac nhan co dinh cua lop tai lieu:
+% Abstract, Keywords, Fig., Table, References, Acknowledgments, Disclosure
+% of Interests. Chung PHAI dat sau \begin{document}: llncs gan chung tu mot
+% moc \AtBeginDocument, dat o preamble se bi ghi de.
+% Neu chuyen ban thao sang tieng Anh de nop thi xoa nguyen khoi nay.
+% ---------------------------------------------------------------------
+\renewcommand{\abstractname}{Tóm tắt.}
+\renewcommand{\keywordname}{{\bf Từ khóa:}}
+\renewcommand{\figurename}{Hình}
+\renewcommand{\tablename}{Bảng}
+\renewcommand{\refname}{Tài liệu tham khảo}
+\renewcommand{\proofname}{Chứng minh}
+\renewcommand{\ackname}{Lời cảm ơn.}
+\renewcommand{\discintname}{Tuyên bố xung đột lợi ích.}
+%
+%
 \title{Hợp nhất hai tầng cho định tuyến và phân lớp trong học liên tục
 dựa trên tinh chỉnh hiệu quả tham số}
 %
@@ -212,7 +229,7 @@ tới hai thành phần đề xuất ở Mục~\ref{sec:method}.
 
 Chúng tôi bổ sung một nguồn tín hiệu thứ hai và hai vị trí để hợp nhất nó vào,
 ứng với hai điểm yếu nêu trên. Cả hai đặt ở giai đoạn suy luận: không tham số nào
-được huấn luyện thêm và không checkpoint nào phải huấn luyện lại.
+được huấn luyện thêm và không mô hình nào phải huấn luyện lại.
 Hình~\ref{fig:pipeline} minh họa vị trí của chúng.
 
 \subsection{Nguồn tín hiệu thứ hai}
@@ -315,7 +332,7 @@ với $\hat{T}$ là số tác vụ đã gặp. Hai véc-tơ được trộn sau 
 như một điểm khởi đầu tốt hơn. Chúng tôi thay \emph{đúng một} khối là bước đối
 sánh đầu tiên; mọi cơ chế phía sau giữ nguyên. Tại $w = 1.0$ thì
 (\ref{eq:route}) trả về đúng thứ tự của $\ell^{\mathrm{task}}$, nên phương pháp
-thu về baseline một cách chính xác.
+thu về đúng phương pháp cơ sở.
 
 \subsubsection{Tầng thứ hai: hợp nhất ở cấp phân lớp với cơ chế cổng.}
 Vì $\ell$ đến từ đầu phân lớp dùng chung, nó thường đã đoán đúng lớp bất chấp
@@ -348,8 +365,8 @@ m_i &= (1 - \beta_i)\, z(\ell_i) + \beta_i\, z(s_i),
 Bước đưa về ở (\ref{eq:affine}) là phép affine theo từng mẫu với hệ số dương nên
 thứ hạng không đổi; nó chỉ cần cho hàm mất mát, vì chuẩn hóa đặt hỗn hợp ở phương
 sai đơn vị, một thang đo sai cho entropy chéo. Tại $\beta = 0$ thì
-$\hat{\ell} = \ell$ đúng từng phần tử, nên tầng này cũng thu về baseline một cách
-chính xác.
+$\hat{\ell} = \ell$ đúng từng phần tử, nên tầng này cũng thu về đúng phương pháp cơ
+sở.
 
 \begin{figure}
 \centering
