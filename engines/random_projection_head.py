@@ -44,6 +44,11 @@ _state = {
     'prototypes_fit': None,
     'gram_val': None,
     'prototypes_val': None,
+    # Held-out projected features of the CURRENT task, kept only when the
+    # accuracy criterion is in use: a top-1 count cannot be recovered from
+    # second-order statistics. Cleared at every task boundary.
+    'val_features': None,
+    'val_targets': None,
     'count': 0,
     'count_fit': 0,
     'count_val': 0,
@@ -61,6 +66,8 @@ def reset_rp_head():
     _state['prototypes_fit'] = None
     _state['gram_val'] = None
     _state['prototypes_val'] = None
+    _state['val_features'] = None
+    _state['val_targets'] = None
     _state['count'] = 0
     _state['count_fit'] = 0
     _state['count_val'] = 0
@@ -189,6 +196,15 @@ def accumulate_rp_statistics(features, targets, args, device, nb_classes):
         _state['gram_val'] += val_projected.T @ val_projected
         _state['prototypes_val'] += val_projected.T @ onehot[held]
         _state['count_val'] += int(held.sum())
+        if str(getattr(args, 'rp_lambda_criterion', 'mse')) == 'accuracy':
+            # One fifth of one task at rp_dim=10000 is tens of megabytes, so
+            # this is cheap; the point of the closed form was elegance, not a
+            # memory bound. Only the current task is ever held.
+            if _state['val_features'] is None:
+                _state['val_features'] = []
+                _state['val_targets'] = []
+            _state['val_features'].append(val_projected.clone())
+            _state['val_targets'].append(targets.to(device).long()[held])
 
 
 def begin_rp_task(args):
@@ -233,6 +249,11 @@ def begin_rp_task(args):
     _state['count_fit'] = 0
     _state['count_val'] = 0
     _state['split_index'] = 0
+    # Drop the previous task's held-out features outright rather than zeroing:
+    # holding them past the task boundary is exactly what the exemplar-free
+    # protocol forbids.
+    _state['val_features'] = None
+    _state['val_targets'] = None
 
 
 def _ridge(gram, lam):
@@ -322,8 +343,23 @@ def _select_lambda(args, device):
     prototypes_val = _state['prototypes_val']
 
     criterion = str(getattr(args, 'rp_lambda_criterion', 'mse'))
-    if criterion not in ('mse', 'cosine'):
+    if criterion not in ('mse', 'cosine', 'accuracy'):
         raise ValueError('unknown rp_lambda_criterion: %s' % criterion)
+
+    val_x, val_y, seen_index = None, None, None
+    if criterion == 'accuracy':
+        if not _state.get('val_features'):
+            raise RuntimeError(
+                "rp_lambda_criterion='accuracy' but no held-out features were "
+                'kept; accumulate_rp_statistics must run with the same setting')
+        val_x = torch.cat(_state['val_features'], dim=0)
+        val_y = torch.cat(_state['val_targets'], dim=0)
+        # Score only over classes seen so far, mirroring what the deployed head
+        # does. Ranking against classes that cannot occur would let a lambda be
+        # rewarded or punished for predictions the system can never make.
+        seen_index = torch.tensor(
+            sorted(int(c) for c in _state['seen_classes']),
+            device=val_x.device, dtype=torch.long)
 
     # _ridge_solve clones the Gram to add lambda, which at rp_dim=10000 is a
     # 800 MB temporary -- seventeen times per task, on top of the factorisation
@@ -348,12 +384,18 @@ def _select_lambda(args, device):
                 # Tiny lambda on a rank-deficient Gram. Not a failure, just a
                 # value the data cannot support; skip it rather than abort.
                 continue
-            agreement = float((weights * prototypes_val).sum())    # <HW, Y>
-            energy = float((weights * (gram_val @ weights)).sum())  # ||HW||^2
-            if criterion == 'mse':
-                score = -(float(n_val) - 2.0 * agreement + energy)
+            if criterion == 'accuracy':
+                predicted = seen_index[
+                    (val_x @ weights)[:, seen_index].argmax(dim=1)]
+                score = float((predicted == val_y).double().mean())
             else:
-                score = agreement / math.sqrt(max(energy * float(n_val), 1e-30))
+                agreement = float((weights * prototypes_val).sum())    # <HW, Y>
+                energy = float((weights * (gram_val @ weights)).sum())  # ||HW||^2
+                if criterion == 'mse':
+                    score = -(float(n_val) - 2.0 * agreement + energy)
+                else:
+                    score = agreement / math.sqrt(
+                        max(energy * float(n_val), 1e-30))
             tried.append((lam, score))
             if best_score is None or score > best_score:
                 best_lambda, best_score = lam, score

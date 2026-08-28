@@ -49,6 +49,7 @@ RP_FUSE="${RP_FUSE:-0}"
 RP_FUSE_W="${RP_FUSE_W:-0.5}"
 RP_FUSE_DRM="${RP_FUSE_DRM:-0}"
 RP_LSEARCH="${RP_LSEARCH:-0}"
+# RP_LCRIT: mse | cosine | accuracy
 RP_LCRIT="${RP_LCRIT:-mse}"
 RP_LSCOPE="${RP_LSCOPE:-task}"
 RP_BARE_MODEL="${RP_BARE_MODEL:-}"

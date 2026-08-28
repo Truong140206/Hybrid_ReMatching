@@ -696,3 +696,81 @@ def test_pooling_the_sweep_biases_lambda_upward():
     hundred_tasks = _select_lambda(args, DEVICE)
 
     assert hundred_tasks == pytest.approx(one_task * 100.0, rel=1e-9)
+
+
+# --------------------------------------------------------------------------
+# Selecting lambda by held-out accuracy
+# --------------------------------------------------------------------------
+
+
+def test_accuracy_criterion_maximises_held_out_top1():
+    """Checked against a directly computed accuracy, not against the stash.
+
+    Squared error and top-1 do not peak at the same lambda -- on ImageNet-R the
+    head's own accuracy peaks a decade below where squared error puts it, which
+    is the whole reason this criterion exists. So the assertion has to be that
+    the chosen lambda really is the accuracy argmax, recomputed from the raw
+    features rather than from the cached copy the criterion itself uses.
+    """
+    args = _rp_args(rp_dim=32, rp_lambda_search=True,
+                    rp_lambda_criterion='accuracy')
+    features, targets = _separable()
+    _accumulate(args, features, targets, 5)
+    chosen = _select_lambda(args, DEVICE)
+
+    state = get_rp_state()
+    held = (torch.arange(features.shape[0]) % 5) == 4
+    projected = project_features(features[held], args, DEVICE).double()
+    truth = targets[held].to(DEVICE).long()
+
+    best_lambda, best_hits = None, -1
+    for exponent in range(-8, 9):
+        lam = float(10.0 ** exponent)
+        try:
+            weights = _ridge_solve(state['gram_fit'], state['prototypes_fit'], lam)
+        except torch.linalg.LinAlgError:
+            continue
+        hits = int(((projected @ weights).argmax(dim=1) == truth).sum())
+        if hits > best_hits:
+            best_lambda, best_hits = lam, hits
+
+    assert chosen == pytest.approx(best_lambda, rel=1e-9)
+
+
+def test_accuracy_criterion_refuses_without_the_held_out_features():
+    """Switching criterion after accumulation must fail loudly, not silently."""
+    args = _rp_args(rp_dim=32, rp_lambda_search=True)   # accumulates with 'mse'
+    features, targets = _separable()
+    _accumulate(args, features, targets, 5)
+    args.rp_lambda_criterion = 'accuracy'
+    with pytest.raises(RuntimeError, match='held-out features'):
+        _select_lambda(args, DEVICE)
+
+
+def test_held_out_features_are_dropped_at_the_task_boundary():
+    """The exemplar-free guard, asserted rather than assumed.
+
+    Keeping one task's held-out features while that task is being learned is
+    what the original method does too. Keeping them past the boundary would not
+    be.
+    """
+    args = _rp_args(rp_dim=32, rp_lambda_search=True,
+                    rp_lambda_criterion='accuracy')
+    features, targets = _separable(n=200)
+    _accumulate(args, features, targets, 5)
+    state = get_rp_state()
+    assert state['val_features'] and state['val_targets']
+
+    begin_rp_task(args)
+    assert state['val_features'] is None
+    assert state['val_targets'] is None
+    # The head's own accumulators are untouched, as always.
+    assert state['count'] == 200
+
+
+def test_mse_is_still_the_default_and_keeps_no_features():
+    args = _rp_args(rp_dim=32, rp_lambda_search=True)
+    assert getattr(args, 'rp_lambda_criterion', 'mse') == 'mse'
+    features, targets = _separable(n=200)
+    _accumulate(args, features, targets, 5)
+    assert get_rp_state()['val_features'] is None
