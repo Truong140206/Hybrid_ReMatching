@@ -124,20 +124,37 @@ chất lượng định tuyến. Mục \ref{sec:analysis} trình bày số liệ
 
 \subsection{Đóng góp}
 
-\begin{enumerate}[leftmargin=*, itemsep=3pt]
-\item \textbf{Hợp nhất ở cấp định tuyến.} Kết hợp TII với một đầu phân lớp dựa
-      trên phép chiếu ngẫu nhiên, sau khi chuẩn hóa hai nguồn về cùng thang đo.
-      Hai nguồn cho kết quả sai trên những tập mẫu khác nhau, nên việc kết hợp
-      đem lại lợi ích thực (Mục \ref{sec:stage1}).
-\item \textbf{Hợp nhất ở cấp phân lớp với cơ chế cổng theo biên.} Sử dụng đầu
-      chiếu ngẫu nhiên như một bộ phân lớp thứ hai, với trọng số tỉ lệ nghịch
-      với mức độ chắc chắn của đầu phân lớp chính. Cơ chế cổng loại bỏ hoàn toàn
-      suy giảm hàm mất mát mà phiên bản dùng trọng số cố định gây ra
-      (Mục \ref{sec:stage2}).
-\end{enumerate}
+Bảng \ref{tab:routing} cho thấy dư địa còn lại. Trên ImageNet-R, tín hiệu TII
+định tuyến đúng $63.80\,\%$; sau hai bước tinh chỉnh DRM và CRM của HRM-PET, con
+số đó lên $77.79\,\%$. Một đầu phân lớp dựa trên phép chiếu ngẫu nhiên, không
+huấn luyện thêm tham số nào, tự nó đạt $77.12\,\%$ --- ngang với cả quy trình
+tinh chỉnh đó. Quan trọng hơn, nó định tuyến đúng $19.2\,\%$ số mẫu mà TII định
+tuyến sai, nên hợp của hai nguồn đạt $82.99\,\%$. Khoảng cách tương tự lặp lại
+trên CIFAR-100 ($89.82$ so với $92.86$) và CUB-200 ($93.21$ so với $96.26$). Nói
+cách khác, HRM-PET quyết định định tuyến bằng một nguồn tín hiệu duy nhất, trong
+khi một nguồn thứ hai đã nằm sẵn trong chính mô hình đã huấn luyện.
 
-Cả hai thành phần đều đặt ở giai đoạn suy luận nên không yêu cầu huấn luyện lại
-mô hình. Hình \ref{fig:pipeline} minh họa vị trí của chúng trong quy trình.
+Chúng tôi vì vậy đề xuất hai tầng hợp nhất, cả hai đặt ở giai đoạn suy luận.
+Tầng thứ nhất trộn điểm số theo tác vụ của TII với điểm số của đầu chiếu ngẫu
+nhiên sau khi chuẩn hóa hai nguồn về cùng thang đo, rồi trao kết quả cho DRM và
+CRM như một điểm khởi đầu tốt hơn. Tầng thứ hai xử lý một hạn chế khác: định
+tuyến tốt hơn không tự động thành phân lớp tốt hơn, vì đầu phân lớp dùng chung
+thường đã đoán đúng lớp bất chấp định tuyến sai, nên sửa định tuyến ở những mẫu
+đó không đổi được gì. Tầng này dùng chính đầu chiếu ngẫu nhiên làm bộ phân lớp
+thứ hai, với trọng số theo từng mẫu tỉ lệ nghịch với mức độ chắc chắn của đầu
+phân lớp chính, nên phép trộn chỉ mở ra ở những mẫu đang tranh chấp --- nơi duy
+nhất nó có thể đổi được dự đoán. Hình \ref{fig:pipeline} minh họa vị trí của cả
+hai tầng trong quy trình.
+
+Tóm lại, đóng góp của báo cáo gồm ba điểm. \emph{Thứ nhất}, chúng tôi đề xuất
+phép hợp nhất ở cấp định tuyến, kết hợp TII với một đầu phân lớp không cần huấn
+luyện để nâng độ chính xác định tuyến trong các phương pháp PET
+(Mục \ref{sec:stage1}). \emph{Thứ hai}, chúng tôi đề xuất phép hợp nhất ở cấp
+phân lớp với cơ chế cổng theo biên, dùng chính đầu phân lớp đó làm nguồn thứ hai
+và chỉ can thiệp vào những mẫu mà đầu chính còn phân vân (Mục \ref{sec:stage2}).
+\emph{Thứ ba}, chúng tôi kiểm chứng hiệu quả trên ba bộ dữ liệu học liên tục và
+bốn seed, với chi phí tăng thêm đúng bằng một lượt truyền xuôi trên mỗi mẫu và
+không huấn luyện thêm bất kỳ tham số nào.
 
 \begin{figure}[H]
 \centering
