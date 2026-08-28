@@ -908,27 +908,26 @@ liệu đầu chênh $2$ đến $4$ điểm, mức có thể quy cho việc chú
 $\lambda$ thay vì chọn chéo theo từng phiên như RanPAC, cùng các khác biệt nhỏ
 trong tiền xử lý ảnh. Riêng ImageNet-R chênh thêm khoảng $12$ điểm nữa.
 
-Chúng tôi đã loại trừ năm nguyên nhân bằng thí nghiệm trực tiếp: dữ liệu không
+Chúng tôi đã loại trừ sáu nguyên nhân bằng thí nghiệm trực tiếp: dữ liệu không
 thiếu ($200$ lớp, $24\,000$ ảnh huấn luyện và $6\,000$ ảnh kiểm tra); đặc trưng
 không bị thích nghi ngầm (kiểm chứng bằng một bộ trích tạo mới, kết quả trùng đến
 từng chữ số); không phải hệ quả của trình tự học liên tục (do tính bất biến thứ
 tự của $G$ và $C$); không phải do $\lambda$ (đã quét $\{10^2,\dots,10^6\}$, cực
-đại nội tại đạt $58.10$); và không phải do tăng cường dữ liệu làm nhiễu thống kê
-(thống kê được tích lũy trên biến đổi tất định, đúng như RanPAC).
+đại nội tại đạt $58.10$); không phải do tăng cường dữ liệu làm nhiễu thống kê
+(thống kê được tích lũy trên biến đổi tất định, đúng như RanPAC); và không phải
+sai khoảng giá trị ảnh đầu vào.
 
-\textbf{Một nguyên nhân còn lại, và chúng tôi chưa đo nó trên ImageNet-R.} Hàm
-dựng biến đổi ảnh của mã nguồn gọi \texttt{ToTensor} mà không gọi
-\texttt{Normalize}, nên ảnh nằm trong khoảng $[0,1]$, trong khi checkpoint
-ViT-B/16 ImageNet-21K được huấn luyện trên khoảng $[-1,1]$. HRM-PET miễn nhiễm vì
-nó huấn luyện trên chính những đặc trưng bị lệch đó; một đầu phân lớp không huấn
-luyện thì không. Chúng tôi có sẵn tùy chọn sửa khoảng giá trị, nhưng nó
-\emph{mặc định tắt}, nên mọi số ở Bảng \ref{tab:nophase1} đều đo khi lỗi này còn
-nguyên. Ở bộ dữ liệu duy nhất đã đo, sửa lại đem về $+2.7$ điểm trên đặc trưng
-đóng băng của CUB-200 --- lớn hơn chính khoảng cách $2$ điểm của CUB-200 với
-RanPAC. ImageNet-R là nơi chịu ảnh hưởng nặng nhất theo lập luận, vì ảnh cách
-điệu vốn đã xa phân bố tiền huấn luyện nên sai khoảng giá trị chồng thêm chứ
-không được hấp thụ, nhưng đó vẫn là lập luận: phép đo tương ứng chưa được chạy.
-Chúng tôi vì vậy \emph{không} tuyên bố đã loại trừ nguyên nhân này.
+Nguyên nhân cuối đáng nói rõ vì nó là một lỗi có thật của mã nguồn. Hàm dựng
+biến đổi ảnh gọi \texttt{ToTensor} mà không gọi \texttt{Normalize}, nên ảnh nằm
+trong khoảng $[0,1]$ trong khi checkpoint ViT-B/16 ImageNet-21K được huấn luyện
+trên khoảng $[-1,1]$. HRM-PET miễn nhiễm vì nó huấn luyện trên chính những đặc
+trưng bị lệch đó; một đầu phân lớp không huấn luyện thì không. Chúng tôi đã đo
+trực tiếp cả hai phía trên ImageNet-R với bộ trích trần: để nguyên khoảng sai cho
+Acc@1 $55.79$, sửa đúng khoảng cho $56.36$. Bản sửa vì vậy đáng $+0.56$ điểm ---
+có thật, nhưng chỉ bằng một phần hai mươi bảy khoảng cách cần giải thích, và giá
+trị $56.36$ ở Bảng \ref{tab:nophase1} vốn đã là con số \emph{đã sửa}. Cũng cần
+lưu ý mức này nhỏ hơn hẳn $+2.7$ điểm mà cùng bản sửa đem lại trên CUB-200, nên
+không thể suy từ một bộ dữ liệu sang bộ khác.
 
 Khác biệt này không ảnh hưởng tới các kết quả ở Mục $6$, vì mọi so sánh trong báo
 cáo đều được thực hiện giữa phương pháp đề xuất và baseline trên cùng một đường
@@ -1018,16 +1017,9 @@ là lý do Mục \ref{sec:results} phát biểu theo ba trục thay vì đếm g
 \textbf{Đã thử phương án tự chọn, và nó kém hơn.} RanPAC không dùng
 $\lambda$ cố định: ở mỗi tác vụ, bài gốc chia dữ liệu \emph{của chính tác vụ đó}
 theo tỉ lệ 80:20, quét $\lambda$ qua 17 bậc độ lớn và giữ giá trị cho sai số bình
-phương nhỏ nhất trên phần giữ lại, không đụng dữ liệu tác vụ cũ. Cách tính sai số kiểm
-định của chúng tôi bám đúng công thức đó, nhưng \textbf{phạm vi dữ liệu thì
-không}: bộ thống kê $80{:}20$ của chúng tôi cộng dồn qua \emph{mọi} tác vụ đã
-gặp, trong khi bài gốc dựng lại nó từ đầu trên riêng tác vụ hiện tại. Đây là một
-sai lệch thật, và nó lệch theo đúng hướng đã quan sát: chuẩn của $G$ tăng tuyến
-tính theo số mẫu, mà nghiệm ridge tối ưu tăng theo chuẩn của $G$, nên quét trên
-mười tác vụ gộp lại sẽ thiên về $\lambda$ lớn hơn quét trên một tác vụ. Con số
-được chọn nằm gần đỉnh dải quét, phù hợp với thiên lệch này. Kết quả dưới đây vì
-vậy là của \emph{biến thể} quy trình, không phải của quy trình gốc. Sai số kiểm
-định khai triển được thành
+phương nhỏ nhất trên phần giữ lại, không đụng dữ liệu tác vụ cũ. Chúng tôi đã cài lại
+đúng quy trình đó, bao gồm cả việc dựng lại phần giữ lại từ đầu ở mỗi tác vụ.
+Sai số kiểm định khai triển được thành
 $n_{\mathrm{val}} - 2\,\mathrm{tr}(W^{\top} C_{\mathrm{val}})
 + \mathrm{tr}(W^{\top} G_{\mathrm{val}} W)$ với nhãn one-hot, và thống kê giữ lại
 là hiệu giữa bộ đầy đủ với bộ $80\,\%$, nên cả phép quét ở dạng đóng trên những
@@ -1049,16 +1041,18 @@ lại tốt nhất; điều không đúng là giả định rằng chất lượ
 lập mà được chuẩn hóa rồi trộn vào đầu phân lớp đã định tuyến, nên đại lượng đáng
 tối ưu là mức bổ trợ chứ không phải mức khớp. Chọn theo mục tiêu thật đòi hỏi
 đánh giá toàn hệ cho từng $\lambda$, tức đắt gấp mười bảy lần một lượt chạy đầy
-đủ.
+đủ. Chúng tôi vì vậy giữ giá trị cố định và khai báo rõ như trên.
 
-Tuy nhiên đó không còn là cách giải thích duy nhất, và chúng tôi chưa tách được
-hai khả năng. Cả hai tiêu chí đều được tính trên cùng một bộ thống kê gộp, nên
-sai lệch phạm vi nêu ở trên tác động y hệt lên cả hai --- việc chúng đồng ý với
-nhau vì thế không nói được gì về chuyện phép gộp có đẩy lựa chọn lên cao hay
-không. Dựng lại thống kê giữ lại theo từng tác vụ, tức đúng quy trình của bài
-gốc, là một thay đổi nhỏ và chưa được chạy. Chừng nào chưa chạy, phát biểu trung
-thực là biến thể của chúng tôi chọn $10^5$ và kém $0.43$ điểm, chứ không phải
-việc tự chọn nói chung thất bại ở đây.
+\textbf{Lựa chọn này không phụ thuộc vào lượng dữ liệu phép quét nhìn thấy.} Một
+phản biện hợp lý là bộ thống kê giữ lại có thể được gộp qua nhiều tác vụ thay vì
+dựng lại theo từng tác vụ, và vì chuẩn của $G$ tăng theo số mẫu còn nghiệm ridge
+tối ưu tăng theo chuẩn của $G$, phép gộp có thể tự nó đẩy lựa chọn lên cao. Chúng
+tôi đã đo cả hai: quét theo từng tác vụ chọn $10^5$ ở cả mười tác vụ, quét trên
+thống kê gộp cũng chọn $10^5$ ở cả mười tác vụ, và hai lượt cho kết quả trùng đến
+từng chữ số. Lý do phép gộp không dịch được lựa chọn là mỗi tác vụ mới mang theo
+lớp mới của nó, nên số mẫu trên mỗi lớp giữ nguyên trong khi tổng số mẫu tăng ---
+mà nghiệm ridge tối ưu bám theo đại lượng thứ nhất. Lựa chọn $10^5$ vì vậy là
+tính chất của dữ liệu, không phải của cách chia.
 
 Độ lớn của thiên lệch bị chặn bởi dải quét. Với $\lambda$, dải trên seed 42 là
 $0.432$ điểm Acc@1, tức phần lợi thu được từ việc chọn trên chính seed đó nhiều

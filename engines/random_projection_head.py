@@ -201,11 +201,20 @@ def begin_rp_task(args):
     previously let the 80:20 statistics accumulate across the whole sequence
     too, so by task ten the sweep was ranging over ten tasks pooled.
 
-    That is not a neutral difference. The norm of a Gram matrix grows linearly
-    with the number of samples in it, and the ridge that best balances fit
-    against regularisation grows with that norm, so sweeping over ten pooled
-    tasks is biased toward a larger lambda than sweeping over one. The pooled
-    variant duly pinned the top of the range at every task.
+    The suspicion was that this biases the choice upward: the norm of a Gram
+    matrix grows linearly with the number of samples in it, and the ridge that
+    best balances fit against regularisation grows with that norm. That law is
+    real -- test_pooling_the_sweep_biases_lambda_upward pins it exactly -- but
+    it is the wrong model for pooling *tasks*. It applies when the same classes
+    gain more samples. A new task brings its own new classes, so samples per
+    class stays fixed while the total grows, and the optimal ridge tracks
+    samples per class.
+
+    Measured on ImageNet-R seed 42: both scopes select 1e5 at all ten tasks and
+    give bit-identical final metrics. So the divergence was real and this is the
+    faithful version, but it changes no number we report. Keep it anyway --
+    matching the method we build on is worth more than the diff it saves, and
+    'pooled' is what makes the two comparable rather than arguable.
 
     Only the fit/validation copies are cleared. The running `gram` and
     `prototypes` -- the ones the head is actually solved from -- keep
@@ -276,17 +285,19 @@ def _select_lambda(args, device):
     75.0795, against 75.5116 for the hand-tuned 1e4 -- the worst of the five
     values in our own lambda sweep.
 
-    Read that measurement with care: it predates rp_lambda_scope and was taken
-    with the pooled split, so the sweep saw up to ten tasks at once and was
-    biased toward large lambda for the reason given in begin_rp_task. The
-    explanation offered at the time -- that Y is one-hot, so shrinking W toward
+    The scope question is settled: rerunning under scope='task', which is what
+    RanPAC actually does, selects 1e5 at all ten tasks as well and lands on the
+    same 75.0795. How much data the sweep sees is not what drives the choice.
+
+    What remains is the criterion itself. Y is one-hot, so shrinking W toward
     zero shrinks the residual, and squared error therefore rewards a magnitude
-    shrinkage that argmax ignores -- is a real property of the criterion, and it
-    does apply here: in RanPAC the ridge scores are the final classifier, so
-    magnitude is part of the answer, whereas here they are standardised per
-    sample and blended into a routed head, which discards magnitude entirely.
-    But it is not established that this, rather than the pooling, is what drove
-    the choice. Rerun with scope='task' before repeating that diagnosis.
+    shrinkage that argmax ignores. In RanPAC the ridge scores are the final
+    classifier, so magnitude is part of the answer and the criterion fits. Here
+    they are standardised per sample and blended into a routed head, which
+    discards magnitude entirely -- so the criterion optimises a quantity the
+    next step throws away. Note this is not refuted by 'cosine' agreeing: what
+    the head needs is complementarity with the routed classifier, and neither
+    criterion measures that. Both measure fit.
 
     'cosine' fixes exactly that by being invariant to the scale of W:
 

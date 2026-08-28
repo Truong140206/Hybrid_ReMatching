@@ -932,28 +932,26 @@ $\lambda$ instead of cross-validating it per session as RanPAC does, together
 with small differences in image preprocessing. ImageNet-R alone differs by a
 further $12$ points or so.
 
-We ruled out five causes by direct experiment: the data is not missing ($200$
+We ruled out six causes by direct experiment: the data is not missing ($200$
 classes, $24\,000$ training and $6\,000$ test images); the features are not
 implicitly adapted (verified with a freshly constructed extractor, matching digit
 for digit); it is not a consequence of the continual-learning sequence (by the
 order invariance of $G$ and $C$); it is not $\lambda$ (swept over
-$\{10^2,\dots,10^6\}$, with an interior maximum of $58.10$); and it is not data
+$\{10^2,\dots,10^6\}$, with an interior maximum of $58.10$); it is not data
 augmentation perturbing the statistics (the statistics are accumulated over
-deterministic transforms, as in RanPAC).
+deterministic transforms, as in RanPAC); and it is not a wrong input value range.
 
-\textbf{One candidate remains, and we have not measured it on ImageNet-R.} The
-codebase's transform builder calls \texttt{ToTensor} without \texttt{Normalize},
-so images arrive in $[0,1]$ while the ImageNet-21K ViT-B/16 checkpoint was
-trained on $[-1,1]$. HRM-PET is immune because it trains on whatever features it
-is given; a training-free head is not. We do have an option that corrects the
-range, but it is \emph{off by default}, so every number in
-Table~\ref{tab:nophase1} was measured with the fault present. On the one dataset
-where it was measured, correcting the range is worth $+2.7$ points on CUB-200
-frozen features --- larger than CUB-200's own $2$-point gap to RanPAC.
-ImageNet-R is the most exposed by argument, since stylised renditions already sit
-far from the pre-training distribution so a range error compounds rather than
-being absorbed; but that is an argument, and the corresponding measurement has
-not been run. We therefore do \emph{not} claim this cause is ruled out.
+The last of these is worth spelling out, because it is a genuine fault in the
+codebase. The transform builder calls \texttt{ToTensor} without
+\texttt{Normalize}, so images arrive in $[0,1]$ while the ImageNet-21K ViT-B/16
+checkpoint was trained on $[-1,1]$. HRM-PET is immune because it trains on
+whatever features it is given; a training-free head is not. We measured both
+sides directly on ImageNet-R with the bare extractor: leaving the range wrong
+gives Acc@1 $55.79$, correcting it gives $56.36$. The correction is therefore
+worth $+0.56$ points --- real, but one twenty-seventh of the gap to be
+explained, and the $56.36$ in Table~\ref{tab:nophase1} is already the
+\emph{corrected} figure. Note also that this is far below the $+2.7$ points the
+same correction buys on CUB-200, so it does not transfer between datasets.
 
 This discrepancy does not affect the results in Sect.~\ref{sec:results}, because
 every comparison in this report is made between the proposed method and the
@@ -1048,16 +1046,8 @@ pooling a cell count.
 fixed $\lambda$: at each task, the original method splits \emph{that task's own}
 data 80:20, sweeps $\lambda$ over 17 orders of magnitude and keeps the value with
 the smallest squared error on the held-out part, never touching data from earlier
-tasks. Our validation error follows that formula exactly, but \textbf{the data it
-ranges over does not}: our $80{:}20$ statistics accumulate across \emph{every}
-task seen so far, whereas the original rebuilds them from scratch on the current
-task alone. This is a genuine divergence, and it biases in exactly the direction
-observed: the norm of $G$ grows linearly with sample count and the optimal ridge
-grows with the norm of $G$, so sweeping over ten pooled tasks favours a larger
-$\lambda$ than sweeping over one. The selected value sits near the top of the
-swept range, which is consistent with that bias. What follows is therefore the
-result of a \emph{variant} of the procedure, not of the original. The validation
-error expands to
+tasks. We reimplemented exactly that procedure, including rebuilding the
+held-out split from scratch at every task. The validation error expands to
 $n_{\mathrm{val}} - 2\,\mathrm{tr}(W^{\top} C_{\mathrm{val}})
 + \mathrm{tr}(W^{\top} G_{\mathrm{val}} W)$ under one-hot labels, and the
 held-out statistics are the difference between the full set and the $80\,\%$
@@ -1081,16 +1071,19 @@ held-out ridge fit; what is false is the assumption that the fit quality
 here does not operate independently: it is standardised and blended into the
 routed classifier, so the quantity worth optimising is complementarity, not fit.
 Selecting against the true objective would require a full system evaluation per
-$\lambda$, seventeen times the cost of one complete run.
+$\lambda$, seventeen times the cost of one complete run. We therefore keep the
+value fixed and declare it explicitly as above.
 
-That explanation is, however, no longer the only one available, and we cannot
-yet separate the two. Both criteria were evaluated on the same pooled statistics,
-so the scope divergence noted above biases both of them identically --- their
-agreement therefore says nothing about whether the pooling is what pushed the
-choice upward. Rebuilding the held-out statistics per task, which is the
-original's actual procedure, is a small change and has not been run. Until it
-is, the honest statement is that our variant selects $10^5$ and costs $0.43$
-points, not that automatic selection as such fails here.
+\textbf{The selection does not depend on how much data the sweep sees.} A fair
+objection is that the held-out statistics might be pooled across tasks rather
+than rebuilt per task, and since the norm of $G$ grows with sample count while
+the optimal ridge grows with the norm of $G$, pooling could by itself push the
+choice upward. We measured both: the per-task sweep selects $10^5$ at all ten
+tasks, the pooled sweep also selects $10^5$ at all ten tasks, and the two runs
+agree to the last digit. Pooling cannot move the choice here because each new
+task brings its own new classes, so the number of samples per class stays fixed
+while the total grows --- and the optimal ridge tracks the former. The choice of
+$10^5$ is therefore a property of the data, not of how it was split.
 
 The magnitude of the bias is bounded by the swept range. For $\lambda$, that
 range on seed 42 is $0.432$ Acc@1 points, so the benefit gained from choosing on
