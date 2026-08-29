@@ -917,10 +917,13 @@ Chuẩn hóa đặc trưng trước khi chiếu ($\ell_2$ hoặc chia cho chuẩ
   & thang đo thô của đặc trưng không phải vấn đề; chuẩn hóa xóa mất thông tin độ
     lớn mà nghiệm ridge đang dùng \\
 \addlinespace
-Dùng riêng đầu RP, bỏ hoàn toàn định tuyến
+Dùng riêng đầu RP trên đặc trưng của mạng xương sống \emph{chưa thích nghi},
+bỏ hoàn toàn định tuyến
   & CUB-200 $87.96$ so với $86.53$; ImageNet-R $56.36$ so với $74.02$
   & bộ phân lớp không huấn luyện phụ thuộc hoàn toàn vào chất lượng đặc trưng
-    được cung cấp \\
+    được cung cấp. Trên chính đặc trưng LoRA mà hệ thống dùng, cùng đầu RP đó
+    đạt $70.08$ trên ImageNet-R (Bảng \ref{tab:cls}) --- con số $56.36$ đo mạng
+    xương sống trần, không đo đầu RP \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -1231,9 +1234,12 @@ công nên bộ này chưa được đưa vào đánh giá.
 \section{Kết luận}
 
 Hai tầng hợp nhất, cùng đặt ở giai đoạn suy luận và không yêu cầu huấn luyện
-lại, cải thiện $17$ trong $18$ phép so sánh trên ba bộ dữ liệu và bốn seed. Tầng
-định tuyến khai thác tính bổ trợ giữa hai nguồn tín hiệu vốn cho kết quả sai
-trên những tập mẫu khác nhau. Tầng phân lớp khai thác thực tế rằng nguồn thứ hai
+lại, cải thiện chắc chắn trên hai trong ba trục đo: định tuyến tăng $+1.10$ đến
+$+2.26$ điểm và phân lớp tăng $+0.69$ đến $+1.50$ điểm, ở cả ba bộ dữ liệu và
+bốn seed, với mức tăng lớn hơn độ lệch chuẩn giữa các seed nhiều lần. Trục ghi
+nhớ không cho thấy thay đổi phân biệt được với không, và chúng tôi không tuyên
+bố gì ở đó. Tầng định tuyến khai thác tính bổ trợ giữa hai nguồn tín hiệu vốn
+cho kết quả sai trên những tập mẫu khác nhau. Tầng phân lớp khai thác thực tế rằng nguồn thứ hai
 bản thân nó đã là một bộ phân lớp hoàn chỉnh nhưng bị kiến trúc gốc bỏ qua.
 
 Cơ chế cổng theo biên là thành phần giúp tầng thứ hai không phải trả giá trên

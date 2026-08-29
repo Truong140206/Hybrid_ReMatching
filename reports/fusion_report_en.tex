@@ -941,10 +941,13 @@ Normalise the features before projecting ($\ell_2$, or divide by the mean norm)
   & the raw feature scale is not the problem; normalising discards the magnitude
     information the ridge solution is using \\
 \addlinespace
-Use the RP head alone, dropping routing entirely
+Use the RP head alone on \emph{unadapted} backbone features, dropping routing
+entirely
   & CUB-200 $87.96$ against $86.53$; ImageNet-R $56.36$ against $74.02$
   & a training-free classifier depends entirely on the quality of the features
-    it is given \\
+    it is given. On the LoRA features the system actually uses, the same head
+    reaches $70.08$ on ImageNet-R (Table~\ref{tab:cls}) --- the $56.36$
+    measures the bare backbone, not the head \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -1267,9 +1270,12 @@ downloaded manually and that benchmark has therefore not been evaluated.
 \section{Conclusion}
 
 Two fusion stages, both placed at inference time and requiring no retraining,
-improve $17$ of $18$ comparisons across three benchmarks and four seeds. The
-routing stage exploits the complementarity between two evidence sources that
-fail on different sets of samples. The classification stage exploits the fact
+improve two of the three measured axes solidly: routing by $+1.10$ to $+2.26$
+points and classification by $+0.69$ to $+1.50$, across three benchmarks and
+four seeds, with gains several times the seed-to-seed standard deviation. The
+retention axis shows no change distinguishable from zero and we claim nothing
+there. The routing stage exploits the complementarity between two evidence
+sources that fail on different sets of samples. The classification stage exploits the fact
 that the second source is itself a complete classifier that the original
 architecture ignores.
 
