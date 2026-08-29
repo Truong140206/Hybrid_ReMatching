@@ -1140,48 +1140,84 @@ quantity and then reporting that same quantity as a finding is circular. This is
 why Sect.~\ref{sec:results} states the result along three axes instead of
 pooling a cell count.
 
-\textbf{Automatic selection was tried, and it is worse.} RanPAC does not use a
-fixed $\lambda$: at each task, the original method splits \emph{that task's own}
-data 80:20, sweeps $\lambda$ over 17 orders of magnitude and keeps the value with
-the smallest squared error on the held-out part, never touching data from earlier
-tasks. We reimplemented exactly that procedure, including rebuilding the
-held-out split from scratch at every task. The validation error expands to
+\textbf{Automatic selection was implemented, and it gives the same result.}
+RanPAC does not use a fixed $\lambda$: at each task, the original splits
+\emph{that task's own} data 80:20, sweeps $\lambda$ over 17 orders of magnitude
+and keeps the best value on the held-out part, never touching data from earlier
+tasks. We reimplemented exactly that, including rebuilding the held-out split
+from scratch at every task, and tried three scoring criteria.
+
+The first two are closed-form in the accumulated statistics, so they store no
+features at all. \emph{Squared error} is the original's:
 $n_{\mathrm{val}} - 2\,\mathrm{tr}(W^{\top} C_{\mathrm{val}})
-+ \mathrm{tr}(W^{\top} G_{\mathrm{val}} W)$ under one-hot labels, and the
-held-out statistics are the difference between the full set and the $80\,\%$
-set, so the whole sweep is closed-form over quantities that are already being
-accumulated: no feature has to be stored, and the exemplar-free property is
-preserved.
-
-On ImageNet-R seed 42, this procedure selects $\lambda = 10^5$ at all ten tasks
-and yields Acc@1 $75.0795$, which is $0.43$ points below the hand-tuned value. We
-then tried a second criterion, invariant to the scale of $W$ ---
++ \mathrm{tr}(W^{\top} G_{\mathrm{val}} W)$ under one-hot labels.
+\emph{Cosine} is the variant invariant to the scale of $W$,
 $\mathrm{tr}(W^{\top} C_{\mathrm{val}}) /
-\sqrt{\mathrm{tr}(W^{\top} G_{\mathrm{val}} W)\, n_{\mathrm{val}}}$ --- because
-the standardisation in \eqref{eq:affine} discards all magnitude information. That
-criterion selects the same value $10^5$ and gives results identical to the last
-digit.
+\sqrt{\mathrm{tr}(W^{\top} G_{\mathrm{val}} W)\, n_{\mathrm{val}}}$. Both select
+$10^5$ at all ten tasks and yield Acc@1 $75.0795$, $0.43$ points below the fixed
+value.
 
-Two independent criteria converging on one value shows that the problem is not
-in the measurement. On this data $\lambda = 10^5$ genuinely does give the best
-held-out ridge fit; what is false is the assumption that the fit quality
-\emph{of the RP head alone} predicts the quality of the fused system. The RP head
-here does not operate independently: it is standardised and blended into the
-routed classifier, so the quantity worth optimising is complementarity, not fit.
-Selecting against the true objective would require a full system evaluation per
-$\lambda$, seventeen times the cost of one complete run. We therefore keep the
-value fixed and declare it explicitly as above.
+We first read that as evidence that fit quality fails to predict the quality of
+the fused system. That reading was wrong. Measuring the RP head \emph{on its
+own} on ImageNet-R gives Acc@1 $68.78$, $69.14$, $70.08$, $69.62$, $66.26$ for
+$\lambda$ from $10^2$ to $10^6$: its own accuracy also peaks at $10^4$, and
+choosing $10^5$ costs $0.46$ points standalone against $0.43$ points fused. The
+loss passes straight through the blend rather than arising from it. The problem
+is simply that squared error does not predict top-1: one-hot labels leave the
+residual dominated by the wrong classes.
 
-\textbf{The selection does not depend on how much data the sweep sees.} A fair
-objection is that the held-out statistics might be pooled across tasks rather
-than rebuilt per task, and since the norm of $G$ grows with sample count while
-the optimal ridge grows with the norm of $G$, pooling could by itself push the
-choice upward. We measured both: the per-task sweep selects $10^5$ at all ten
-tasks, the pooled sweep also selects $10^5$ at all ten tasks, and the two runs
-agree to the last digit. Pooling cannot move the choice here because each new
-task brings its own new classes, so the number of samples per class stays fixed
-while the total grows --- and the optimal ridge tracks the former. The choice of
-$10^5$ is therefore a property of the data, not of how it was split.
+The third criterion therefore scores held-out \emph{top-1} directly. Accuracy
+cannot be computed from $G$ and $C$, so it keeps the projected features of the
+held-out fifth of the task being learned --- exactly as the original's own
+implementation does --- and discards them at the task boundary, so data from
+past tasks is never retained. The statistics are pooled across tasks, so the
+ridge solution spans every class seen so far and the scoring measures the
+problem the deployed head actually faces.
+
+\begin{table}[htbp]
+\centering
+\caption{Selecting $\lambda$ by held-out top-1, against the fixed $10^4$. Acc@1,
+seed 42, full system. The last column is the value selected at the tenth task,
+which is the one that determines the final result.}
+\label{tab:lambda-auto}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Dataset & Fixed $10^4$ & Automatic & Difference & $\lambda$ at task 10 \\
+\midrule
+ImageNet-R & 75.5116 & 75.5116 & $0.000$  & $10^4$ \\
+CIFAR-100  & 90.5300 & 90.5800 & $+0.050$ & $10^3$ \\
+CUB-200    & 87.8247 & 87.8214 & $-0.003$ & $10^{-7}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{The finding worth having is not that selection works, but that this
+hyperparameter is barely load-bearing.} The last column of
+Table~\ref{tab:lambda-auto} says more than the difference column: on CUB-200 the
+final task selected $10^{-7}$ --- \emph{eleven orders of magnitude} below the
+fixed value --- and the result moved by $0.003$ points. The reason is that
+CUB-200 supplies only $4796$ fitting samples against $10^4$ projected
+dimensions, so the Gram matrix is heavily rank-deficient and the ridge solution
+tends to the minimum-norm one as $\lambda$ goes to zero, leaving the ranking
+intact. On CIFAR-100 the sweep selects $10^4$ at eight of ten tasks and $10^3$ at
+the last, a difference of $0.05$ points. Only on ImageNet-R does the value
+genuinely matter, and there the full five-value range spans just $0.432$ points.
+
+\textbf{We keep the fixed value.} The mean difference across the three datasets
+is $+0.016$ points, which is noise, while the sweep costs seventeen Cholesky
+factorisations of a $10^4 \times 10^4$ matrix per task. More importantly, on
+ImageNet-R the selection is \emph{not} stable: it picks $10^3$ once, $10^4$ four
+times and $10^5$ five times, and summing all $26\,461$ held-out samples over the
+ten tasks leaves $10^5$ ahead of $10^4$ by $67$ samples. The exact match in the
+table above comes from the final task choosing correctly, not from the criterion
+being reliable on that dataset. Making such a mechanism the default would add a
+source of variance in exchange for nothing.
+
+\textbf{The remaining limitation is the protocol, not the criterion.} The
+held-out set is always drawn from the newest task, while evaluation spans every
+task learned so far. Samples from old tasks --- precisely where over-regularisation
+hurts most --- never appear in any held-out set, and the exemplar-free protocol
+forbids retaining anything from them. No choice of criterion overcomes that.
 
 The magnitude of the bias is bounded by the swept range. For $\lambda$, that
 range on seed 42 is $0.432$ Acc@1 points, so the benefit gained from choosing on

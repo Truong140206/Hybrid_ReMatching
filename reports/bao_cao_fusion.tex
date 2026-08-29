@@ -1108,45 +1108,81 @@ seed --- tự nó đã là một phép đếm số ô cải thiện. Chọn cấ
 một đại lượng rồi báo cáo chính đại lượng đó như phát hiện là một vòng tròn. Đây
 là lý do Mục \ref{sec:results} phát biểu theo ba trục thay vì đếm gộp số ô.
 
-\textbf{Đã thử phương án tự chọn, và nó kém hơn.} RanPAC không dùng
+\textbf{Đã cài phương án tự chọn, và nó cho cùng kết quả.} RanPAC không dùng
 $\lambda$ cố định: ở mỗi tác vụ, bài gốc chia dữ liệu \emph{của chính tác vụ đó}
-theo tỉ lệ 80:20, quét $\lambda$ qua 17 bậc độ lớn và giữ giá trị cho sai số bình
-phương nhỏ nhất trên phần giữ lại, không đụng dữ liệu tác vụ cũ. Chúng tôi đã cài lại
-đúng quy trình đó, bao gồm cả việc dựng lại phần giữ lại từ đầu ở mỗi tác vụ.
-Sai số kiểm định khai triển được thành
+theo tỉ lệ 80:20, quét $\lambda$ qua 17 bậc độ lớn và giữ giá trị tốt nhất trên
+phần giữ lại, không đụng dữ liệu tác vụ cũ. Chúng tôi đã cài lại đúng quy trình
+đó, bao gồm cả việc dựng lại phần giữ lại từ đầu ở mỗi tác vụ, và thử ba tiêu chí
+chấm điểm.
+
+Hai tiêu chí đầu ở dạng đóng, tính thẳng từ các thống kê đã cộng dồn nên không
+cần lưu đặc trưng nào. \emph{Sai số bình phương} là tiêu chí của bài gốc:
 $n_{\mathrm{val}} - 2\,\mathrm{tr}(W^{\top} C_{\mathrm{val}})
-+ \mathrm{tr}(W^{\top} G_{\mathrm{val}} W)$ với nhãn one-hot, và thống kê giữ lại
-là hiệu giữa bộ đầy đủ với bộ $80\,\%$, nên cả phép quét ở dạng đóng trên những
-đại lượng vốn đã cộng dồn: không đặc trưng nào phải lưu, và tính không lưu mẫu
-được bảo toàn.
-
-Trên ImageNet-R seed 42, quy trình này chọn $\lambda = 10^5$ ở cả mười tác vụ và
-cho Acc@1 $75.0795$, kém giá trị chỉnh tay $0.43$ điểm. Chúng tôi thử tiếp một
-tiêu chí thứ hai, bất biến với thang đo của $W$ ---
++ \mathrm{tr}(W^{\top} G_{\mathrm{val}} W)$ với nhãn one-hot. \emph{Cosine} là
+biến thể bất biến với thang đo của $W$,
 $\mathrm{tr}(W^{\top} C_{\mathrm{val}}) /
-\sqrt{\mathrm{tr}(W^{\top} G_{\mathrm{val}} W)\, n_{\mathrm{val}}}$ --- vì phép
-chuẩn hóa ở (\ref{eq:affine}) loại bỏ mọi thông tin về độ lớn. Tiêu chí này chọn
-đúng cùng giá trị $10^5$ và cho kết quả trùng đến từng chữ số.
+\sqrt{\mathrm{tr}(W^{\top} G_{\mathrm{val}} W)\, n_{\mathrm{val}}}$. Cả hai chọn
+$10^5$ ở cả mười tác vụ và cho Acc@1 $75.0795$, kém giá trị cố định $0.43$ điểm.
 
-Hai tiêu chí độc lập cùng hội tụ về một giá trị cho thấy vấn đề không nằm ở cách
-đo. Trên dữ liệu này $\lambda = 10^5$ thật sự cho nghiệm ridge khớp dữ liệu giữ
-lại tốt nhất; điều không đúng là giả định rằng chất lượng khớp \emph{của riêng
-đầu RP} dự báo được chất lượng của hệ hợp nhất. Đầu RP ở đây không hoạt động độc
-lập mà được chuẩn hóa rồi trộn vào đầu phân lớp đã định tuyến, nên đại lượng đáng
-tối ưu là mức bổ trợ chứ không phải mức khớp. Chọn theo mục tiêu thật đòi hỏi
-đánh giá toàn hệ cho từng $\lambda$, tức đắt gấp mười bảy lần một lượt chạy đầy
-đủ. Chúng tôi vì vậy giữ giá trị cố định và khai báo rõ như trên.
+Điều đó ban đầu bị chúng tôi đọc là bằng chứng rằng chất lượng khớp không dự báo
+được chất lượng của hệ hợp nhất. Cách đọc ấy sai. Đo riêng đầu RP dùng một mình
+trên ImageNet-R cho Acc@1 $68.78$, $69.14$, $70.08$, $69.62$, $66.26$ ứng với
+$\lambda$ từ $10^2$ đến $10^6$: độ chính xác \emph{của chính nó} cũng đạt đỉnh ở
+$10^4$, và mức thiệt khi chọn $10^5$ là $0.46$ điểm dùng riêng so với $0.43$ điểm
+sau khi trộn. Thiệt hại đi thẳng qua phép trộn chứ không sinh ra từ đó. Vấn đề
+đơn giản là sai số bình phương không dự báo được top-1: nhãn one-hot khiến phần
+dư bị chi phối bởi các lớp sai.
 
-\textbf{Lựa chọn này không phụ thuộc vào lượng dữ liệu phép quét nhìn thấy.} Một
-phản biện hợp lý là bộ thống kê giữ lại có thể được gộp qua nhiều tác vụ thay vì
-dựng lại theo từng tác vụ, và vì chuẩn của $G$ tăng theo số mẫu còn nghiệm ridge
-tối ưu tăng theo chuẩn của $G$, phép gộp có thể tự nó đẩy lựa chọn lên cao. Chúng
-tôi đã đo cả hai: quét theo từng tác vụ chọn $10^5$ ở cả mười tác vụ, quét trên
-thống kê gộp cũng chọn $10^5$ ở cả mười tác vụ, và hai lượt cho kết quả trùng đến
-từng chữ số. Lý do phép gộp không dịch được lựa chọn là mỗi tác vụ mới mang theo
-lớp mới của nó, nên số mẫu trên mỗi lớp giữ nguyên trong khi tổng số mẫu tăng ---
-mà nghiệm ridge tối ưu bám theo đại lượng thứ nhất. Lựa chọn $10^5$ vì vậy là
-tính chất của dữ liệu, không phải của cách chia.
+Tiêu chí thứ ba vì vậy chấm thẳng \emph{top-1 trên phần giữ lại}. Độ chính xác
+không tính được từ $G$ và $C$ nên nó cần giữ đặc trưng đã chiếu của phần giữ lại
+thuộc tác vụ đang học --- đúng như cài đặt của bài gốc vẫn làm --- và bỏ chúng ở
+ranh giới tác vụ, nên dữ liệu tác vụ cũ không bao giờ được lưu. Thống kê thì được
+gộp qua các tác vụ, để nghiệm ridge trải trên mọi lớp đã gặp và phép chấm điểm đo
+đúng bài toán mà đầu phân lớp thật sự đối mặt.
+
+\begin{table}[htbp]
+\centering
+\caption{Tự chọn $\lambda$ theo top-1 trên phần giữ lại, so với giá trị cố định
+$10^4$. Acc@1, seed 42, hệ thống đầy đủ. Cột cuối là giá trị được chọn ở tác vụ
+thứ mười, tức giá trị quyết định kết quả cuối.}
+\label{tab:lambda-auto}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Bộ dữ liệu & Cố định $10^4$ & Tự chọn & Chênh & $\lambda$ ở tác vụ 10 \\
+\midrule
+ImageNet-R & 75.5116 & 75.5116 & $0.000$  & $10^4$ \\
+CIFAR-100  & 90.5300 & 90.5800 & $+0.050$ & $10^3$ \\
+CUB-200    & 87.8247 & 87.8214 & $-0.003$ & $10^{-7}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Phát hiện đáng giá không phải là phép tự chọn chạy được, mà là siêu tham
+số này gần như không gánh vác gì.} Cột cuối của Bảng \ref{tab:lambda-auto} nói rõ
+hơn cột chênh lệch: trên CUB-200, tác vụ cuối chọn $10^{-7}$ --- thấp hơn giá trị
+cố định \emph{mười một bậc độ lớn} --- mà kết quả chỉ dịch $0.003$ điểm. Nguyên
+nhân là CUB-200 chỉ có $4796$ mẫu khớp trên $10^4$ chiều chiếu, nên ma trận Gram
+thiếu hạng nặng và nghiệm ridge tiến về nghiệm chuẩn nhỏ nhất khi $\lambda$ về
+không, giữ nguyên thứ hạng. Trên CIFAR-100, phép quét chọn $10^4$ ở tám trong
+mười tác vụ và $10^3$ ở tác vụ cuối, chênh nhau $0.05$ điểm. Chỉ trên ImageNet-R
+giá trị mới thật sự quan trọng, và ở đó cả dải năm giá trị cũng chỉ trải $0.432$
+điểm.
+
+\textbf{Chúng tôi giữ giá trị cố định.} Mức chênh trung bình trên ba bộ là
+$+0.016$ điểm, tức nhiễu, trong khi phép quét tốn thêm mười bảy phép phân rã
+Cholesky của một ma trận $10^4 \times 10^4$ ở mỗi tác vụ. Quan trọng hơn, trên
+ImageNet-R phép chọn \emph{không} ổn định: nó chọn $10^3$ một lần, $10^4$ bốn
+lần và $10^5$ năm lần, và khi cộng toàn bộ $26\,461$ mẫu giữ lại qua mười tác vụ
+thì $10^5$ vẫn hơn $10^4$ đúng $67$ mẫu. Con số trùng khít ở bảng trên đến từ
+việc tác vụ cuối chọn đúng, không đến từ việc tiêu chí đáng tin ở bộ dữ liệu đó.
+Đưa một cơ chế như vậy vào làm mặc định là thêm một nguồn dao động để đổi lấy
+không gì cả.
+
+\textbf{Giới hạn còn lại nằm ở giao thức, không ở tiêu chí.} Tập giữ lại luôn
+luôn lấy từ tác vụ mới nhất, trong khi đánh giá trải trên mọi tác vụ đã học. Mẫu
+của các tác vụ cũ --- đúng chỗ mà điều chuẩn quá tay gây hại nhất --- không bao
+giờ có mặt trong bất kỳ tập giữ lại nào, và giao thức không lưu mẫu cấm giữ lại
+bất cứ thứ gì từ chúng. Không tiêu chí nào vượt qua được điều đó.
 
 Độ lớn của thiên lệch bị chặn bởi dải quét. Với $\lambda$, dải trên seed 42 là
 $0.432$ điểm Acc@1, tức phần lợi thu được từ việc chọn trên chính seed đó nhiều
