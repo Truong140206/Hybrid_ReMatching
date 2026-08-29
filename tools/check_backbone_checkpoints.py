@@ -37,6 +37,7 @@ TARGETS = [
     ('iBOT-1K',   'checkpoint_teacher.pth',        'state_dict', ''),
     ('iBOT-21K',  'checkpoint.pth',                'teacher',    'backbone.'),
     ('MoCo v3',   'mocov3-vit-base-300ep.pth',     'model',      ''),
+    ('DINO-1K',   'dino_vitbase16_pretrain.pth',  None,       ''),
 ]
 
 
@@ -50,7 +51,7 @@ def reference_state_dict():
 
 def convert_mocov3(path, reference):
     """Facebook's file -> what the loader expects, or explain why it cannot."""
-    raw = torch.load(path, map_location='cpu')
+    raw = torch.load(path, map_location='cpu', weights_only=False)
     if isinstance(raw, dict) and 'model' in raw:
         print('    already has a "model" key; leaving it alone')
         return False
@@ -98,14 +99,15 @@ def main():
         if label.startswith('MoCo') and args.convert:
             convert_mocov3(path, reference)
 
-        raw = torch.load(path, map_location='cpu')
-        if not isinstance(raw, dict) or top_key not in raw:
+        raw = torch.load(path, map_location='cpu', weights_only=False)
+        if top_key is not None and (
+                not isinstance(raw, dict) or top_key not in raw):
             print('    FAIL: loader reads ["%s"], file has %s\n'
                   % (top_key, list(raw)[:8] if isinstance(raw, dict) else type(raw)))
             ok = False
             continue
 
-        ckpt = raw[top_key]
+        ckpt = raw if top_key is None else raw[top_key]
         renamed = ({k.replace(strip, ''): v for k, v in ckpt.items()}
                    if strip else dict(ckpt))
         hit = sum(1 for k in renamed if k in reference)

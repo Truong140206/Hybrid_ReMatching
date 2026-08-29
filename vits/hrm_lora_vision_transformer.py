@@ -1484,7 +1484,7 @@ def vit_base_patch16_224_deit(pretrained=False, **kwargs):
     model = _create_vision_transformer('vit_base_patch16_224_in21k', pretrained=False, **model_kwargs)
     #del model.head
     state_dict = model.state_dict()
-    ckpt = torch.load('./checkpoints/deit_base_patch16_224-b5f2ef4d.pth', map_location='cpu')['model']
+    ckpt = torch.load('./checkpoints/deit_base_patch16_224-b5f2ef4d.pth', map_location='cpu', weights_only=False)['model']
     not_in_k = [k for k in ckpt.keys() if k not in state_dict.keys()]
     head = [k for k in ckpt.keys() if 'head' in k]
     for k in not_in_k:
@@ -1506,7 +1506,7 @@ def vit_base_patch16_224_dino(pretrained=False, **kwargs):
     model = _create_vision_transformer('vit_base_patch16_224_in21k', pretrained=False, **model_kwargs)
     #del model.head
     state_dict = model.state_dict()
-    ckpt = torch.load('./checkpoints/dino_vitbase16_pretrain.pth', map_location='cpu')
+    ckpt = torch.load('./checkpoints/dino_vitbase16_pretrain.pth', map_location='cpu', weights_only=False)
     not_in_k = [k for k in ckpt.keys() if k not in state_dict.keys()]
     for k in not_in_k:
         del ckpt[k]
@@ -1525,7 +1525,7 @@ def vit_base_patch16_224_ibot(pretrained=False, **kwargs):
     model = _create_vision_transformer('vit_base_patch16_224_in21k', pretrained=False, **model_kwargs)
     #del model.head
     state_dict = model.state_dict()
-    ckpt = torch.load('./checkpoints/checkpoint_teacher.pth', map_location='cpu')['state_dict']
+    ckpt = torch.load('./checkpoints/checkpoint_teacher.pth', map_location='cpu', weights_only=False)['state_dict']
     not_in_k = [k for k in ckpt.keys() if k not in state_dict.keys()]
     for k in not_in_k:
         del ckpt[k]
@@ -1543,7 +1543,7 @@ def vit_base_patch16_224_21k_ibot(pretrained=False, **kwargs):
     model = _create_vision_transformer('vit_base_patch16_224_in21k', pretrained=False, **model_kwargs)
     # del model.head
     state_dict = model.state_dict()
-    s_ckpt = torch.load('./checkpoints/checkpoint.pth', map_location='cpu')['teacher']
+    s_ckpt = torch.load('./checkpoints/checkpoint.pth', map_location='cpu', weights_only=False)['teacher']
     ckpt = {}
     for key, val in s_ckpt.items():
         new_key = key.replace('backbone.', '')
@@ -1567,7 +1567,7 @@ def vit_base_patch16_224_mocov3(pretrained=False, **kwargs):
         patch_size=16, embed_dim=768, depth=12, num_heads=12, fc_norm=True, **kwargs)
     model = _create_vision_transformer('vit_base_patch16_224_in21k', pretrained=False, **model_kwargs)
     # del model.head
-    ckpt = torch.load('./checkpoints/mocov3-vit-base-300ep.pth', map_location='cpu')['model']
+    ckpt = torch.load('./checkpoints/mocov3-vit-base-300ep.pth', map_location='cpu', weights_only=False)['model']
     state_dict = model.state_dict()
     not_in_k = [k for k in ckpt.keys() if k not in state_dict.keys()]
     for k in not_in_k:
@@ -1593,11 +1593,11 @@ def vit_base_patch16_224_mae(pretrained=False, adapter=False, **kwargs):
     model = _create_vision_transformer('vit_base_patch16_224_in21k', pretrained=False, **model_kwargs)
     del model.head
     last_block = deepcopy(model.blocks[-1])
-    ckpt = torch.load('./checkpoints/mae_pretrain_vit_base.pth', map_location='cpu')['model']
+    ckpt = torch.load('./checkpoints/mae_pretrain_vit_base.pth', map_location='cpu', weights_only=False)['model']
     state_dict = model.state_dict()
     state_dict.update(ckpt)
     model.load_state_dict(state_dict)
-    # model.load_state_dict(torch.load('mae_pretrain_vit_base.pth', map_location='cpu')['model'])
+    # model.load_state_dict(torch.load('mae_pretrain_vit_base.pth', map_location='cpu', weights_only=False)['model'])
     # del model.norm
     # model.norm = nn.LayerNorm(768)
     # model.blocks[-1] = last_block
@@ -1613,7 +1613,7 @@ def vit_small_patch16_224_ims(pretrained=False, **kwargs):
     model = _create_vision_transformer('vit_small_patch16_224_in21k', pretrained=False, **model_kwargs)
     #del model.head
     state_dict = model.state_dict()
-    ckpt = torch.load('./checkpoints/best_checkpoint.pth', map_location='cpu')['model']
+    ckpt = torch.load('./checkpoints/best_checkpoint.pth', map_location='cpu', weights_only=False)['model']
     ckpt_keys = ckpt.keys()
     not_in_k = [k for k in ckpt.keys() if k not in state_dict.keys()]
     head = [k for k in ckpt.keys() if 'head' in k]
