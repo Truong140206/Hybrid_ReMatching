@@ -54,7 +54,9 @@ thức không lưu mẫu (exemplar-free). Trên ba bộ dữ liệu học liên 
 độ chính xác định tuyến tăng từ $+1.10$ đến $+2.26$ điểm và độ chính xác phân
 lớp tăng từ $+0.69$ đến $+1.50$ điểm; ở cả hai trục, mức tăng lớn hơn độ lệch
 chuẩn giữa các seed nhiều lần. Hai chỉ số ghi nhớ không cho thấy thay đổi phân
-biệt được với không, và chúng tôi không tuyên bố cải thiện ở đó. Chi phí tính toán tăng thêm đúng bằng một lượt truyền xuôi (forward pass)
+biệt được với không, và chúng tôi không tuyên bố cải thiện ở đó. Mức cải thiện giữ nguyên trên năm mạng xương sống
+ViT-B/16 khác nhau về cách tiền huấn luyện: mốc trải $5.6$ điểm trong khi
+mức cải thiện chỉ trải $0.9$ điểm. Chi phí tính toán tăng thêm đúng bằng một lượt truyền xuôi (forward pass)
 trên mỗi mẫu.
 \end{abstract}
 
@@ -750,6 +752,80 @@ trong quy trình đánh giá. Thứ hai, $w$ là một tham số liên tục n�
 phương pháp đề xuất và baseline, do đó cung cấp sẵn một trục khảo sát loại bỏ
 thành phần (ablation) liên tục thay vì chỉ một so sánh nhị phân.
 
+\section{Độ bền theo mạng xương sống}
+\label{sec:backbones}
+
+Mọi con số ở trên đều đứng trên một mạng xương sống duy nhất: ViT-B/16 tiền
+huấn luyện có giám sát trên ImageNet-21K. Nếu mức cải thiện chỉ tồn tại nhờ đặc
+tính riêng của cách tiền huấn luyện đó thì phạm vi kết luận hẹp hơn nhiều so với
+vẻ ngoài của nó. Mã nguồn gốc đăng ký sẵn một họ ViT-B/16 khác nhau ở cách tiền
+huấn luyện, nên câu hỏi này trả lời được bằng phép đo chứ không cần lập luận.
+Chúng tôi huấn luyện lại toàn bộ quy trình HRM-PET --- cả TII lẫn kho LoRA, mười
+tác vụ, từ đầu --- trên bốn mạng nữa, rồi đo cả baseline lẫn phương pháp đề xuất
+qua đúng một đường mã và đúng một seed. Bảng \ref{tab:backbones} ghi
+lại kết quả.
+
+\begin{table}[htbp]
+\centering
+\caption{Năm mạng xương sống ViT-B/16 trên Split-ImageNet-R, seed 42, mười tác
+vụ. Mốc là HRM-PET ($w = 1$, $\beta = 0$); đề xuất là $w = 0.7$, $\beta = 0.5$.
+Mỗi mạng được huấn luyện lại từ đầu. Các hàng xếp theo mốc Acc@task tăng dần.}
+\label{tab:backbones}
+\begin{tabular}{@{}lrrrrrrrr@{}}
+\toprule
+& \multicolumn{3}{c}{Acc@task} & \multicolumn{3}{c}{Acc@1}
+  & \multicolumn{2}{c}{Forgetting} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-9}
+Mạng xương sống & Mốc & Đề xuất & $\Delta$ & Mốc & Đề xuất & $\Delta$
+  & Mốc & Đề xuất \\
+\midrule
+MoCo v3-$1$K  & 73.82 & 76.77 & $+2.95$ & 68.47 & 70.37 & $+1.89$ & 3.10 & 3.69 \\
+DINO-$1$K     & 75.92 & 78.86 & $+2.93$ & 70.23 & 72.91 & $+2.68$ & 3.44 & 2.87 \\
+iBOT-$1$K     & 77.59 & 80.64 & $+3.05$ & 71.89 & 74.41 & $+2.52$ & 4.44 & 3.53 \\
+Sup-$21$K     & 77.79 & 79.97 & $+2.18$ & 74.02 & 75.51 & $+1.49$ & 3.28 & 3.05 \\
+iBOT-$21$K    & 79.42 & 82.20 & $+2.78$ & 73.29 & 75.84 & $+2.55$ & 4.24 & 3.82 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Mức cải thiện gần như không đổi trong khi mốc thì không.} Mốc trải
+$5.60$ điểm Acc@task, từ $73.82$ đến $79.42$. Mức cải thiện trải $0.87$ điểm, từ
+$+2.18$ đến $+3.05$. Nghĩa là phần được cộng thêm dao động chỉ bằng khoảng một
+phần sáu so với thứ nó được cộng vào. Cũng không có xu thế đơn điệu theo độ mạnh
+của mốc: mạng cho mức tăng lớn nhất (iBOT-$1$K) và mạng cho mức tăng nhỏ nhất
+(Sup-$21$K) có mốc chênh nhau đúng $0.21$ điểm.
+
+\textbf{Cả năm đều cải thiện ở cả hai trục độ chính xác.} Không có ngoại lệ theo
+chiều ngược lại trên mười ô. Mức nhỏ nhất rơi vào Sup-$21$K, mạng duy nhất được
+tiền huấn luyện có giám sát; ba mạng tự giám sát trên ImageNet-$1$K và một trên
+ImageNet-$21$K đều cho mức lớn hơn ở cả Acc@task lẫn Acc@1. Với một seed cho mỗi
+mạng, chúng tôi ghi nhận quan sát này nhưng không diễn giải nguyên nhân.
+
+\textbf{Trên trục ghi nhớ, phép đo này đã sửa một kết luận sớm.} Khi mới chỉ có
+MoCo v3, Forgetting xấu đi --- $3.10$ lên $3.69$ --- và cách đọc tự nhiên là coi
+đó như cái giá phải trả cho việc trộn thêm tín hiệu. Ba mạng đo sau đều đi ngược
+lại: DINO $3.44$ xuống $2.87$, iBOT-$1$K $4.44$ xuống $3.53$, iBOT-$21$K $4.24$
+xuống $3.82$, cùng với Sup-$21$K $3.28$ xuống $3.05$. Bốn trên năm cải thiện, và
+MoCo v3 là ngoại lệ chứ không phải quy luật. Điều này không nâng trục ghi nhớ
+lên thành một tuyên bố: kết luận \emph{không có bằng chứng phân biệt được với
+không} ở Mục \ref{sec:results} vẫn giữ nguyên, vì nó dựa trên bốn seed còn ở đây
+mỗi mạng chỉ có một.
+
+\textbf{Hàng Sup-$21$K ở đây là seed $42$ đơn lẻ}, không phải trung bình bốn seed
+của Bảng \ref{tab:main}, để năm hàng dùng chung một cách tổng hợp. Hai con số mốc
+của hàng đó chính là hai con số đã xuất hiện ở Mục \ref{sec:sanity}. Hai cách
+tổng hợp cho kết quả thống nhất: seed $42$ cho $+2.18$ điểm Acc@task, trung bình
+bốn seed cho $+2.264 \pm 0.158$.
+
+\textbf{Phạm vi.} Một bộ dữ liệu, một seed cho mỗi mạng, năm mạng. Và bộ
+dữ liệu đó chính là bộ mà cả ba siêu tham số được chọn trên đó (Mục
+\ref{sec:limits}), nên bảng này kiểm tra độ bền theo mạng xương sống chứ
+không bổ sung gì cho phần bằng chứng độc lập với quá trình chọn siêu tham
+số --- phần đó vẫn là $11$ ô của CIFAR-100 và CUB-200. Mạng thứ sáu
+mà mã nguồn có đăng ký, MAE, chưa được đo. Chi phí là lý do: mỗi hàng của bảng
+đòi hỏi huấn luyện lại từ đầu, khoảng $1000$ giây cho TII và $6100$ giây cho kho
+LoRA trên một GPU RTX 4090, tức gần hai giờ cho mỗi mạng.
+
 \section{Khảo sát loại bỏ thành phần}
 
 \subsection{Trọng số hợp nhất ở cấp phân lớp}
@@ -1241,6 +1317,8 @@ nhớ không cho thấy thay đổi phân biệt được với không, và chú
 bố gì ở đó. Tầng định tuyến khai thác tính bổ trợ giữa hai nguồn tín hiệu vốn
 cho kết quả sai trên những tập mẫu khác nhau. Tầng phân lớp khai thác thực tế rằng nguồn thứ hai
 bản thân nó đã là một bộ phân lớp hoàn chỉnh nhưng bị kiến trúc gốc bỏ qua.
+
+Điều làm chúng tôi tin kết quả không phải là đặc tính riêng của một mạng xương sống: đo lại trên năm ViT-B/16 khác nhau về cách tiền huấn luyện, mốc trải $5.60$ điểm còn mức cải thiện chỉ trải $0.87$ điểm, và cả năm đều cải thiện ở cả hai trục độ chính xác.
 
 Cơ chế cổng theo biên là thành phần giúp tầng thứ hai không phải trả giá trên
 những mẫu mà mô hình gốc vốn đã dự đoán chắc chắn. Cơ chế này loại bỏ suy giảm
