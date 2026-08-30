@@ -5,8 +5,10 @@ set -euo pipefail
 #
 # The repo shipped one training script, hard-wired to ImageNet-R with Sup-21K
 # and the original author's absolute paths. Matching the original paper's
-# coverage means 4 datasets x 5 backbones x 3 seeds, so the script has to be
-# parameterised before any of that is possible.
+# coverage means 4 datasets x 5 pre-trained settings (README.md carries their
+# abstract), so the script has to be parameterised before any of that is
+# possible. Their seed count is not stated anywhere we can check; the only
+# training script they shipped loops over seed 42 alone.
 #
 # With no arguments beyond DATASET and SEED it reproduces the directory names
 # the evaluation scripts already expect, so existing checkpoints stay valid.
