@@ -89,7 +89,7 @@ PIN_FLAG=""; [[ "${RP_PIN}" == "1" ]] && PIN_FLAG="--rp_pin_extractor"
 [[ "${RP_BARE}" == "1" ]] && PIN_FLAG="--rp_pin_extractor --rp_bare_extractor"
 BARE_TAG=""; [[ "${RP_BARE}" == "1" ]] && BARE_TAG="bare"
 BACKBONE_TAG=""
-[[ "${BACKBONE}" != "vit_base_patch16_224" ]] && BACKBONE_TAG="b${BACKBONE##*_}"
+[[ "${BACKBONE}" != "vit_base_patch16_224" ]] && BACKBONE_TAG="b$(printf %s "${BACKBONE#vit_base_patch16_224_}" | tr -d _)"
 BAREM_FLAG=""
 # Tag by the last chunk of the model name so two bare runs on different
 # checkpoints cannot land on the same log path.
