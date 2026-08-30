@@ -57,9 +57,10 @@ three continual-learning benchmarks and four seeds, routing accuracy rises by
 $+1.10$ to $+2.26$ points and classification accuracy by $+0.69$ to $+1.50$
 points; on both axes the gain is several times the seed-to-seed standard
 deviation. The two retention metrics show no change distinguishable from zero,
-and we claim no improvement there. The gain survives on five ViT-B/16
-backbones differing in pretraining: the baseline spans $5.6$ points while
-the gain spans $0.9$. The added compute is exactly one forward pass
+and we claim no improvement there. The gain does not shrink as the backbone
+weakens: across six ViT-B/16 backbones differing in pretraining the
+baseline spans $27.8$ points while the gain stays between $+2.18$ and
+$+3.95$, and is largest on the weakest backbone. The added compute is exactly one forward pass
 per sample.
 \end{abstract}
 
@@ -784,17 +785,17 @@ particular pretraining, the scope of the conclusion would be far narrower than
 it appears. The original codebase registers a family of ViT-B/16 backbones that
 differ in how they were pretrained, so the question can be settled by
 measurement rather than by argument. We retrained the entire HRM-PET pipeline
---- both TII and the LoRA pool, ten tasks, from scratch --- on four further
+--- both TII and the LoRA pool, ten tasks, from scratch --- on five further
 backbones, then measured baseline and proposed method through one identical
-code path at one identical seed. Table~\ref{tab:backbones} records the
-result.
+code path at one identical seed. Table~\ref{tab:backbones} records the result.
 
 \begin{table}[htbp]
 \centering
-\caption{Five ViT-B/16 backbones on Split-ImageNet-R, seed 42, ten tasks.
+\caption{Six ViT-B/16 backbones on Split-ImageNet-R, seed 42, ten tasks.
 Baseline is HRM-PET ($w = 1$, $\beta = 0$); Proposed is $w = 0.7$,
 $\beta = 0.5$. Each backbone was retrained from scratch. Rows are ordered by
-baseline Acc@task.}
+baseline Acc@task; MAE is set apart because it falls outside the band the other
+five occupy.}
 \label{tab:backbones}
 \begin{tabular}{@{}lrrrrrrrr@{}}
 \toprule
@@ -803,6 +804,8 @@ baseline Acc@task.}
 \cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-9}
 Backbone & Base & Prop. & $\Delta$ & Base & Prop. & $\Delta$ & Base & Prop. \\
 \midrule
+MAE-$1$K      & 51.60 & 55.55 & $+3.95$ & 40.20 & 44.69 & $+4.50$ & 10.03 & 9.53 \\
+\addlinespace
 MoCo v3-$1$K  & 73.82 & 76.77 & $+2.95$ & 68.47 & 70.37 & $+1.89$ & 3.10 & 3.69 \\
 DINO-$1$K     & 75.92 & 78.86 & $+2.93$ & 70.23 & 72.91 & $+2.68$ & 3.44 & 2.87 \\
 iBOT-$1$K     & 77.59 & 80.64 & $+3.05$ & 71.89 & 74.41 & $+2.52$ & 4.44 & 3.53 \\
@@ -812,45 +815,62 @@ iBOT-$21$K    & 79.42 & 82.20 & $+2.78$ & 73.29 & 75.84 & $+2.55$ & 4.24 & 3.82 
 \end{tabular}
 \end{table}
 
-\textbf{The gain is nearly constant while the baseline is not.} The baseline
-spans $5.60$ points of Acc@task, from $73.82$ to $79.42$. The gain spans $0.87$
-points, from $+2.18$ to $+3.05$. What is being added therefore varies about one
-sixth as much as the thing it is added to. Nor is there a monotone trend in
-baseline strength: the backbone with the largest gain (iBOT-$1$K) and the one
-with the smallest (Sup-$21$K) have baselines $0.21$ points apart.
+\textbf{The gain does not shrink as the backbone weakens --- it grows.} Five of
+the backbones sit in a narrow band: their baselines span $5.60$ points of
+Acc@task, from $73.82$ to $79.42$, while the gain spans $0.87$ points, from
+$+2.18$ to $+3.05$. Inside that band what is added varies about one sixth as
+much as the thing it is added to, and follows no monotone trend: the backbone
+with the largest gain (iBOT-$1$K) and the one with the smallest (Sup-$21$K) have
+baselines $0.21$ points apart. MAE lies outside the band, $22.22$ points below
+its nearest neighbour, and yields the largest gain in the table: $+3.95$ points
+of Acc@task and $+4.50$ of Acc@1. Cutting the baseline nearly in half therefore
+does not shrink what the second evidence source contributes; it enlarges it.
+That matches the mechanism analysed in Sect.~\ref{sec:analysis}: the
+routing-level fusion helps most exactly where the original router is most often
+wrong.
 
-\textbf{All five improve on both accuracy axes.} There is no counterexample
-among the ten cells. The smallest gain falls on Sup-$21$K, the only
-supervised-pretrained backbone; the three self-supervised ImageNet-$1$K
-backbones and the self-supervised ImageNet-$21$K one all gain more, on both
-Acc@task and Acc@1. With one seed per backbone we record the observation and do
-not interpret its cause.
+\textbf{All six improve on both accuracy axes.} There is no counterexample among
+the twelve cells. Within the narrow band the smallest gain falls on Sup-$21$K,
+the only supervised-pretrained backbone. With one seed per backbone we record
+the observation and do not interpret its cause.
 
 \textbf{On the retention axis, this measurement corrected an early conclusion.}
 With only MoCo v3 measured, Forgetting worsened --- $3.10$ to $3.69$ --- and the
 natural reading was to treat that as the price of mixing in a second source.
-The three backbones measured afterwards all point the other way: DINO $3.44$ to
-$2.87$, iBOT-$1$K $4.44$ to $3.53$, iBOT-$21$K $4.24$ to $3.82$, alongside
-Sup-$21$K $3.28$ to $3.05$. Four of five improve, and MoCo v3 is the exception
-rather than the rule. This does not promote retention into a claim: the
-\emph{no change distinguishable from zero} conclusion of Sect.~\ref{sec:results}
-stands, because it rests on four seeds whereas each backbone here has one.
+The four backbones measured afterwards all point the other way: DINO $3.44$ to
+$2.87$, iBOT-$1$K $4.44$ to $3.53$, iBOT-$21$K $4.24$ to $3.82$, MAE $10.03$ to
+$9.53$, alongside Sup-$21$K $3.28$ to $3.05$. Five of six improve, and MoCo v3
+is the exception rather than the rule. This does not promote retention into a
+claim: the \emph{no change distinguishable from zero} conclusion of
+Sect.~\ref{sec:results} stands, because it rests on four seeds whereas each
+backbone here has one.
+
+\textbf{On the MAE row specifically.} Two things must be said plainly. First, a
+baseline of $51.60$ is a model that is broken for practical purposes --- its
+Loss is $11.15$ against $1.23$ for Sup-$21$K --- so the row should be read as a
+stress test, not as a configuration anyone would deploy. Second, that figure
+depends on a choice of ours. The original code passes MAE two construction
+arguments this codebase's ViT class does not accept, one of which indicates
+pooling the final sequence by averaging rather than by the cls token --- which
+is how MAE is normally used, since MAE pretraining gives the cls token no
+supervision at all. We kept token pooling, as for the other five. Average
+pooling would almost certainly raise MAE's baseline, but MAE would then be the
+one row travelling a different code path, and precisely the property that gives
+this table its value would be lost.
 
 \textbf{The Sup-$21$K row is a single seed}, not the four-seed mean of
-Table~\ref{tab:main}, so that all five rows share one aggregation. Its two
+Table~\ref{tab:main}, so that all six rows share one aggregation. Its two
 baseline figures are the same two quoted in Sect.~\ref{sec:sanity}. The two
 aggregations agree: seed $42$ gives $+2.18$ points of Acc@task, the four-seed
 mean gives $+2.264 \pm 0.158$.
 
-\textbf{Scope.} One benchmark, one seed per backbone, five backbones. And
-that benchmark is the one all three hyperparameters were chosen on
+\textbf{Scope.} One benchmark, one seed per backbone, six backbones. And that
+benchmark is the one all three hyperparameters were chosen on
 (Sect.~\ref{sec:limits}), so this table tests robustness to the backbone and
-adds nothing to the evidence that is independent of the tuning --- that
-remains the $11$ cells of CIFAR-100 and CUB-200. A sixth
-backbone the codebase registers, MAE, was not measured. Cost is the reason: each
-row of the table requires retraining from scratch, roughly $1000$ seconds for
-TII and $6100$ for the LoRA pool on one RTX 4090 GPU, close to two hours per
-backbone.
+adds nothing to the evidence that is independent of the tuning --- that remains
+the $11$ cells of CIFAR-100 and CUB-200. Cost limits the number of rows: each
+one requires retraining from scratch, roughly $1000$ seconds for TII and $6100$
+for the LoRA pool on one RTX 4090 GPU, close to two hours per backbone.
 
 \section{Ablation Studies}
 
@@ -1359,9 +1379,10 @@ that the second source is itself a complete classifier that the original
 architecture ignores.
 
 What persuades us the result is not a property of one backbone: measured
-again on five ViT-B/16 backbones differing in pretraining, the baseline
-spans $5.60$ points while the gain spans $0.87$, and all five improve on
-both accuracy axes.
+again on six ViT-B/16 backbones differing in pretraining, all six improve
+on both accuracy axes, and the largest gain falls on the backbone with the
+lowest baseline --- $22$ points below the next one --- not on the
+strongest.
 
 The margin gate is the component that spares the second stage from paying a
 price on samples the original model was already predicting confidently. It
