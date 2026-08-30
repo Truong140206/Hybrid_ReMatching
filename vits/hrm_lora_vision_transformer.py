@@ -1583,27 +1583,24 @@ def vit_base_patch16_224_mocov3(pretrained=False, **kwargs):
 
 
 @register_model
-def vit_base_patch16_224_mae(pretrained=False, adapter=False, **kwargs):
+def vit_base_patch16_224_mae(pretrained=False, **kwargs):
     """ ViT-Base model (ViT-B/16) from original paper (https://arxiv.org/abs/2010.11929).
     ImageNet-21k weights @ 224x224, source https://github.com/google-research/vision_transformer.
     NOTE: this model has valid 21k classifier head and no representation (pre-logits) layer
     """
     model_kwargs = dict(
-        patch_size=16, embed_dim=768, depth=12, num_heads=12, with_adapter=adapter, Fl_pool=True, **kwargs)
+        patch_size=16, embed_dim=768, depth=12, num_heads=12, **kwargs)
     model = _create_vision_transformer('vit_base_patch16_224_in21k', pretrained=False, **model_kwargs)
-    del model.head
-    last_block = deepcopy(model.blocks[-1])
-    ckpt = torch.load('./checkpoints/mae_pretrain_vit_base.pth', map_location='cpu', weights_only=False)['model']
     state_dict = model.state_dict()
+    ckpt = torch.load('./checkpoints/mae_pretrain_vit_base.pth', map_location='cpu', weights_only=False)['model']
+    not_in_k = [k for k in ckpt.keys() if k not in state_dict.keys()]
+    for k in not_in_k:
+        del ckpt[k]
     state_dict.update(ckpt)
     model.load_state_dict(state_dict)
     # model.load_state_dict(torch.load('mae_pretrain_vit_base.pth', map_location='cpu', weights_only=False)['model'])
     # del model.norm
     # model.norm = nn.LayerNorm(768)
-    # model.blocks[-1] = last_block
-    # if adapter:
-    #    del model.adp_layer1
-    #    model.adp_layer1 = deepcopy(model.patch_embed)
     return model
 
 @register_model
