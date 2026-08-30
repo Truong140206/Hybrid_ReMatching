@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Verify -- and where needed convert -- the self-supervised backbone weights.
 
-Why this exists. All three loaders in vits/hrm_lora_vision_transformer.py end
-with the same three lines:
+Why this exists. The backbone loaders -- duplicated in BOTH
+vits/hrm_lora_vision_transformer.py (imported by trainers/lora_trainer.py)
+and vits/hide_prompt_vision_transformer.py (imported by
+trainers/tii_trainer.py) -- all end with the same three lines:
 
     not_in_k = [k for k in ckpt.keys() if k not in state_dict.keys()]
     for k in not_in_k: del ckpt[k]
@@ -38,6 +40,7 @@ TARGETS = [
     ('iBOT-21K',  'checkpoint.pth',                'teacher',    'backbone.'),
     ('MoCo v3',   'mocov3-vit-base-300ep.pth',     'model',      ''),
     ('DINO-1K',   'dino_vitbase16_pretrain.pth',  None,       ''),
+    ('MAE',       'mae_pretrain_vit_base.pth',     'model',      ''),
 ]
 
 
