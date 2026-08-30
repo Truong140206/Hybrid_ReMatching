@@ -737,7 +737,42 @@ class Imagenet_A(torch.utils.data.Dataset):
         else:
             fpath = self.fpath + '/test'
         self.data = datasets.ImageFolder(fpath, transform=transform)
-   
+
+    def split(self):
+        train_folder = self.fpath + '/train'
+        test_folder = self.fpath + '/test'
+
+        if os.path.exists(train_folder):
+            rmtree(train_folder)
+        if os.path.exists(test_folder):
+            rmtree(test_folder)
+        os.mkdir(train_folder)
+        os.mkdir(test_folder)
+
+        for c in self.dataset.classes:
+            if not os.path.exists(os.path.join(train_folder, c)):
+                os.mkdir(os.path.join(os.path.join(train_folder, c)))
+            if not os.path.exists(os.path.join(test_folder, c)):
+                os.mkdir(os.path.join(os.path.join(test_folder, c)))
+
+        for path in self.train_file_list:
+            if '\\' in path:
+                path = path.replace('\\', '/')
+            src = path
+            dst = os.path.join(train_folder, '/'.join(path.split('/')[-2:]))
+            move(src, dst)
+
+        for path in self.test_file_list:
+            if '\\' in path:
+                path = path.replace('\\', '/')
+            src = path
+            dst = os.path.join(test_folder, '/'.join(path.split('/')[-2:]))
+            move(src, dst)
+
+        for c in self.dataset.classes:
+            path = os.path.join(self.fpath, c)
+            rmtree(path)
+
 
 class DomainNet(torch.utils.data.Dataset):
     def __init__(self, root, train=True, transform=None, target_transform=None, download=False):

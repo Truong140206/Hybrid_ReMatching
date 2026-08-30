@@ -45,7 +45,7 @@ case "${DATASET}" in
   imr)          DS=Split-Imagenet-R; CFG_TII=imr_hideprompt_5e;           CFG_LORA=imr_lora ;;
   cifar100)     DS=Split-CIFAR100;   CFG_TII=cifar100_hideprompt_5e;      CFG_LORA=cifar100_lora ;;
   cub200)       DS=Split-CUB200;     CFG_TII=imr_hideprompt_5e;           CFG_LORA=imr_lora ;;
-  ima)          DS=Imagenet-A;       CFG_TII=ima_hideprompt_5e;           CFG_LORA=ima_lora ;;
+  ima)          DS=Split-Imagenet-A; CFG_TII=ima_hideprompt_5e;           CFG_LORA=ima_lora ;;
   fivedatasets) DS=5-datasets;       CFG_TII=five_datasets_hideprompt_5e; CFG_LORA=five_datasets_lora
                 NUM_TASKS="${NUM_TASKS_OVERRIDE:-5}" ;;
   *) echo "Set DATASET to one of: imr cifar100 cub200 ima fivedatasets" >&2; exit 64 ;;
