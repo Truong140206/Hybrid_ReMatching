@@ -26,6 +26,15 @@ import os
 import re
 import sys
 
+ARGS_READ = re.compile(r'\bargs\.([A-Za-z_]\w*)')
+GETATTR_DEFAULT = re.compile(r"getattr\(\s*args\s*,\s*'[A-Za-z_]\w*'\s*,[^)]*\)")
+ASSIGNMENT = re.compile(r'\bargs\.([A-Za-z_]\w*)\s*=(?!=)')
+# Set by main.py while bringing up the run, never by argparse.
+RUNTIME_ATTRS = {'distributed', 'rank', 'gpu', 'world_size', 'dist_backend',
+                 'dist_url', 'nb_classes', 'class_names', 'subparser_name',
+                 'config', 'device', 'datasets', 'num_datasets',
+                 'tasks_per_dataset', 'continual_datasets_targets', 'reg'}
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
@@ -92,6 +101,51 @@ def config_options(name):
     return options
 
 
+def config_dests(name):
+    """Attribute names argparse will set, straight from each action's dest.
+
+    Deriving these from the option string by hand gets --batch-size wrong: the
+    attribute is args.batch_size, not args."batch-size". argparse already did
+    this mapping, so ask it rather than repeat it.
+    """
+    module = importlib.import_module('configs.%s' % name)
+    parser = argparse.ArgumentParser(add_help=False)
+    module.get_args_parser(parser)
+    return {action.dest for action in parser._actions}   # noqa: SLF001
+
+
+def attribute_reads():
+    """{name: "file:line"} for every args.<name> the runtime reads unguarded.
+
+    Two forms are excluded because neither can raise AttributeError:
+    getattr(args, 'x', default), which carries a fallback, and args.x = ...,
+    which is a write. Everything else is a plain read, and a config that does
+    not declare it makes the run die the moment that line is reached.
+
+    This is the check that was missing. tools/check_run_args.py originally
+    compared only the flags the shell scripts pass, so --max_train_tasks looked
+    fine: no script passes it. trainers/lora_trainer.py reads
+    args.max_train_tasks directly, and ima_lora.py and five_datasets_lora.py
+    did not declare it, so every evaluation on those two benchmarks died after
+    their training had already finished.
+    """
+    files = ['main.py', 'datasets.py', 'utils.py']
+    for folder in ('trainers', 'engines'):
+        files += [os.path.join(folder, f)
+                  for f in sorted(os.listdir(os.path.join(REPO_ROOT, folder)))
+                  if f.endswith('.py')]
+
+    reads = {}
+    for name in files:
+        path = os.path.join(REPO_ROOT, name)
+        for number, line in enumerate(io.open(path, encoding='utf-8'), 1):
+            line = GETATTR_DEFAULT.sub('', line)
+            line = ASSIGNMENT.sub('', line)
+            for attr in ARGS_READ.findall(line):
+                reads.setdefault(attr, '%s:%d' % (name, number))
+    return reads
+
+
 def main():
     ok = True
     for script, marker, configs in CHECKS:
@@ -107,6 +161,20 @@ def main():
             else:
                 print('  %-30s du' % name)
         print()
+
+    reads = attribute_reads()
+    print('thuoc tinh args ma ma nguon doc thang (khong qua dong lenh)')
+    for name in LORA_CONFIGS:
+        have = config_dests(name) | RUNTIME_ATTRS
+        missing = sorted(a for a in reads if a not in have)
+        if missing:
+            ok = False
+            print('  %-30s THIEU %d: %s'
+                  % (name, len(missing),
+                     ' '.join('%s (%s)' % (a, reads[a]) for a in missing)))
+        else:
+            print('  %-30s du' % name)
+    print()
 
     print('TAT CA KHOP' if ok else 'CO CHO THIEU -- dung chay truoc khi vá')
     return 0 if ok else 1

@@ -237,3 +237,6 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--progressive_tii_prior_weight', default=0.3, type=float)
     subparsers.add_argument('--progressive_logit_temperature', default=1.0, type=float)
     subparsers.add_argument('--progressive_excluded_logit_margin', default=20.0, type=float)
+
+    # --- thuoc tinh ma trainers/engines doc thang tu args ---
+    subparsers.add_argument('--cfs_pmi_diag_task', default=1, type=int)

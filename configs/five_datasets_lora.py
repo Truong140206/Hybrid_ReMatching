@@ -200,3 +200,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--report_conventional_cost', action='store_true', help='log per-sample LoRA and forward-call cost of the default HRM-PET (DRM+CRM) evaluation path')
     subparsers.add_argument('--classifier_union_audit', action='store_true', help='measure whether the RP head, treated as a classifier, is correct where the routed HRM-PET head is wrong; bounds what a classifier-level fusion could add on top of the routing gain')
     subparsers.add_argument('--layer_stat_router', action='store_true', help='third routing signal from per-task transformer-block activation statistics (PMI-CFS layer-wise prior), scored by diagonal-Gaussian KL; needs no extra adapter call')
+
+    # --- thuoc tinh ma trainers/engines doc thang tu args ---
+    subparsers.add_argument('--max_train_tasks', default=0, type=int, help='stop after this many tasks while preserving the num_tasks dataset partition; 0 runs all tasks')
+    subparsers.add_argument('--cfs_pmi_diag_task', default=1, type=int)
