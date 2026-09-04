@@ -1064,11 +1064,54 @@ def _sample_cfs_features_paper_style(distribution, mean, cov, num_samples, args,
     return features
 
 
+_JITTERED = set()
+
+
+@torch.no_grad()
+def stable_multivariate_normal(mean, cov, label=''):
+    """MultivariateNormal that tolerates a singular class covariance.
+
+    Returns the distribution unchanged when `cov` is already positive definite,
+    so behaviour on data where this never fired is bit-identical. Otherwise the
+    smallest jitter from 1e-4 upward that makes the Cholesky succeed is added
+    to the diagonal, and the fact is printed once per label.
+
+    1e-4 is not arbitrary: it is the constant the original code already uses in
+    the multi-centroid branch of hide_tii_engine.py, which is the one place its
+    authors guarded against exactly this.
+    """
+    mean = mean.float()
+    cov = cov.float()
+    try:
+        return torch.distributions.MultivariateNormal(mean, cov)
+    except (ValueError, RuntimeError):
+        pass
+
+    eye = torch.eye(mean.numel(), device=cov.device, dtype=cov.dtype)
+    for exponent in range(-4, 3):
+        jitter = float(10.0 ** exponent)
+        try:
+            distribution = torch.distributions.MultivariateNormal(
+                mean, cov + jitter * eye)
+        except (ValueError, RuntimeError):
+            continue
+        if label not in _JITTERED:
+            _JITTERED.add(label)
+            print('hiep phuong sai suy bien tai %s: cong %g vao duong cheo'
+                  % (label or 'khong ten', jitter))
+        return distribution
+
+    raise ValueError(
+        'khong the lam cho hiep phuong sai xac dinh duong tai %s '
+        '(da thu jitter den 100)' % (label or 'khong ten'))
+
+
 @torch.no_grad()
 def sample_cfs_features(
         mean, cov, num_samples, args, device, cfs_model=None,
         force_cfs=False):
-    distribution = torch.distributions.MultivariateNormal(mean.float(), cov.float())
+    distribution = stable_multivariate_normal(
+        mean, cov, 'sample_cfs_features')
     if ((not force_cfs and not use_cfs_sampling(args))
             or cfs_model is None or num_samples <= 1):
         return distribution.sample(sample_shape=(num_samples,))
@@ -1150,7 +1193,8 @@ def _sample_gaussian_core_features(mean, cov, num_samples, args, device):
 
     multiplier = max(1, int(getattr(args, 'cfs_core_multiplier', 4)))
     candidate_count = max(num_samples, num_samples * multiplier)
-    distribution = torch.distributions.MultivariateNormal(mean.float(), cov.float())
+    distribution = stable_multivariate_normal(
+        mean, cov, 'sample_cfs_core_features')
     candidates = distribution.sample(sample_shape=(candidate_count,)).float().to(device)
     return _filter_cfs_candidate_features(
         candidates, mean, cov, num_samples, args, device)
@@ -1187,7 +1231,8 @@ def sample_boundary_aware_cfs_features(mean, cov, num_samples, args, device, mod
 
     multiplier = max(1, int(getattr(args, 'cfs_boundary_multiplier', 3)))
     candidate_count = max(hard_count, num_samples * multiplier)
-    distribution = torch.distributions.MultivariateNormal(mean.float(), cov.float())
+    distribution = stable_multivariate_normal(
+        mean, cov, 'sample_boundary_aware_cfs_features')
     candidates = distribution.sample(sample_shape=(candidate_count,)).float().to(device)
 
     outputs = model(candidates, fc_only=True)

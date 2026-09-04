@@ -4455,8 +4455,8 @@ def _sample_crct_class_features(mean, cov, count, args, device, model,
                                 class_id, seen_classes, old_classes,
                                 cfs_model=None):
     if not _use_cfs_for_crct_class(class_id, old_classes, args):
-        distribution = torch.distributions.MultivariateNormal(
-            mean.float(), cov.float())
+        distribution = utils.stable_multivariate_normal(
+            mean, cov, '_sample_crct_class_features')
         return distribution.sample(sample_shape=(count,))
     return utils.sample_boundary_aware_cfs_features(
         mean.float(), cov.float(), count, args, device, model,
