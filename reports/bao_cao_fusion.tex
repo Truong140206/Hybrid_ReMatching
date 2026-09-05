@@ -54,10 +54,10 @@ thức không lưu mẫu (exemplar-free). Trên ba bộ dữ liệu học liên 
 độ chính xác định tuyến tăng từ $+1.10$ đến $+2.26$ điểm và độ chính xác phân
 lớp tăng từ $+0.69$ đến $+1.50$ điểm; ở cả hai trục, mức tăng lớn hơn độ lệch
 chuẩn giữa các seed nhiều lần. Hai chỉ số ghi nhớ không cho thấy thay đổi phân
-biệt được với không, và chúng tôi không tuyên bố cải thiện ở đó. Mức cải thiện không teo đi khi đổi mạng xương sống:
-trên sáu mạng ViT-B/16 khác nhau về cách tiền huấn luyện, mốc trải $27.8$
-điểm mà mức cải thiện luôn nằm giữa $+2.18$ và $+3.95$ điểm, và lớn nhất
-chính ở mạng có mốc thấp nhất. Chi phí tính toán tăng thêm đúng bằng một lượt truyền xuôi (forward pass)
+biệt được với không, và chúng tôi không tuyên bố cải thiện ở đó. Trên trọn lưới bốn bộ dữ liệu nhân năm mạng
+xương sống mà bài gốc phủ, cộng MAE làm ô thứ hai mươi mốt, cả hai mươi mốt
+ô đều cải thiện ở cả hai trục độ chính xác, với mốc trải từ $40.2$ đến $93.8$
+điểm Acc@1 và mức tăng lớn nhất rơi vào mạng có mốc thấp nhất. Chi phí tính toán tăng thêm đúng bằng một lượt truyền xuôi (forward pass)
 trên mỗi mẫu.
 \end{abstract}
 
@@ -753,25 +753,40 @@ trong quy trình đánh giá. Thứ hai, $w$ là một tham số liên tục n�
 phương pháp đề xuất và baseline, do đó cung cấp sẵn một trục khảo sát loại bỏ
 thành phần (ablation) liên tục thay vì chỉ một so sánh nhị phân.
 
-\section{Độ bền theo mạng xương sống}
-\label{sec:backbones}
+\section{Lưới đầy đủ: bốn bộ dữ liệu và năm mạng xương sống}
+\label{sec:grid}
 
-Mọi con số ở trên đều đứng trên một mạng xương sống duy nhất: ViT-B/16 tiền
-huấn luyện có giám sát trên ImageNet-21K. Nếu mức cải thiện chỉ tồn tại nhờ đặc
-tính riêng của cách tiền huấn luyện đó thì phạm vi kết luận hẹp hơn nhiều so với
-vẻ ngoài của nó. Mã nguồn gốc đăng ký sẵn một họ ViT-B/16 khác nhau ở cách tiền
-huấn luyện, nên câu hỏi này trả lời được bằng phép đo chứ không cần lập luận.
-Chúng tôi huấn luyện lại toàn bộ quy trình HRM-PET --- cả TII lẫn kho LoRA, mười
-tác vụ, từ đầu --- trên năm mạng nữa, rồi đo cả baseline lẫn phương pháp đề xuất
-qua đúng một đường mã và đúng một seed. Bảng \ref{tab:backbones} ghi lại kết quả.
+Mọi con số ở Mục \ref{sec:results} đều đứng trên một mạng xương sống và ba bộ
+dữ liệu. Nếu mức cải thiện chỉ tồn tại nhờ đặc tính riêng của cách tiền huấn
+luyện đó, hoặc riêng của những bộ dữ liệu đó, thì phạm vi kết luận hẹp hơn
+nhiều so với vẻ ngoài của nó.
+
+\textbf{Bài gốc phủ những gì.} Phần tóm tắt của họ nói thí nghiệm trên
+\emph{bốn bộ dữ liệu dưới năm cấu hình tiền huấn luyện}, nhưng không nói là
+những bộ nào và những mạng nào. Ba dấu vết trong chính mã nguồn họ phát hành
+trả lời được. Thứ nhất, bản nhập mã của họ chứa đúng bốn cặp tệp cấu hình:
+CIFAR-100, ImageNet-R, ImageNet-A và 5-Datasets --- không có CUB-200, bộ mà
+chúng tôi tự thêm. Thứ hai, tệp \texttt{.DS\_Store} bỏ quên trong thư mục
+\texttt{training\_scripts/} còn lưu tên toàn bộ script từng nằm ở đó: hai mươi
+tệp, đúng bằng bốn bộ nhân năm mạng, và năm mạng ấy là Sup-$21$K, MoCo v3-$1$K,
+iBOT-$1$K, iBOT-$21$K, DINO-$1$K. Thứ ba, không tệp nào nhắc tới MAE, và hàm
+nạp MAE trong bản họ phát hành ném \texttt{TypeError} ngay dòng dựng mô hình
+--- mã hỏng theo cách đó là bằng chứng nó chưa từng được thực thi.
+
+Chúng tôi dựng đủ hai mươi ô ấy: huấn luyện lại toàn bộ quy trình HRM-PET
+--- cả TII lẫn kho LoRA, từ đầu --- cho mỗi ô còn thiếu, rồi đo cả baseline lẫn
+phương pháp đề xuất qua đúng một đường mã và đúng một seed. Thêm MAE trên
+ImageNet-R làm ô thứ hai mươi mốt, vì đó là ca khó nhất về mặt cơ chế và
+chúng tôi muốn biết nó hỏng ở đâu. Bảng \ref{tab:grid} là kết quả, đọc thẳng
+từ nhật ký đánh giá chứ không chép tay.
 
 \begin{table}[htbp]
 \centering
-\caption{Sáu mạng xương sống ViT-B/16 trên Split-ImageNet-R, seed 42, mười tác
-vụ. Mốc là HRM-PET ($w = 1$, $\beta = 0$); đề xuất là $w = 0.7$, $\beta = 0.5$.
-Mỗi mạng được huấn luyện lại từ đầu. Các hàng xếp theo mốc Acc@task tăng dần;
-MAE tách riêng vì nằm ngoài dải của năm mạng còn lại.}
-\label{tab:backbones}
+\small
+\caption{Hai mươi mốt ô: bốn bộ dữ liệu, năm mạng xương sống của bài gốc, cộng
+MAE trên ImageNet-R. Seed 42, mốc là HRM-PET ($w = 1$, $\beta = 0$), đề xuất là
+$w = 0.7$, $\beta = 0.5$. 5-Datasets có năm tác vụ, ba bộ còn lại mười.}
+\label{tab:grid}
 \begin{tabular}{@{}lrrrrrrrr@{}}
 \toprule
 & \multicolumn{3}{c}{Acc@task} & \multicolumn{3}{c}{Acc@1}
@@ -780,70 +795,93 @@ MAE tách riêng vì nằm ngoài dải của năm mạng còn lại.}
 Mạng xương sống & Mốc & Đề xuất & $\Delta$ & Mốc & Đề xuất & $\Delta$
   & Mốc & Đề xuất \\
 \midrule
-MAE-$1$K      & 51.60 & 55.55 & $+3.95$ & 40.20 & 44.69 & $+4.50$ & 10.03 & 9.53 \\
-\addlinespace
+\multicolumn{9}{@{}l}{\emph{Split-ImageNet-R}}\\
+Sup-$21$K     & 77.79 & 79.97 & $+2.18$ & 74.02 & 75.51 & $+1.49$ & 3.28 & 2.84 \\
 MoCo v3-$1$K  & 73.82 & 76.77 & $+2.95$ & 68.47 & 70.37 & $+1.89$ & 3.10 & 3.69 \\
-DINO-$1$K     & 75.92 & 78.86 & $+2.93$ & 70.23 & 72.91 & $+2.68$ & 3.44 & 2.87 \\
 iBOT-$1$K     & 77.59 & 80.64 & $+3.05$ & 71.89 & 74.41 & $+2.52$ & 4.44 & 3.53 \\
-Sup-$21$K     & 77.79 & 79.97 & $+2.18$ & 74.02 & 75.51 & $+1.49$ & 3.28 & 3.05 \\
 iBOT-$21$K    & 79.42 & 82.20 & $+2.78$ & 73.29 & 75.84 & $+2.55$ & 4.24 & 3.82 \\
+DINO-$1$K     & 75.92 & 78.86 & $+2.93$ & 70.23 & 72.91 & $+2.68$ & 3.44 & 2.87 \\
+\emph{MAE-$1$K} & 51.60 & 55.55 & $+3.95$ & 40.20 & 44.69 & $+4.50$ & 10.03 & 9.53 \\
+\addlinespace
+\multicolumn{9}{@{}l}{\emph{Split-CIFAR100}}\\
+Sup-$21$K     & 89.82 & 90.89 & $+1.07$ & 89.77 & 90.58 & $+0.81$ & 3.96 & 3.64 \\
+MoCo v3-$1$K  & 86.69 & 88.68 & $+1.99$ & 85.50 & 87.62 & $+2.12$ & 5.11 & 4.87 \\
+iBOT-$1$K     & 86.90 & 89.35 & $+2.45$ & 86.46 & 88.52 & $+2.06$ & 5.11 & 4.31 \\
+iBOT-$21$K    & 89.16 & 91.22 & $+2.06$ & 88.52 & 90.32 & $+1.80$ & 4.87 & 4.27 \\
+DINO-$1$K     & 85.97 & 88.39 & $+2.42$ & 85.36 & 87.39 & $+2.03$ & 5.63 & 4.81 \\
+\addlinespace
+\multicolumn{9}{@{}l}{\emph{Split-ImageNet-A}}\\
+Sup-$21$K     & 55.63 & 57.29 & $+1.66$ & 45.85 & 47.42 & $+1.57$ & 6.61 & 5.63 \\
+MoCo v3-$1$K  & 42.95 & 45.99 & $+3.04$ & 31.80 & 34.21 & $+2.41$ & 3.99 & 4.04 \\
+iBOT-$1$K     & 47.22 & 50.18 & $+2.97$ & 37.08 & 40.66 & $+3.58$ & 4.73 & 5.12 \\
+iBOT-$21$K    & 50.24 & 54.81 & $+4.57$ & 41.48 & 44.11 & $+2.63$ & 6.63 & 5.44 \\
+DINO-$1$K     & 46.58 & 48.44 & $+1.86$ & 36.44 & 37.41 & $+0.97$ & 3.32 & 5.26 \\
+\addlinespace
+\multicolumn{9}{@{}l}{\emph{5-Datasets}}\\
+Sup-$21$K     & 94.74 & 97.72 & $+2.98$ & 91.37 & 93.77 & $+2.40$ & 1.99 & 0.77 \\
+MoCo v3-$1$K  & 97.67 & 98.95 & $+1.28$ & 92.63 & 94.04 & $+1.41$ & 0.96 & 0.29 \\
+iBOT-$1$K     & 98.32 & 99.29 & $+0.97$ & 93.80 & 94.65 & $+0.85$ & 0.37 & 0.31 \\
+iBOT-$21$K    & 97.71 & 98.84 & $+1.13$ & 93.83 & 94.42 & $+0.59$ & 0.40 & 0.57 \\
+DINO-$1$K     & 96.98 & 98.40 & $+1.42$ & 92.52 & 93.27 & $+0.75$ & 0.59 & 0.51 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textbf{Mức cải thiện không teo đi khi mốc yếu hơn --- nó lớn thêm.} Năm mạng
-nằm trong một dải hẹp: mốc trải $5.60$ điểm Acc@task, từ $73.82$ đến $79.42$,
-còn mức cải thiện trải $0.87$ điểm, từ $+2.18$ đến $+3.05$. Bên trong dải đó,
-phần được cộng thêm dao động chỉ bằng khoảng một phần sáu so với thứ nó được
-cộng vào, và không theo xu thế đơn điệu nào: mạng cho mức tăng lớn nhất
-(iBOT-$1$K) và mạng cho mức tăng nhỏ nhất (Sup-$21$K) có mốc chênh nhau đúng
-$0.21$ điểm. MAE nằm ngoài dải, thấp hơn mạng gần nhất $22.22$ điểm, và cho mức
-tăng lớn nhất bảng: $+3.95$ điểm Acc@task và $+4.50$ điểm Acc@1. Kéo mốc xuống
-gần một nửa thì phần đóng góp của nguồn tín hiệu thứ hai không teo đi mà lớn
-thêm. Điều này khớp với cơ chế đã phân tích ở Mục \ref{sec:analysis}: tầng hợp
-nhất ở cấp định tuyến phát huy tác dụng nhất đúng ở chỗ bộ định tuyến gốc sai
-nhiều nhất.
+\textbf{Hai mươi mốt trên hai mươi mốt ô cải thiện, ở cả hai trục độ chính
+xác.} Không có một ngoại lệ nào theo chiều ngược lại trong bốn mươi hai ô so
+sánh. Điều đáng nói không phải là mức tăng lớn --- nó không lớn --- mà là mốc
+mà nó ngồi lên trải từ $40.20$ đến $93.83$ điểm Acc@1, tức hơn gấp đôi, qua
+bốn bộ dữ liệu và sáu cách tiền huấn luyện khác nhau.
 
-\textbf{Cả sáu đều cải thiện ở cả hai trục độ chính xác.} Không có ngoại lệ theo
-chiều ngược lại trên mười hai ô. Trong dải hẹp, mức nhỏ nhất rơi vào Sup-$21$K,
-mạng duy nhất được tiền huấn luyện có giám sát. Với một seed cho mỗi mạng, chúng
-tôi ghi nhận quan sát này nhưng không diễn giải nguyên nhân.
+\textbf{Mức tăng thu nhỏ ở nơi không còn chỗ.} Trung bình Acc@1 theo từng bộ:
+ImageNet-A $+2.23$, ImageNet-R $+2.23$, CIFAR-100 $+1.76$, 5-Datasets $+1.20$.
+5-Datasets là bộ mốc cao nhất ($91.4$--$93.8$) và cũng là bộ tăng ít nhất. Đây
+là hành vi đúng của một phương pháp sửa lỗi định tuyến: càng ít mẫu bị định
+tuyến sai thì càng ít chỗ để sửa.
 
-\textbf{Trên trục ghi nhớ, phép đo này đã sửa một kết luận sớm.} Khi mới chỉ có
-MoCo v3, Forgetting xấu đi --- $3.10$ lên $3.69$ --- và cách đọc tự nhiên là coi
-đó như cái giá phải trả cho việc trộn thêm tín hiệu. Bốn mạng đo sau đều đi
-ngược lại: DINO $3.44$ xuống $2.87$, iBOT-$1$K $4.44$ xuống $3.53$, iBOT-$21$K
-$4.24$ xuống $3.82$, MAE $10.03$ xuống $9.53$, cùng với Sup-$21$K $3.28$ xuống
-$3.05$. Năm trên sáu cải thiện, và MoCo v3 là ngoại lệ chứ không phải quy luật.
-Điều này không nâng trục ghi nhớ lên thành một tuyên bố: kết luận \emph{không có
-bằng chứng phân biệt được với không} ở Mục \ref{sec:results} vẫn giữ nguyên, vì
-nó dựa trên bốn seed còn ở đây mỗi mạng chỉ có một.
+\textbf{Mạng giám sát hưởng lợi ít hơn, nhưng không phải mọi nơi.} Trên
+ImageNet-R, CIFAR-100 và ImageNet-A, Sup-$21$K cho mức tăng Acc@task nhỏ nhất
+trong năm mạng của hàng đó. Trên 5-Datasets thì ngược lại: Sup-$21$K cho mức
+lớn nhất ($+2.98$ so với $+0.97$ đến $+1.42$). Ba trên bốn bộ cùng một hướng
+không đủ để phát biểu thành quy luật, nên chúng tôi ghi lại quan sát và nêu
+luôn ngoại lệ.
 
-\textbf{Về riêng hàng MAE.} Hai điều cần nói thẳng. Thứ nhất, mốc $51.60$ điểm
-là một mô hình hỏng xét về mặt thực dụng --- Loss của nó là $11.15$ so với
-$1.23$ của Sup-$21$K --- nên hàng này nên đọc như một phép thử áp lực, không
-phải như một cấu hình ai đó sẽ đem triển khai. Thứ hai, con số đó phụ thuộc vào
-một lựa chọn của chúng tôi. Mã nguồn gốc truyền cho MAE hai tham số dựng mô hình
-mà lớp ViT trong mã nguồn này không nhận, một trong hai gợi ý gộp chuỗi cuối
-bằng trung bình thay vì bằng cls token --- đúng là cách MAE thường được dùng, vì
-tiền huấn luyện MAE không hề giám sát cls token. Chúng tôi vẫn giữ gộp theo
-token như với năm mạng còn lại. Gộp bằng trung bình gần như chắc chắn sẽ nâng
-mốc của MAE lên, nhưng khi đó MAE thành hàng duy nhất đi qua một đường mã khác,
-và đúng cái tính chất làm nên giá trị của bảng này sẽ mất.
+\textbf{Trục ghi nhớ: $16/21$ cải thiện.} Năm ô xấu đi là ImageNet-R MoCo v3
+($3.10 \to 3.69$), ImageNet-A MoCo v3 ($3.99 \to 4.04$), ImageNet-A iBOT-$1$K
+($4.73 \to 5.12$), ImageNet-A DINO ($3.32 \to 5.26$) và 5-Datasets iBOT-$21$K
+($0.40 \to 0.57$). Ba trong năm nằm trên ImageNet-A, đúng bộ có tác vụ chỉ $68$
+ảnh kiểm tra cho $20$ lớp. Chúng tôi vẫn không tuyên bố cải thiện ở trục này:
+kết luận \emph{không có bằng chứng phân biệt được với không} ở Mục
+\ref{sec:results} dựa trên bốn seed, còn cả lưới này chỉ có một.
 
-\textbf{Hàng Sup-$21$K ở đây là seed $42$ đơn lẻ}, không phải trung bình bốn seed
-của Bảng \ref{tab:main}, để sáu hàng dùng chung một cách tổng hợp. Hai con số mốc
-của hàng đó chính là hai con số đã xuất hiện ở Mục \ref{sec:sanity}. Hai cách
-tổng hợp cho kết quả thống nhất: seed $42$ cho $+2.18$ điểm Acc@task, trung bình
-bốn seed cho $+2.264 \pm 0.158$.
+\textbf{Trường hợp MAE, và một dự đoán sai của chúng tôi.} Trước khi chạy,
+chúng tôi lập luận rằng MAE là ca duy nhất có lý do cơ chế để phương pháp hụt:
+tiền huấn luyện MAE không giám sát cls token, đặc trưng đóng băng của nó nổi
+tiếng là yếu khi dò tuyến tính, mà nguồn tín hiệu thứ hai của chúng tôi lại
+dựng trên đúng đặc trưng đóng băng. Phép đo bác bỏ. MAE cho mốc thấp nhất
+trong hai mươi mốt ô ($40.20$ Acc@1) và \emph{mức tăng Acc@1 lớn nhất}
+($+4.50$). Cách đọc nhất quán với phần còn lại của bảng là: đặc trưng đóng
+băng càng yếu thì phần thông tin mà phép chiếu ngẫu nhiên bậc hai moi thêm
+được càng nhiều, chứ không phải càng ít. Chúng tôi để nguyên dự đoán sai này
+trong báo cáo vì nó là phần thông tin: cơ chế mà chúng tôi tưởng sẽ giới hạn
+phương pháp lại chính là cơ chế làm nó hiệu quả nhất.
 
-\textbf{Phạm vi.} Một bộ dữ liệu, một seed cho mỗi mạng, sáu mạng. Và bộ dữ liệu
-đó chính là bộ mà cả ba siêu tham số được chọn trên đó (Mục \ref{sec:limits}),
-nên bảng này kiểm tra độ bền theo mạng xương sống chứ không bổ sung gì cho phần
-bằng chứng độc lập với quá trình chọn siêu tham số --- phần đó vẫn là $11$ ô của
-CIFAR-100 và CUB-200. Chi phí giới hạn số hàng: mỗi hàng đòi hỏi huấn luyện lại
-từ đầu, khoảng $1000$ giây cho TII và $6100$ giây cho kho LoRA trên một GPU
-RTX 4090, tức gần hai giờ cho mỗi mạng.
+\textbf{Phạm vi, và bốn chỗ lưới này khác bài gốc.} Thứ nhất, toàn bộ lưới đo
+trên \emph{một seed} (42); bảng $4$ seed ở Mục \ref{sec:results} vẫn chỉ có ba
+bộ dữ liệu trên Sup-$21$K. Thứ hai, phép chia $80/20$ của ImageNet-A là của
+chúng tôi chứ không phải của họ: mã phát hành chia ngẫu nhiên không phân tầng
+trên danh sách phẳng, để tám lớp không còn ảnh nào trong tập kiểm tra và khiến
+bộ dữ liệu không dựng nổi; chúng tôi chia theo từng lớp và cố định seed. Vì
+phép chia của họ vốn không có seed nên không thể dựng lại được kể cả khi muốn,
+và hệ quả là \emph{số ImageNet-A của chúng tôi không so trực tiếp được với số
+ImageNet-A của bài gốc}. Thứ ba, chúng tôi dùng LoRA rank $8$ trong khi script
+họ phát hành dùng rank $5$; đổi lại sẽ làm mất giá trị mọi con số đã đo, và
+điều này không ảnh hưởng tới luận điểm vì mọi so sánh đều là mốc-với-đề-xuất
+trên cùng một rank. Thứ tư, ba ô ImageNet-A (iBOT-$1$K, iBOT-$21$K, DINO) được
+huấn luyện sau khi chúng tôi thêm một phép chặn cho hiệp phương sai lớp suy
+biến, vì nếu không thì chúng chết ở tác vụ thứ ba; phép chặn chỉ kích hoạt ở
+đúng chỗ mã cũ sẽ ném ngoại lệ, nên mười tám ô còn lại đi qua đường mã không
+đổi.
 
 \section{Khảo sát loại bỏ thành phần}
 
@@ -1338,9 +1376,10 @@ cho kết quả sai trên những tập mẫu khác nhau. Tầng phân lớp kha
 bản thân nó đã là một bộ phân lớp hoàn chỉnh nhưng bị kiến trúc gốc bỏ qua.
 
 Điều làm chúng tôi tin kết quả không phải là đặc tính riêng của một mạng
-xương sống: đo lại trên sáu ViT-B/16 khác nhau về cách tiền huấn luyện, cả
-sáu đều cải thiện ở cả hai trục độ chính xác, và mức tăng lớn nhất rơi vào
-mạng có mốc thấp nhất --- thấp hơn mạng kế tiếp $22$ điểm --- chứ không
+xương sống hay một bộ dữ liệu: trên trọn lưới bốn bộ nhân năm mạng mà bài
+gốc phủ, cộng MAE làm ô thứ hai mươi mốt, không ô nào đi ngược chiều ở bất
+kỳ trục độ chính xác nào, dù mốc trải hơn gấp đôi --- từ $40.2$ đến $93.8$
+điểm Acc@1. Và mức tăng lớn nhất rơi vào mạng có mốc thấp nhất, chứ không
 phải mạng mạnh nhất.
 
 Cơ chế cổng theo biên là thành phần giúp tầng thứ hai không phải trả giá trên
