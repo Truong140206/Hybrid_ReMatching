@@ -31,8 +31,13 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DATASETS = [('imr', 'ImageNet-R', 10), ('cifar100', 'CIFAR-100', 10),
             ('ima', 'ImageNet-A', 10), ('fivedatasets', '5-Datasets', 5)]
-BACKBONES = [('', 'Sup-21K'), ('moco1k', 'MoCo v3-1K'), ('ibot1k', 'iBOT-1K'),
-             ('ibot21k', 'iBOT-21K'), ('dino', 'DINO-1K'), ('mae', 'MAE-1K')]
+# Several aliases per backbone: ImageNet-R was trained before the naming
+# convention settled, so MoCo v3 sits under `mocov3` there and `moco1k`
+# elsewhere. Renaming directories that hold measured results would break the
+# link between a number and the run that produced it, so both names are read.
+BACKBONES = [(('',), 'Sup-21K'), (('moco1k', 'mocov3'), 'MoCo v3-1K'),
+             (('ibot1k',), 'iBOT-1K'), (('ibot21k',), 'iBOT-21K'),
+             (('dino',), 'DINO-1K'), (('mae',), 'MAE-1K')]
 METRICS = ['Acc@task', 'Acc@1', 'Acc@5', 'Loss', 'Forgetting', 'Backward']
 
 # The two configurations the grid compares, as they appear in the log name.
@@ -60,15 +65,17 @@ def final_row(path, num_tasks):
     return out or None
 
 
-def find_log(root, dataset, tag, num_tasks, arm):
-    suffix = '_%s' % tag if tag else ''
-    base = '%s%s_lora_rank8_baseline_%dtasks_seed42' % (dataset, suffix, num_tasks)
+def find_log(root, dataset, tags, num_tasks, arm):
     weight, class_weight = ARMS[arm]
     hits = []
-    for path in glob.glob(os.path.join(root, base + '_eval_rp_*.log')):
-        name = os.path.basename(path)
-        if ('f1d1' + weight) in name and ('cw' + class_weight[2:]) in name:
-            hits.append(path)
+    for tag in tags:
+        suffix = '_%s' % tag if tag else ''
+        base = '%s%s_lora_rank8_baseline_%dtasks_seed42' % (
+            dataset, suffix, num_tasks)
+        for path in glob.glob(os.path.join(root, base + '_eval_rp_*.log')):
+            name = os.path.basename(path)
+            if ('f1d1' + weight) in name and ('cw' + class_weight[2:]) in name:
+                hits.append(path)
     if not hits:
         return None
     # Prefer the newest, in case an older naming variant lingers.
@@ -88,10 +95,10 @@ def main():
              'moc@1', 'dx@1', 'delta', 'quen-m', 'quen-d'))
     print('-' * 104)
     for dataset, dataset_label, num_tasks in DATASETS:
-        for tag, backbone_label in BACKBONES:
+        for tags, backbone_label in BACKBONES:
             found = {}
             for arm in ARMS:
-                path = find_log(root, dataset, tag, num_tasks, arm)
+                path = find_log(root, dataset, tags, num_tasks, arm)
                 found[arm] = final_row(path, num_tasks) if path else None
             if not any(found.values()):
                 continue
