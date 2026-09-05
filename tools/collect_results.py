@@ -39,6 +39,10 @@ BACKBONES = [(('',), 'Sup-21K'), (('moco1k', 'mocov3'), 'MoCo v3-1K'),
              (('ibot1k',), 'iBOT-1K'), (('ibot21k',), 'iBOT-21K'),
              (('dino',), 'DINO-1K'), (('mae',), 'MAE-1K')]
 METRICS = ['Acc@task', 'Acc@1', 'Acc@5', 'Loss', 'Forgetting', 'Backward']
+# +1 where a larger number is better, -1 where a smaller one is. Backward is
+# normally negative and closer to zero is better, so it counts as larger.
+DIRECTION = {'Acc@task': 1, 'Acc@1': 1, 'Acc@5': 1,
+             'Loss': -1, 'Forgetting': -1, 'Backward': 1}
 
 # The two configurations the grid compares, as they appear in the log name.
 ARMS = {'baseline': ('w1p0', 'cw0p0'), 'proposed': ('w0p7', 'cw0p5')}
@@ -86,6 +90,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--root', default=None)
     parser.add_argument('--csv', default=None)
+    parser.add_argument('--worse', action='store_true',
+                        help='liet ke moi o va chi so ma de xuat kem hon moc')
     args = parser.parse_args()
     root = args.root or output_root()
 
@@ -121,6 +127,28 @@ def main():
         print()
 
     print('tong: %d o co du ca hai cau hinh' % len(rows))
+
+    if args.worse:
+        # Sweeping only the metrics the table prints would answer the
+        # question from partial data, so this covers all six.
+        print()
+        print('Moi cho de xuat KEM hon moc, tren ca sau chi so:')
+        found = 0
+        for row in rows:
+            for name in METRICS:
+                base, prop = row['base_' + name], row['prop_' + name]
+                if base is None or prop is None:
+                    continue
+                delta = (prop - base) * DIRECTION[name]
+                if delta < 0:
+                    found += 1
+                    print('  %-12s %-11s %-11s %9.4f -> %9.4f  (kem %.4f)'
+                          % (row['dataset'], row['backbone'], name,
+                             base, prop, -delta))
+        if not found:
+            print('  khong co cho nao')
+        print('  -> %d cho kem hon tren %d o x %d chi so = %d phep so sanh'
+              % (found, len(rows), len(METRICS), len(rows) * len(METRICS)))
 
     if args.csv and rows:
         import csv
