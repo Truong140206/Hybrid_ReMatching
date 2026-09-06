@@ -17,42 +17,73 @@ This assembles the same shape for our two stages:
 Each row is a strict superset of the one above it, so the difference between
 consecutive rows is what that component is worth on that backbone.
 
+Log files are addressed by their EXACT name, rebuilt from the same template
+eval_rp_head_any_4090.sh uses, not by a loose glob. The first version of this
+tool globbed for the fusion weights alone and took whichever file sorted first,
+which picked up a stray log from an old sweep: it reported 75.08 for the full
+method on Sup-21K where the measured value is 75.51. Every hyperparameter that
+appears in the name is therefore pinned here, and a cell whose exact file is
+absent is reported missing rather than filled from a near neighbour.
+
 A_N in their table is average final accuracy, which is our Acc@1: their
 published Sup-21K figure of 73.86 sits inside our reproduction's 73.94 +/- 0.48.
 So Acc@1 is what this prints, with Acc@task available via --metric.
 
 Usage:
     python tools/ablation_table.py
-    python tools/ablation_table.py --metric Acc@task
+    python tools/ablation_table.py --metric Acc@task --show-files
 """
 import argparse
-import glob
 import os
 import re
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DATASET, NUM_TASKS = 'imr', 10
-BACKBONES = [(('',), 'Sup-21K'), (('mocov3', 'moco1k'), 'MoCo-1K'),
-             (('ibot1k',), 'iBOT-1K'), (('ibot21k',), 'iBOT-21K'),
-             (('dino',), 'DINO-1K'), (('mae',), 'MAE-1K')]
 
-# (label, fusion weight tag, class weight tag, must the margin gate be on?)
-# With beta = 0 the gate has nothing to weight, so rows one and two carry the
-# gate flag only because that is how they were run; it changes nothing there.
-ARMS = [
-    ('Moc (w=1, b=0)', 'w1p0', 'cw0p0', True),
-    ('+ tang dinh tuyen', 'w0p7', 'cw0p0', True),
-    ('+ tang phan lop', 'w0p7', 'cw0p5', False),
-    ('+ cong bien (day du)', 'w0p7', 'cw0p5', True),
+# (directory tag, tag inside the log name, label). The two tags differ: the run
+# directory says `ibot1k` while the log name says `bibot`, because one is our
+# naming and the other is derived from the timm model name by the eval script.
+BACKBONES = [
+    ('', '', 'Sup-21K'),
+    ('mocov3', 'bmocov3', 'MoCo-1K'),
+    ('ibot1k', 'bibot', 'iBOT-1K'),
+    ('ibot21k', 'b21kibot', 'iBOT-21K'),
+    ('dino', 'bdino', 'DINO-1K'),
+    ('mae', 'bmae', 'MAE-1K'),
 ]
+
+# (label, fusion weight tag, class weight tag, gate tag). With beta = 0 the gate
+# has nothing to weight, so the first two rows carry `gmargin` only because that
+# is how they were run; it changes nothing there.
+ARMS = [
+    ('Moc (w=1, b=0)', 'w1p0', 'cw0p0', 'gmargin'),
+    ('+ tang dinh tuyen', 'w0p7', 'cw0p0', 'gmargin'),
+    ('+ tang phan lop', 'w0p7', 'cw0p5', ''),
+    ('+ cong bien (day du)', 'w0p7', 'cw0p5', 'gmargin'),
+]
+
+# Everything else in the log name, fixed across this table.
+FIXED = ('_eval_rp_lora_d10000_relu_l10000_nnone_t0_b0p0_p1_inone_c0_ra0ls0'
+         '_f1d1')
 
 
 def output_root():
     return os.path.join(os.path.dirname(REPO_ROOT), 'hrm-pet-output')
 
 
+def log_path(root, dir_tag, log_tag, weight, class_weight, gate):
+    suffix = '_%s' % dir_tag if dir_tag else ''
+    base = '%s%s_lora_rank8_baseline_%dtasks_seed42' % (
+        DATASET, suffix, NUM_TASKS)
+    name = '%s%s%slsw0p0c0ca0%ssh1p0m1%s%s.log' % (
+        base, FIXED, weight, class_weight, gate, log_tag)
+    return os.path.join(root, name)
+
+
 def final_value(path, metric):
+    if not os.path.isfile(path):
+        return None
     marker = 'Average accuracy till task%d]' % NUM_TASKS
     row = None
     with open(path, encoding='utf-8', errors='replace') as handle:
@@ -65,51 +96,46 @@ def final_value(path, metric):
     return float(match.group(1)) if match else None
 
 
-def find_log(root, tags, weight, class_weight, want_gate):
-    for tag in tags:
-        suffix = '_%s' % tag if tag else ''
-        base = '%s%s_lora_rank8_baseline_%dtasks_seed42' % (
-            DATASET, suffix, NUM_TASKS)
-        for path in sorted(glob.glob(os.path.join(root, base + '_eval_rp_*.log'))):
-            name = os.path.basename(path)
-            if ('f1d1' + weight) not in name:
-                continue
-            if ('cw' + class_weight[2:]) not in name:
-                continue
-            if ('gmargin' in name) != want_gate:
-                continue
-            return path
-    return None
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--root', default=None)
     parser.add_argument('--metric', default='Acc@1',
                         help='Acc@1 (nhu A_N cua ho) hoac Acc@task')
+    parser.add_argument('--show-files', action='store_true',
+                        help='in ten tep da doc cho tung o')
     args = parser.parse_args()
     root = args.root or output_root()
 
     print('Ablation cong don tren Split-ImageNet-R, seed 42, chi so %s'
           % args.metric)
-    print('(dung hinh dang Bang 3 cua bai goc: thanh phan cong don, '
-          'backbone lam cot)\n')
+    print('(hinh dang Bang 3 cua bai goc: thanh phan cong don, backbone lam cot)')
+    print('Tep duoc dia chi hoa chinh xac, khong doan gan dung.\n')
 
     labels = [label for label, _, _, _ in ARMS]
     width = max(len(label) for label in labels) + 1
-    header = ' ' * width + ''.join('%10s' % name for _, name in BACKBONES)
+    header = ' ' * width + ''.join('%10s' % label for _, _, label in BACKBONES)
     print(header)
     print('-' * len(header))
 
-    table = {}
-    for label, weight, class_weight, want_gate in ARMS:
+    table, missing = {}, []
+    for label, weight, class_weight, gate in ARMS:
         cells = []
-        for tags, name in BACKBONES:
-            path = find_log(root, tags, weight, class_weight, want_gate)
-            value = final_value(path, args.metric) if path else None
+        for dir_tag, log_tag, name in BACKBONES:
+            path = log_path(root, dir_tag, log_tag, weight, class_weight, gate)
+            value = final_value(path, args.metric)
             table[(label, name)] = value
-            cells.append('%10.2f' % value if value is not None else '%10s' % '--')
-        print('%-*s%s' % (width, label, ''.join(cells)))
+            if value is None:
+                missing.append((label, name, path))
+            cells.append('%10.2f' % value if value is not None
+                         else '%10s' % '--')
+            if args.show_files:
+                print('    %-22s %-9s %s' % (label, name,
+                                             os.path.basename(path)))
+        if not args.show_files:
+            print('%-*s%s' % (width, label, ''.join(cells)))
+
+    if args.show_files:
+        return 0
 
     print('\nMuc dong gop cua tung thanh phan (hieu voi hang tren):')
     print(header)
@@ -117,19 +143,17 @@ def main():
     for i in range(1, len(ARMS)):
         label = labels[i]
         cells = []
-        for _, name in BACKBONES:
+        for _, _, name in BACKBONES:
             here, above = table[(label, name)], table[(labels[i - 1], name)]
             cells.append('%+10.2f' % (here - above)
                          if here is not None and above is not None
                          else '%10s' % '--')
         print('%-*s%s' % (width, label, ''.join(cells)))
 
-    missing = [(label, name) for (label, name), value in table.items()
-               if value is None]
     if missing:
-        print('\nThieu %d o:' % len(missing))
-        for label, name in sorted(missing):
-            print('  %-22s %s' % (label, name))
+        print('\nThieu %d o (khong tim thay dung tep):' % len(missing))
+        for label, name, path in missing:
+            print('  %-22s %-9s %s' % (label, name, os.path.basename(path)))
     return 0
 
 
