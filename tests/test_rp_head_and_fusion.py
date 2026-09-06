@@ -139,7 +139,8 @@ def test_gate_stats_are_cleared_between_modes():
     assert 'conf_rp' not in gate_stats, 'stale conf_rp leaked into margin mode'
 
 
-@pytest.mark.parametrize('mode', ['none', 'margin', 'margin_both', 'entropy'])
+@pytest.mark.parametrize(
+    'mode', ['none', 'margin', 'margin_both', 'entropy', 'relative'])
 def test_gate_stays_inside_the_unit_interval(mode):
     routed, rp = _two_heads()
     valid = torch.ones_like(routed, dtype=torch.bool)
@@ -149,6 +150,70 @@ def test_gate_stays_inside_the_unit_interval(mode):
         return
     assert torch.isfinite(gate).all()
     assert float(gate.min()) >= 0.0 and float(gate.max()) <= 1.0
+
+
+def test_relative_gate_is_scale_invariant():
+    """A positive affine rescaling of the RP scores must not move the gate."""
+    routed, rp = _two_heads()
+    valid = torch.ones_like(routed, dtype=torch.bool)
+    base = _fusion_gate(routed, valid, 'relative', rp_scores=rp)
+    scaled = _fusion_gate(routed, valid, 'relative', rp_scores=rp * 100.0 + 7.0)
+    assert torch.allclose(base, scaled, atol=1e-5)
+
+
+def test_relative_gate_is_one_half_when_the_two_heads_are_equally_sure():
+    """The tie case is the one the mode is named after, so pin it exactly.
+
+    Feeding the routed logits in as the RP scores makes conf(rp) = conf(routed)
+    sample by sample, because the affine map onto the routed scale is exact.
+    """
+    routed, _ = _two_heads()
+    valid = torch.ones_like(routed, dtype=torch.bool)
+    gate = _fusion_gate(routed, valid, 'relative', rp_scores=routed)
+    assert torch.allclose(gate, torch.full_like(gate, 0.5), atol=1e-5)
+
+
+def test_relative_gate_closes_on_a_torn_rp_head():
+    """conf(rp) = 0 must hand the decision back to the routed head."""
+    routed, _ = _two_heads()
+    valid = torch.ones_like(routed, dtype=torch.bool)
+    torn = torch.zeros_like(routed)
+    gate = _fusion_gate(routed, valid, 'relative', rp_scores=torn)
+    assert float(gate.max()) < 1e-4
+
+
+def test_relative_gate_opens_on_a_torn_routed_head():
+    """conf(routed) = 0 is the case 'margin' also opens on, at the same limit."""
+    routed, rp = _two_heads()
+    valid = torch.ones_like(routed, dtype=torch.bool)
+    torn = torch.zeros_like(routed)
+    gate = _fusion_gate(torn, valid, 'relative', rp_scores=rp)
+    assert float(gate.min()) > 1.0 - 1e-4
+
+
+def test_relative_gate_stays_open_where_the_margin_gate_shuts():
+    """The whole point of the mode: a confident routed head no longer closes it.
+
+    'margin' reads a confident routed head as a correct one and shuts. When
+    both heads are confident the blend cannot move the argmax anyway, so there
+    is nothing to protect -- and shutting is what costs accuracy wherever the
+    base model is confidently wrong.
+    """
+    batch, classes = 64, 40
+    confident = torch.zeros(batch, classes)
+    confident[:, 0] = 1e3
+    valid = torch.ones_like(confident, dtype=torch.bool)
+    margin = _fusion_gate(confident, valid, 'margin')
+    relative = _fusion_gate(confident, valid, 'relative', rp_scores=confident)
+    assert float(margin.max()) < 1e-4
+    assert torch.allclose(relative, torch.full_like(relative, 0.5), atol=1e-5)
+
+
+def test_relative_gate_without_rp_scores_raises():
+    routed, _ = _two_heads()
+    valid = torch.ones_like(routed, dtype=torch.bool)
+    with pytest.raises(ValueError, match='relative'):
+        _fusion_gate(routed, valid, 'relative', rp_scores=None)
 
 
 def test_zero_weight_class_fusion_returns_the_routed_logits_untouched():

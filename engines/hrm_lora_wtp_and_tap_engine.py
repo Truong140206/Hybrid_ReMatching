@@ -905,6 +905,10 @@ def _fusion_gate(routed_logits, valid, mode, rp_scores=None):
     so the blend opens only when the routed head is undecided AND the RP head
     is decided. Setting conf(rp) = 1 recovers 'margin' exactly, which gives the
     mode an identity check of the same kind as w = 1.0 and beta = 0.
+
+    Both of those are thresholds on the routed head's own confidence, so both
+    assume confident implies correct. 'relative' drops that assumption and
+    compares the two margins instead; see the comment on its branch below.
     """
     # The mean gate is recorded so a run can be read without guessing. The
     # first margin_both attempt was inconclusive precisely because the gate's
@@ -942,6 +946,36 @@ def _fusion_gate(routed_logits, valid, mode, rp_scores=None):
         gate_stats['gate'] = gate.mean().item()
         gate_stats['conf_rp'] = conf_rp.mean().item()
         gate_stats['undecided'] = undecided.mean().item()
+        return gate
+    if mode == 'relative':
+        if rp_scores is None:
+            raise ValueError(
+                "rp_class_fusion_gate='relative' needs the RP scores; "
+                'the caller passed none')
+        # 'margin' and 'margin_both' both key on an absolute threshold: they
+        # shut when the routed head is confident. That assumes confident
+        # implies correct, which holds on 5-Datasets (baseline 91-94 Acc@1)
+        # and fails wherever the base model is confidently wrong -- measured
+        # -3.71 Acc@1 on MAE, -0.54 on iBOT-1K, -0.26 on MoCo at beta 0.5.
+        #
+        # Fusion cannot change a prediction when the two heads already agree,
+        # so protecting an agreed sample protects nothing. What is actually
+        # being decided is whom to believe when they disagree, and that is a
+        # comparison between the two margins, not a threshold on one of them:
+        #
+        #     beta_i = beta * conf(rp) / (conf(rp) + conf(routed))
+        #
+        # It leaves the routed head alone when the RP head is torn, hands the
+        # decision over when the routed head is torn, and sits at beta/2 when
+        # they are equally sure -- the case where the blend is free.
+        mean, std = _valid_moments(routed_logits.float(), valid)
+        rp_on_scale = _standardize_valid(rp_scores.float(), valid) * std + mean
+        conf_routed = _top2_margin(routed_logits, valid)
+        conf_rp = _top2_margin(rp_on_scale, valid)
+        gate = (conf_rp / (conf_rp + conf_routed).clamp_min(1e-6)).clamp(0.0, 1.0)
+        gate_stats['gate'] = gate.mean().item()
+        gate_stats['conf_rp'] = conf_rp.mean().item()
+        gate_stats['undecided'] = (1.0 - conf_routed).mean().item()
         return gate
     if mode == 'entropy':
         probs = torch.softmax(
