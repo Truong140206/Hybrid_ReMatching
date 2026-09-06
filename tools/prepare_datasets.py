@@ -132,7 +132,7 @@ def prepare_imagenet_a(root):
             if not os.path.isfile(tar_path):
                 print('  THIEU %s' % tar_path)
                 print('  Tai bang:  wget -c -P %s %s' % (root, IMAGENET_A_URL))
-                print('  Hoac dung tools/imagenet_a_from_parquet.py neu may '
+                print('  Hoac dung tools/imagenet_folder_from_parquet.py --which imagenet-a neu may '
                       'khong toi duoc may chu do.')
                 return False
             print('  giai nen %s ...' % tar_path)

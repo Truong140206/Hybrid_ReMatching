@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rebuild the ImageNet-A image folder from the Hugging Face parquet mirror.
+"""Rebuild the ImageNet-A or ImageNet-R image folder from a parquet mirror.
 
 Why this exists. continual_datasets.Imagenet_A expects <root>/imagenet-a to be
 an ImageFolder whose subdirectories are WordNet ids, which is what the official
@@ -25,8 +25,14 @@ undo than one error message.
 Rows are streamed in batches; reading both files whole would hold roughly
 680 MB of image bytes in memory at once for no benefit.
 
+Neither official tar is obtainable from its source any more. ImageNet-A times
+out on IPv4 from some networks; ImageNet-R now redirects to
+iris.eecs.berkeley.edu and answers 404 there. The two mirrors named in SPECS
+carry the same images, and both store them as parquet, so one tool serves both.
+
 Usage:
-    python tools/imagenet_a_from_parquet.py --parquet-dir /path/with/parquets
+    python tools/imagenet_folder_from_parquet.py --which imagenet-r --parquet-dir DIR
+    python tools/imagenet_folder_from_parquet.py --which imagenet-a --parquet-dir DIR
 """
 import argparse
 import glob
@@ -36,6 +42,17 @@ import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BATCH = 64
+
+# So anh va so lop la cua ban goc, dung de doi chieu sau khi ghi xong. Khong
+# co chung thi mot ban sao thieu mot manh parquet se di qua ma khong ai biet.
+SPECS = {
+    'imagenet-a': {'out': 'imagenet-a', 'images': 7500, 'classes': 200,
+                   'repo': 'barkermrl/imagenet-a',
+                   'next': 'python tools/prepare_datasets.py --which imagenet-a'},
+    'imagenet-r': {'out': 'imagenet-r', 'images': 30000, 'classes': 200,
+                   'repo': 'axiong/imagenet-r',
+                   'next': None},
+}
 
 
 def default_root():
@@ -99,6 +116,8 @@ def names_from_infos(parquet_dir, explicit):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--which', required=True, choices=sorted(SPECS),
+                        help='bo du lieu can dung lai')
     parser.add_argument('--parquet-dir', required=True,
                         help='thu muc chua cac tep .parquet da tai')
     parser.add_argument('--names-json', default=None,
@@ -113,8 +132,9 @@ def main():
         print('THIEU pyarrow. Cai bang:  .venv/bin/python -m pip install pyarrow')
         return 1
 
+    spec = SPECS[args.which]
     root = args.root or default_root()
-    out_dir = os.path.join(root, 'imagenet-a')
+    out_dir = os.path.join(root, spec['out'])
 
     if os.path.isdir(os.path.join(out_dir, 'train')):
         print('%s da duoc chia 80/20 tu truoc -- khong dung vao' % out_dir)
@@ -134,14 +154,20 @@ def main():
 
     readers = [pq.ParquetFile(path) for path in files]
 
+    columns = list(readers[0].schema_arrow.names)
+    missing = [c for c in ('image', 'label') if c not in columns]
+    if missing:
+        print('parquet thieu cot %s; cot co san: %s' % (missing, columns))
+        return 1
+
     names = names_from_parquet(readers[0].schema_arrow)
     if not names:
         names = names_from_infos(args.parquet_dir, args.names_json)
     if not names:
         print('KHONG DOC DUOC ten lop tu parquet lan dataset_infos.json.')
-        print('Tai kem tep do rooi chay lai:')
-        print('  wget -P %s https://huggingface.co/datasets/barkermrl/'
-              'imagenet-a/resolve/main/dataset_infos.json' % args.parquet_dir)
+        print('Tai kem tep do roi chay lai:')
+        print('  wget -P %s https://huggingface.co/datasets/%s/resolve/main/'
+              'dataset_infos.json' % (args.parquet_dir, spec['repo']))
         return 1
 
     print('%d lop, tu %s den %s' % (len(names), names[0], names[-1]))
@@ -175,9 +201,11 @@ def main():
     n_dirs = len([d for d in os.listdir(out_dir)
                   if os.path.isdir(os.path.join(out_dir, d))])
     print('\nda ghi %d anh vao %d thu muc lop tai %s' % (written, n_dirs, out_dir))
-    if written != 7500 or n_dirs != 200:
-        print('CANH BAO: ban goc la 7500 anh trong 200 lop')
-    print('Buoc tiep: python tools/prepare_datasets.py --which imagenet-a')
+    if written != spec['images'] or n_dirs != spec['classes']:
+        print('CANH BAO: ban goc la %d anh trong %d lop'
+              % (spec['images'], spec['classes']))
+    if spec['next']:
+        print('Buoc tiep: %s' % spec['next'])
     return 0
 
 
