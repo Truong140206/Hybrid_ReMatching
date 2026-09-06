@@ -209,6 +209,20 @@ def test_relative_gate_stays_open_where_the_margin_gate_shuts():
     assert torch.allclose(relative, torch.full_like(relative, 0.5), atol=1e-5)
 
 
+def test_relative_gate_ignores_a_global_temperature_on_either_head():
+    """A ratio must not inherit either head's arbitrary logit scale.
+
+    This is the property that separates 'relative' from 'margin': absolute
+    confidence read off raw logits is what makes 'margin' shut on a confidently
+    wrong backbone.
+    """
+    routed, rp = _two_heads()
+    valid = torch.ones_like(routed, dtype=torch.bool)
+    base = _fusion_gate(routed, valid, 'relative', rp_scores=rp)
+    hotter = _fusion_gate(routed * 25.0, valid, 'relative', rp_scores=rp * 0.01)
+    assert torch.allclose(base, hotter, atol=1e-5)
+
+
 def test_relative_gate_without_rp_scores_raises():
     routed, _ = _two_heads()
     valid = torch.ones_like(routed, dtype=torch.bool)

@@ -968,10 +968,24 @@ def _fusion_gate(routed_logits, valid, mode, rp_scores=None):
         # It leaves the routed head alone when the RP head is torn, hands the
         # decision over when the routed head is torn, and sits at beta/2 when
         # they are equally sure -- the case where the blend is free.
-        mean, std = _valid_moments(routed_logits.float(), valid)
-        rp_on_scale = _standardize_valid(rp_scores.float(), valid) * std + mean
-        conf_routed = _top2_margin(routed_logits, valid)
-        conf_rp = _top2_margin(rp_on_scale, valid)
+        #
+        # Both heads are standardized before their margins are measured, which
+        # 'margin_both' does not do: it maps the RP scores onto the routed
+        # logits' scale, because it multiplies the two and has to recover
+        # 'margin' at conf(rp) = 1. A ratio needs the opposite -- the same
+        # units on both arms, set by neither head. Mapping onto the routed
+        # scale here makes conf(rp) inherit the routed head's spread, and when
+        # that spread is zero it crushes conf(rp) to zero too, closing the gate
+        # in exactly the case it must open (caught by the torn-routed test).
+        #
+        # The mode is therefore invariant to a global temperature on either
+        # head, which is deliberate: an absolute confidence read off raw logits
+        # is what 'margin' keys on, and what costs it 3.71 Acc@1 on MAE, where
+        # the base model is confidently wrong.
+        conf_routed = _top2_margin(
+            _standardize_valid(routed_logits.float(), valid), valid)
+        conf_rp = _top2_margin(
+            _standardize_valid(rp_scores.float(), valid), valid)
         gate = (conf_rp / (conf_rp + conf_routed).clamp_min(1e-6)).clamp(0.0, 1.0)
         gate_stats['gate'] = gate.mean().item()
         gate_stats['conf_rp'] = conf_rp.mean().item()
