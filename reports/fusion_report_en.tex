@@ -909,6 +909,118 @@ eighteen cells went through an unchanged code path.
 
 \section{Ablation Studies}
 
+\subsection{Cumulative Ablation, in the Original's Shape}
+\label{sec:cumulative}
+
+The original ablates its components \emph{cumulatively}: each row adds exactly
+one component to the row above, measured on ImageNet-R, with its five backbones
+as columns. Our own ablations, in the subsections that follow, cover as much
+ground but are spread across separate tables and only on Sup-$21$K, which makes
+comparing against theirs harder than it needs to be. Table~\ref{tab:cumul}
+rebuilds that shape for our two stages.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Cumulative ablation on Split-ImageNet-R, seed 42, Acc@1. Each row is a
+strict superset of the one above. The lower half is the difference from the
+preceding row, that is, what the component just added is worth.}
+\label{tab:cumul}
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+& Sup-$21$K & MoCo-$1$K & iBOT-$1$K & iBOT-$21$K & DINO-$1$K & MAE-$1$K \\
+\midrule
+Baseline ($w = 1$, $\beta = 0$)      & 74.02 & 68.47 & 71.89 & 73.29 & 70.23 & 40.20 \\
+$+$ routing stage ($w = 0.7$)        & 74.31 & 68.81 & 72.46 & 73.91 & 70.97 & 42.64 \\
+$+$ class stage ($\beta = 0.5$)      & 74.55 & 70.63 & 74.95 & 75.72 & 72.87 & 48.40 \\
+$+$ margin gate (full)               & 75.51 & 70.37 & 74.41 & 75.84 & 72.91 & 44.69 \\
+\midrule
+\multicolumn{7}{@{}l}{\emph{What each component is worth}}\\
+$+$ routing stage & $+0.29$ & $+0.34$ & $+0.57$ & $+0.62$ & $+0.74$ & $+2.44$ \\
+$+$ class stage   & $+0.24$ & $+1.82$ & $+2.49$ & $+1.81$ & $+1.90$ & $+5.76$ \\
+$+$ margin gate   & $+0.96$ & $-0.26$ & $-0.54$ & $+0.12$ & $+0.04$ & $-3.71$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{The class stage, not the routing stage, is the main component.} On five
+of the six backbones the class stage is worth $+1.81$ to $+5.76$ points while
+the routing stage is worth $+0.29$ to $+0.74$. Sup-$21$K is the sole exception
+--- and it is the backbone every design decision in Sect.~\ref{sec:results} was
+measured on, which is one more reason not to generalise from a single one.
+
+\textbf{The margin gate helps on the backbone it was tuned on and hurts
+elsewhere.} At the published $\beta$ it is worth $+0.96$ on Sup-$21$K, is
+neutral on iBOT-$21$K and DINO, costs $0.26$ to $0.54$ points on MoCo and
+iBOT-$1$K, and costs $3.71$ on MAE.
+
+\textbf{That comparison is unfair to the ungated arm, and we checked.} The value
+$\beta = 0.5$ was chosen \emph{with the gate in place}; forcing the ungated head
+to reuse it compares a tuned configuration against an untuned one. We swept
+$\beta \in \{0.3, 0.5, 0.8, 1.0\}$ for both arms on all six backbones. The
+result separates into two distinct findings.
+
+First, \emph{the gate makes the method nearly insensitive to $\beta$}. Across
+the sweep, gated Acc@1 varies by at most $1.17$ points and at least $0.13$; the
+ungated arm varies by at least $3.89$ and at most $5.62$. That is exactly what
+the gate was designed to do.
+
+Second, \emph{at each arm's own best $\beta$ the ungated arm wins on five of six
+backbones} on ImageNet-R --- and the sixth, Sup-$21$K, loses by $0.09$, which is
+noise. The ungated optimum is $\beta = 0.3$ on five of the six.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Acc@1 difference from dropping the gate and lowering $\beta$ to $0.3$,
+against the published configuration (gate on, $\beta = 0.5$). Positive means
+\emph{dropping the gate is better}. Seed 42.}
+\label{tab:gate-cross}
+\begin{tabular}{@{}lrrrrrrr@{}}
+\toprule
+& Sup-$21$K & MoCo-$1$K & iBOT-$1$K & iBOT-$21$K & DINO-$1$K & MAE-$1$K & Mean \\
+\midrule
+ImageNet-R & $-0.09$ & $+0.78$ & $+0.80$ & $+0.51$ & $+0.60$ & $+3.09$ & $+0.52$ \\
+CIFAR-100  & $\ \ 0.00$ & $+0.57$ & $+0.80$ & $+0.56$ & $+0.83$ & --- & $+0.55$ \\
+ImageNet-A & $+0.14$ & $-0.14$ & $+0.06$ & $+0.89$ & $+0.46$ & --- & $+0.28$ \\
+5-Datasets & $-0.13$ & $-0.26$ & $-0.19$ & $-0.26$ & $-0.99$ & --- & $-0.37$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Across the full grid the picture reverses by benchmark.}
+Table~\ref{tab:gate-cross} extends the comparison to all four. Dropping the gate
+wins on ImageNet-R and CIFAR-100, roughly ties on ImageNet-A, and \emph{loses
+five out of five} on 5-Datasets. Averaged over the grid's twenty cells, dropping
+it is worth $+0.25$ points.
+
+That shape matches what the gate was built to do. It mixes the class stage only
+into samples the original model is \emph{not} already confident about. On
+5-Datasets the baseline sits at $91.4$--$93.8$ Acc@1, so nearly every sample is
+already right and already confident --- precisely the samples the gate protects.
+On ImageNet-R ($68$--$74$) and CIFAR-100 ($85$--$90$) there are many wrong ones
+left to fix, and mixing unconditionally pays off.
+
+\textbf{We keep the gate, and say why.} Three reasons. It wins on 5-Datasets,
+the benchmark furthest from where it was tuned, which makes that transfer
+evidence rather than fitting evidence. It makes the method insensitive to
+$\beta$, which matters because we do not tune $\beta$ per benchmark. And what it
+costs is half a point on two benchmarks against up to a full point gained on
+another.
+
+\textbf{We came close to removing it on ImageNet-R evidence alone.} We record
+that because it is the exact trap Sect.~\ref{sec:limits} warns about, and it
+nearly caught us immediately after we wrote the warning. The claim in an earlier
+version of this report --- that the gate \emph{eliminates the only systematic
+regression we observed} --- was wrong: it was drawn from one backbone, one
+benchmark, at a $\beta$ the ungated arm had never been tuned for.
+
+Finally, the two tables here and Table~\ref{tab:beta} below measure different
+things and are both correct: dropping the gate gives higher Acc@1 on ImageNet-R
+and CIFAR-100, while CIFAR-100 Loss worsens by $+0.019 \pm 0.003$ over three
+seeds. Mixing unconditionally fixes more labels and degrades the probability
+distribution at the same time.
+
 \subsection{The Classification-Level Fusion Weight}
 
 \begin{table}[htbp]
@@ -1420,10 +1532,15 @@ over baselines spanning more than a factor of two --- $40.2$ to $93.8$
 points of Acc@1. And the largest gain falls on the backbone with the lowest
 baseline, not on the strongest.
 
-The margin gate is the component that spares the second stage from paying a
-price on samples the original model was already predicting confidently. It
-eliminates the only systematic regression we observed, and it introduces no
-additional hyperparameter into the method.
+The margin gate mixes the second stage only into samples the original model is
+not already confident about, and adds no hyperparameter. The cumulative ablation
+in Sect.~\ref{sec:cumulative} shows its value depends on the benchmark:
+dropping it and lowering $\beta$ to $0.3$ is worth about half a point on
+ImageNet-R and CIFAR-100, and loses on all five 5-Datasets cells, where the
+baseline is near saturation. We keep it because it wins on the benchmark
+furthest from where it was tuned, and because it makes the method nearly
+insensitive to $\beta$ --- varying by at most $1.17$ points against at least
+$3.89$ without it.
 
 % The Vietnamese edition carries a glossary appendix mapping English terms to
 % their Vietnamese renderings. It serves no purpose here and is omitted.

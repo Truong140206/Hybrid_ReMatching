@@ -885,6 +885,117 @@ biến, vì nếu không thì chúng chết ở tác vụ thứ ba; phép chặn
 
 \section{Khảo sát loại bỏ thành phần}
 
+\subsection{Ablation cộng dồn, theo hình dạng của bài gốc}
+\label{sec:cumulative}
+
+Bài gốc khảo sát thành phần theo kiểu \emph{cộng dồn}: mỗi hàng thêm đúng một
+thành phần vào hàng trên, đo trên ImageNet-R, lấy năm mạng xương sống làm cột.
+Các khảo sát của chúng tôi ở những mục sau cũng đo đủ chừng ấy thứ nhưng nằm
+rải rác ở nhiều bảng và chỉ trên Sup-$21$K, khiến việc đối chiếu với họ khó hơn
+mức cần thiết. Bảng \ref{tab:cumul} dựng lại đúng hình dạng ấy cho hai tầng của
+chúng tôi.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Ablation cộng dồn trên Split-ImageNet-R, seed 42, Acc@1. Mỗi hàng là
+tập cha chặt của hàng trên. Nửa dưới là phần chênh với hàng liền trên, tức mức
+đóng góp riêng của thành phần vừa thêm.}
+\label{tab:cumul}
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+& Sup-$21$K & MoCo-$1$K & iBOT-$1$K & iBOT-$21$K & DINO-$1$K & MAE-$1$K \\
+\midrule
+Mốc ($w = 1$, $\beta = 0$)          & 74.02 & 68.47 & 71.89 & 73.29 & 70.23 & 40.20 \\
+$+$ tầng định tuyến ($w = 0.7$)     & 74.31 & 68.81 & 72.46 & 73.91 & 70.97 & 42.64 \\
+$+$ tầng phân lớp ($\beta = 0.5$)   & 74.55 & 70.63 & 74.95 & 75.72 & 72.87 & 48.40 \\
+$+$ cổng theo biên (đầy đủ)         & 75.51 & 70.37 & 74.41 & 75.84 & 72.91 & 44.69 \\
+\midrule
+\multicolumn{7}{@{}l}{\emph{Đóng góp riêng}}\\
+$+$ tầng định tuyến  & $+0.29$ & $+0.34$ & $+0.57$ & $+0.62$ & $+0.74$ & $+2.44$ \\
+$+$ tầng phân lớp    & $+0.24$ & $+1.82$ & $+2.49$ & $+1.81$ & $+1.90$ & $+5.76$ \\
+$+$ cổng theo biên   & $+0.96$ & $-0.26$ & $-0.54$ & $+0.12$ & $+0.04$ & $-3.71$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Tầng phân lớp mới là thành phần chính, không phải tầng định tuyến.} Trên
+năm trong sáu mạng xương sống, tầng phân lớp đóng góp $+1.81$ đến $+5.76$ điểm,
+trong khi tầng định tuyến chỉ $+0.29$ đến $+0.74$. Sup-$21$K là ngoại lệ duy
+nhất, và đó lại chính là mạng mà toàn bộ phần thiết kế ở Mục \ref{sec:results}
+được đo trên đó --- một lý do nữa để không suy rộng từ một mạng xương sống.
+
+\textbf{Cổng theo biên có ích trên đúng mạng nó được chỉnh, và hại ở chỗ khác.}
+Ở $\beta$ đã công bố, cổng đem lại $+0.96$ trên Sup-$21$K, gần như không đổi
+trên iBOT-$21$K và DINO, nhưng lấy đi $0.26$ đến $0.54$ điểm trên MoCo và
+iBOT-$1$K, và tới $3.71$ điểm trên MAE.
+
+\textbf{Phép so sánh đó không công bằng với bản không cổng, và chúng tôi đã
+kiểm.} Giá trị $\beta = 0.5$ vốn được chọn \emph{khi cổng đang bật}; ép bản
+không cổng dùng lại đúng giá trị ấy là so một cấu hình đã chỉnh với một cấu hình
+chưa chỉnh. Chúng tôi quét $\beta \in \{0.3, 0.5, 0.8, 1.0\}$ cho cả hai nhánh
+trên cả sáu mạng. Kết quả tách thành hai phát hiện tách bạch.
+
+Thứ nhất, \emph{cổng làm phương pháp gần như bất biến với $\beta$}. Trên dải
+khảo sát, Acc@1 của bản có cổng dao động nhiều nhất $1.17$ điểm và ít nhất
+$0.13$; bản không cổng dao động ít nhất $3.89$ và nhiều nhất $5.62$. Đó đúng là
+thứ cổng được thiết kế để làm.
+
+Thứ hai, \emph{ở giá trị $\beta$ tốt nhất của riêng mình, bản không cổng thắng
+trên năm trong sáu mạng} của ImageNet-R --- và mạng còn lại, Sup-$21$K, chỉ thua
+$0.09$ điểm, tức nằm trong nhiễu. Bản không cổng đạt tối ưu tại $\beta = 0.3$ ở
+năm trong sáu mạng.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Chênh lệch Acc@1 khi bỏ cổng và hạ $\beta$ xuống $0.3$, so với cấu hình
+được công bố (có cổng, $\beta = 0.5$). Dấu dương nghĩa là \emph{bỏ cổng tốt
+hơn}. Seed 42.}
+\label{tab:gate-cross}
+\begin{tabular}{@{}lrrrrrrr@{}}
+\toprule
+& Sup-$21$K & MoCo-$1$K & iBOT-$1$K & iBOT-$21$K & DINO-$1$K & MAE-$1$K
+  & Trung bình \\
+\midrule
+ImageNet-R & $-0.09$ & $+0.78$ & $+0.80$ & $+0.51$ & $+0.60$ & $+3.09$ & $+0.52$ \\
+CIFAR-100  & $\ \ 0.00$ & $+0.57$ & $+0.80$ & $+0.56$ & $+0.83$ & --- & $+0.55$ \\
+ImageNet-A & $+0.14$ & $-0.14$ & $+0.06$ & $+0.89$ & $+0.46$ & --- & $+0.28$ \\
+5-Datasets & $-0.13$ & $-0.26$ & $-0.19$ & $-0.26$ & $-0.99$ & --- & $-0.37$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Trên toàn lưới, bức tranh đảo chiều theo bộ dữ liệu.} Bảng
+\ref{tab:gate-cross} mở rộng phép so sánh sang cả bốn bộ. Bỏ cổng thắng trên
+ImageNet-R và CIFAR-100, gần như hòa trên ImageNet-A, và \emph{thua cả năm trên
+năm} ở 5-Datasets. Trung bình trên hai mươi ô của lưới, bỏ cổng hơn $0.25$ điểm.
+
+Hình dạng đó khớp với công dụng mà cổng được thiết kế ra. Cổng chỉ trộn tầng
+phân lớp vào những mẫu mà mô hình gốc \emph{chưa} chắc chắn. Trên 5-Datasets mốc
+đã ở $91.4$--$93.8$ điểm Acc@1, tức gần như mọi mẫu đều đã đúng và đã chắc chắn
+--- chính là loại mẫu cổng bảo vệ. Trên ImageNet-R ($68$--$74$) và CIFAR-100
+($85$--$90$) còn nhiều mẫu sai để sửa, nên trộn thẳng tay lại lợi hơn.
+
+\textbf{Chúng tôi giữ cổng, và nói rõ vì sao.} Ba lý do. Nó thắng trên
+5-Datasets, bộ xa nhất khỏi nơi nó được chỉnh, nên đó là bằng chứng chuyển giao
+chứ không phải bằng chứng khớp dữ liệu. Nó làm phương pháp bất biến với $\beta$,
+điều đáng giá vì chúng tôi không chỉnh $\beta$ riêng cho từng bộ. Và phần thua
+là nửa điểm trên hai bộ, đổi lấy tới một điểm trên bộ còn lại.
+
+\textbf{Chúng tôi đã suýt loại bỏ nó dựa trên bằng chứng của riêng ImageNet-R.}
+Chúng tôi ghi lại điều này vì nó là chính cái bẫy mà Mục \ref{sec:limits} cảnh
+báo, và vì nó suýt bắt được chúng tôi ngay sau khi chúng tôi viết ra lời cảnh
+báo ấy. Phát biểu ở bản trước của báo cáo --- rằng cổng \emph{loại bỏ suy giảm
+có tính hệ thống duy nhất chúng tôi quan sát được} --- là sai: nó được rút ra từ
+một mạng xương sống, một bộ dữ liệu, ở một giá trị $\beta$ mà bản không cổng
+chưa được chỉnh.
+
+Cuối cùng, hai bảng ở đây và Bảng \ref{tab:beta} ở mục sau đo hai thứ khác nhau
+và cả hai đều đúng: bỏ cổng cho Acc@1 cao hơn trên ImageNet-R và CIFAR-100,
+nhưng Loss trên CIFAR-100 xấu đi $+0.019 \pm 0.003$ trên ba seed. Trộn thẳng tay
+sửa được nhiều nhãn hơn đồng thời làm phân bố xác suất tệ hơn.
+
 \subsection{Trọng số hợp nhất ở cấp phân lớp}
 
 \begin{table}[htbp]
@@ -1382,10 +1493,14 @@ kỳ trục độ chính xác nào, dù mốc trải hơn gấp đôi --- từ $
 điểm Acc@1. Và mức tăng lớn nhất rơi vào mạng có mốc thấp nhất, chứ không
 phải mạng mạnh nhất.
 
-Cơ chế cổng theo biên là thành phần giúp tầng thứ hai không phải trả giá trên
-những mẫu mà mô hình gốc vốn đã dự đoán chắc chắn. Cơ chế này loại bỏ suy giảm
-có tính hệ thống duy nhất mà chúng tôi quan sát được, và không đưa thêm siêu
-tham số nào vào phương pháp.
+Cơ chế cổng theo biên chỉ trộn tầng thứ hai vào những mẫu mà mô hình gốc chưa
+dự đoán chắc chắn, và không đưa thêm siêu tham số nào. Khảo sát cộng dồn ở Mục
+\ref{sec:cumulative} cho thấy giá trị của nó phụ thuộc bộ dữ liệu: bỏ nó đi và
+hạ $\beta$ xuống $0.3$ thì tốt hơn khoảng nửa điểm trên ImageNet-R và
+CIFAR-100, nhưng kém hơn trên cả năm ô của 5-Datasets, nơi mốc đã gần bão hòa.
+Chúng tôi giữ nó vì nó thắng ở bộ xa nhất khỏi nơi nó được chỉnh, và vì nó làm
+phương pháp gần như bất biến với $\beta$ --- dao động nhiều nhất $1.17$ điểm so
+với ít nhất $3.89$ điểm khi không có cổng.
 
 \appendix
 
