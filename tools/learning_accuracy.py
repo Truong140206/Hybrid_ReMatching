@@ -75,12 +75,15 @@ def main():
                              'hoac ten mot nhanh khac')
     args = parser.parse_args()
     root = args.root or cr.output_root()
-    if args.arm not in cr.ARMS:
-        print('khong biet nhanh %r; co: %s'
-              % (args.arm, ', '.join(sorted(cr.ARMS))))
-        return 1
+    for arm in (args.arm, args.vs):
+        if arm not in cr.ARMS and arm != 'conventional':
+            print("khong biet nhanh %r; co: conventional, %s"
+                  % (arm, ', '.join(sorted(cr.ARMS))))
+            return 1
 
-    print('Tach Backward thanh hai nua, %s so voi HRM-PET goc\n' % args.arm)
+    against = 'HRM-PET goc' if args.vs == 'conventional' else args.vs
+    print('Tach Backward thanh hai nua, %s so voi %s' % (args.arm, against))
+    print('dau duong nghia la %s hon %s o cot do\n' % (args.arm, against))
     print('%-12s %-11s %8s %8s %9s %9s'
           % ('bo du lieu', 'backbone', 'hoc', 'giu', 'giu-hoc', 'backward'))
     print('%-12s %-11s %8s %8s %9s %9s'
@@ -140,11 +143,14 @@ def main():
     print('%d o. Trung binh: hoc %+.2f, giu %+.2f, nen Backward %+.2f.'
           % (len(rows), learn, retain, retain - learn))
     print('Sai lech lon nhat giua hai cot cuoi: %.3f diem.' % drift)
-    better_both = sum(1 for a, b, _ in rows if a > 0 and b > 0)
-    charged = sum(1 for a, b, c in rows if a > 0 and b > 0 and c < 0)
-    print('Hoc VA giu deu tot hon o %d o; trong so do %d o van bi Backward '
-          'cham diem am, vi hoc tot hon nhieu hon giu tot hon.'
-          % (better_both, charged))
+    # Counting both directions keeps the summary readable whichever arm is the
+    # stronger one; an earlier version assumed --arm was the better of the two
+    # and its sentence came out backwards when it was not.
+    print('hoc kem hon o %d/%d o, giu kem hon o %d/%d o.'
+          % (sum(1 for a, _, _ in rows if a < 0), len(rows),
+             sum(1 for _, b, _ in rows if b < 0), len(rows)))
+    print('Chenh Backward %+.2f tach ra: %+.2f tu giu, %+.2f tu hoc.'
+          % (retain - learn, retain, -learn))
     return 0
 
 
