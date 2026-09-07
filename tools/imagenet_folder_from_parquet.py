@@ -46,11 +46,16 @@ BATCH = 64
 # So anh va so lop la cua ban goc, dung de doi chieu sau khi ghi xong. Khong
 # co chung thi mot ban sao thieu mot manh parquet se di qua ma khong ai biet.
 SPECS = {
+    # Hai ban sao khong ghi nhan giong nhau. barkermrl luu mot so nguyen va
+    # mot bang ten lop, nen phai tra bang. axiong luu thang WordNet id dang
+    # chuoi, tuc da la ten thu muc can tao -- khong tra bang gi ca.
     'imagenet-a': {'out': 'imagenet-a', 'images': 7500, 'classes': 200,
-                   'repo': 'barkermrl/imagenet-a',
+                   'repo': 'barkermrl/imagenet-a', 'label_col': 'label',
+                   'lookup': True,
                    'next': 'python tools/prepare_datasets.py --which imagenet-a'},
     'imagenet-r': {'out': 'imagenet-r', 'images': 30000, 'classes': 200,
-                   'repo': 'axiong/imagenet-r',
+                   'repo': 'axiong/imagenet-r', 'label_col': 'wnid',
+                   'lookup': False,
                    'next': None},
 }
 
@@ -154,34 +159,44 @@ def main():
 
     readers = [pq.ParquetFile(path) for path in files]
 
+    label_col = spec['label_col']
     columns = list(readers[0].schema_arrow.names)
-    missing = [c for c in ('image', 'label') if c not in columns]
+    missing = [c for c in ('image', label_col) if c not in columns]
     if missing:
         print('parquet thieu cot %s; cot co san: %s' % (missing, columns))
         return 1
 
-    names = names_from_parquet(readers[0].schema_arrow)
-    if not names:
-        names = names_from_infos(args.parquet_dir, args.names_json)
-    if not names:
+    names = None
+    if not spec['lookup']:
+        print('  cot %s mang thang WordNet id, khong can bang ten lop'
+              % label_col)
+    else:
+        names = names_from_parquet(readers[0].schema_arrow)
+        if not names:
+            names = names_from_infos(args.parquet_dir, args.names_json)
+    if spec['lookup'] and not names:
         print('KHONG DOC DUOC ten lop tu parquet lan dataset_infos.json.')
         print('Tai kem tep do roi chay lai:')
         print('  wget -P %s https://huggingface.co/datasets/%s/resolve/main/'
               'dataset_infos.json' % (args.parquet_dir, spec['repo']))
         return 1
 
-    print('%d lop, tu %s den %s' % (len(names), names[0], names[-1]))
-    if not names[0].startswith('n'):
-        print('CANH BAO: ten lop khong phai WordNet id, kiem tra lai')
+    if names:
+        print('%d lop, tu %s den %s' % (len(names), names[0], names[-1]))
+        if not names[0].startswith('n'):
+            print('CANH BAO: ten lop khong phai WordNet id, kiem tra lai')
 
     written = 0
     for reader, path in zip(readers, files):
         for batch in reader.iter_batches(batch_size=BATCH,
-                                         columns=['image', 'label']):
+                                         columns=['image', label_col]):
             images = batch.column('image').to_pylist()
-            labels = batch.column('label').to_pylist()
+            labels = batch.column(label_col).to_pylist()
             for image, label in zip(images, labels):
-                class_dir = os.path.join(out_dir, names[label])
+                cls = names[label] if names else str(label)
+                if written == 0 and not cls.startswith('n'):
+                    print('CANH BAO: %r khong giong WordNet id' % cls)
+                class_dir = os.path.join(out_dir, cls)
                 os.makedirs(class_dir, exist_ok=True)
 
                 stem = os.path.basename(image.get('path') or '')
