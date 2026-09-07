@@ -54,7 +54,11 @@ DIRECTION = {'Acc@task': 1, 'Acc@1': 1, 'Acc@5': 1,
 
 # (fusion weight tag, class weight tag, gate tag)
 ARMS = {'baseline': ('w1p0', 'cw0p0', 'gmargin'),
-        'proposed': ('w0p7', 'cw0p5', 'gmargin')}
+        'proposed': ('w0p7', 'cw0p5', 'gmargin'),
+        # Cung w va beta voi 'proposed', chi khac che do cong, nen chenh lech
+        # giua hai cot doc duoc la cua rieng cai cong.
+        'relative': ('w0p7', 'cw0p5', 'grelative'),
+        'nogate': ('w0p7', 'cw0p5', '')}
 
 # Everything else in the log name, fixed across this grid.
 FIXED = ('_eval_rp_lora_d10000_relu_l10000_nnone_t0_b0p0_p1_inone_c0_ra0ls0'
@@ -102,27 +106,41 @@ def main():
     parser.add_argument('--root', default=None)
     parser.add_argument('--csv', default=None)
     parser.add_argument('--worse', action='store_true',
-                        help='liet ke moi o va chi so ma de xuat kem hon moc')
+                        help='liet ke moi o va chi so ma cot phai kem cot trai')
+    parser.add_argument('--arms', default='baseline,proposed',
+                        help='hai nhanh can so, cach nhau boi dau phay: %s'
+                             % ', '.join(sorted(ARMS)))
     args = parser.parse_args()
     root = args.root or output_root()
 
+    try:
+        left, right = [a.strip() for a in args.arms.split(',')]
+    except ValueError:
+        print('--arms can dung hai ten, cach nhau boi dau phay')
+        return 1
+    for arm in (left, right):
+        if arm not in ARMS:
+            print('khong biet nhanh %r; co: %s' % (arm, ', '.join(sorted(ARMS))))
+            return 1
+
     rows = []
     print('%-12s %-11s %9s %9s %8s   %9s %9s %8s   %7s %7s'
-          % ('bo du lieu', 'backbone', 'moc@task', 'dx@task', 'delta',
-             'moc@1', 'dx@1', 'delta', 'quen-m', 'quen-d'))
+          % ('bo du lieu', 'backbone', left[:6] + '@t', right[:6] + '@t',
+             'delta', left[:6] + '@1', right[:6] + '@1', 'delta',
+             'quen-' + left[:1], 'quen-' + right[:1]))
     print('-' * 104)
     for dataset, dataset_label, num_tasks in DATASETS:
         for dir_tags, log_tag, backbone_label in BACKBONES:
             found = {}
-            for arm in ARMS:
+            for arm in (left, right):
                 path = find_log(root, dataset, dir_tags, log_tag, num_tasks,
                                 arm)
                 found[arm] = final_row(path, num_tasks) if path else None
             if not any(found.values()):
                 continue
-            base, prop = found['baseline'], found['proposed']
+            base, prop = found[left], found[right]
             if base is None or prop is None:
-                which = 'moc' if base is None else 'de xuat'
+                which = left if base is None else right
                 print('%-12s %-11s  THIEU %s'
                       % (dataset_label, backbone_label, which))
                 continue
@@ -147,7 +165,7 @@ def main():
         # Sweeping only the metrics the table prints would answer the question
         # from partial data, so this covers all six.
         print()
-        print('Moi cho de xuat KEM hon moc, tren ca sau chi so:')
+        print('Moi cho %s KEM hon %s, tren ca sau chi so:' % (right, left))
         found_worse = 0
         for row in rows:
             for name in METRICS:
