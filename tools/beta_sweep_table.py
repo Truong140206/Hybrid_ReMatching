@@ -35,7 +35,9 @@ BACKBONES = [
 ]
 
 BETAS = [('0.3', 'cw0p3'), ('0.5', 'cw0p5'), ('0.8', 'cw0p8'), ('1.0', 'cw1p0')]
-GATES = [('co cong (margin)', 'gmargin'), ('khong cong', '')]
+GATES = [('co cong (margin)', 'gmargin'),
+         ('co cong (relative)', 'grelative'),
+         ('khong cong', '')]
 
 FIXED = ('_eval_rp_lora_d10000_relu_l10000_nnone_t0_b0p0_p1_inone_c0_ra0ls0'
          '_f1d1w0p7')
@@ -100,11 +102,11 @@ def main():
         print()
 
     print('Moi nhanh o beta tot nhat cua chinh no:')
-    print('%-11s%12s%12s%10s' % ('', 'co cong', 'khong cong', 'chenh'))
+    print('%-11s%12s%12s%10s' % ('', 'relative', 'khong cong', 'chenh'))
     print('-' * 45)
     wins = {'co cong': 0, 'khong cong': 0}
     for _, _, name in BACKBONES:
-        gated = best.get(('co cong (margin)', name))
+        gated = best.get(('co cong (relative)', name))
         plain = best.get(('khong cong', name))
         if gated is None or plain is None:
             print('%-11s%12s%12s%10s' % (name, '--', '--', '--'))
