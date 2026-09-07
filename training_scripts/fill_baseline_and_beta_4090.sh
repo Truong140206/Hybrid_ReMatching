@@ -20,7 +20,14 @@ set -uo pipefail
 # log already exists, so the script can be re-run after an interruption without
 # repeating finished work.
 #
+# PHASES picks which phases run: "B", "A", or "BA" (default). A sweeps beta at
+# a fixed routing weight, so it must not run before that weight is settled --
+# the routing fusion has never been swept in this study, and if it moves, every
+# beta measured under the old weight is spent. B does not depend on it at all,
+# since the conventional baseline uses none of our fusion.
+#
 # Usage: bash training_scripts/fill_baseline_and_beta_4090.sh
+#        PHASES=B bash training_scripts/fill_baseline_and_beta_4090.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -28,6 +35,7 @@ WORK_ROOT="${WORK_ROOT:-$(dirname "${REPO_ROOT}")}"
 OUT="${OUTPUT_ROOT:-${WORK_ROOT}/hrm-pet-output}"
 SEED="${SEED:-42}"
 BETAS="${BETAS:-0.1 0.2 0.5}"
+PHASES="${PHASES:-BA}"
 MIN_FREE_MIB="${MIN_FREE_MIB:-8000}"
 
 # ImageNet-R was trained before the directory convention settled, so MoCo v3
@@ -100,14 +108,18 @@ over() {  # phase entry backbone_list
   done
 }
 
-echo "===================== PHAN B: moc HRM-PET ====================="
-over baseline "${D_IMR}" "${BB_IMR}"
-over baseline "${D_CIF}" "${BB_OTH}"
-over baseline "${D_IMA}" "${BB_OTH}"
-over baseline "${D_FIV}" "${BB_OTH}"
+if [[ "${PHASES}" == *B* ]]; then
+  echo "=================== PHAN B: moc HRM-PET ===================="
+  over baseline "${D_IMR}" "${BB_IMR}"
+  over baseline "${D_CIF}" "${BB_OTH}"
+  over baseline "${D_IMA}" "${BB_OTH}"
+  over baseline "${D_FIV}" "${BB_OTH}"
+fi
 
-echo "===================== PHAN A: quet beta ======================="
-over sweep "${D_IMA}" "${BB_OTH}"
-over sweep "${D_FIV}" "${BB_OTH}"
+if [[ "${PHASES}" == *A* ]]; then
+  echo "=================== PHAN A: quet beta ======================"
+  over sweep "${D_IMA}" "${BB_OTH}"
+  over sweep "${D_FIV}" "${BB_OTH}"
+fi
 
 echo "##### XONG: chay ${ran} luot, bo qua ${skipped} o #####"
