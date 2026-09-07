@@ -199,6 +199,7 @@ def get_args_parser(subparsers):
     subparsers.add_argument('--strict_exemplar_free', action='store_true', help='reject any configuration that stores per-example real features or rereads historical train images')
     subparsers.add_argument('--report_conventional_cost', action='store_true', help='log per-sample LoRA and forward-call cost of the default HRM-PET (DRM+CRM) evaluation path')
     subparsers.add_argument('--classifier_union_audit', action='store_true', help='measure whether the RP head, treated as a classifier, is correct where the routed HRM-PET head is wrong; bounds what a classifier-level fusion could add on top of the routing gain')
+    subparsers.add_argument('--rp_dump_scores', default='', type=str, help="save the final stage's per-sample routed logits, RP scores and labels to this .npz, so candidate ways of choosing between the two heads can be searched offline in seconds instead of one GPU run each; the class-union audit bounds that search at +1.97 Acc@1 on ImageNet-R Sup-21K and +5.22 on MAE, and three hand-designed gates captured none of it")
     subparsers.add_argument('--layer_stat_router', action='store_true', help='third routing signal from per-task transformer-block activation statistics (PMI-CFS layer-wise prior), scored by diagonal-Gaussian KL; needs no extra adapter call')
 
     # --- thuoc tinh ma trainers/engines doc thang tu args ---

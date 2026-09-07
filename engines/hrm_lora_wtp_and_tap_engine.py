@@ -881,6 +881,14 @@ def _top2_margin(scores, valid):
 
 gate_stats = {}
 
+# Per-sample scores saved by --rp_dump_scores. The class-union audit says a
+# perfect choice between the routed head and the RP head is worth +1.97 Acc@1 on
+# ImageNet-R Sup-21K and +5.22 on MAE, and three hand-designed gates captured
+# none of it. Searching that space one hypothesis per four-minute evaluation is
+# how a day gets spent on five null results, so the raw scores go to disk once
+# and the search happens offline.
+dump_store = {'routed': [], 'rp': [], 'target': [], 'task': []}
+
 
 def _fusion_gate(routed_logits, valid, mode, rp_scores=None):
     """How much this sample should listen to the second classifier, in [0, 1].
@@ -2361,6 +2369,16 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     'never computed; class fusion requires '
                     '--rp_route_fusion_drm. Refusing to skip stage 2 silently.'
                     % class_weight)
+            if (getattr(args, 'rp_dump_scores', '')
+                    and task_id + 1 == int(getattr(args, 'num_tasks', 0))
+                    and fusion_rp_scores is not None):
+                # Before the blend, which overwrites `logits` in place below.
+                dump_store['routed'].append(logits.detach().float().cpu())
+                dump_store['rp'].append(
+                    fusion_rp_scores.detach().float().cpu())
+                dump_store['target'].append(target.detach().cpu())
+                dump_store['task'].append(
+                    torch.full_like(target.detach().cpu(), i))
             if class_weight != 0.0 and fusion_rp_scores is not None:
                 args_ref[0] = args
                 logits = fuse_class_scores(
@@ -3132,6 +3150,25 @@ def evaluate_till_now(model: torch.nn.Module, original_model: torch.nn.Module, d
     if bool(getattr(args, 'classifier_union_audit', False)):
         result_str += "	ClsRouted: {:.4f}	ClsRP: {:.4f}	ClsUnion: {:.4f}	ClsRPOnly: {:.4f}".format(
             *[np.mean(stat_matrix[155 + k, :task_id + 1]) for k in range(4)])
+    if getattr(args, 'rp_dump_scores', '') and dump_store['target']:
+        # Written once, at the last stage, and only if something was collected.
+        # Masked classes arrive as -inf and would poison anything numeric read
+        # off the file later, so they are stored as a boolean mask instead and
+        # the scores themselves are finite.
+        routed = torch.cat(dump_store['routed'])
+        valid = torch.isfinite(routed)
+        np.savez_compressed(
+            args.rp_dump_scores,
+            routed=torch.nan_to_num(routed, neginf=0.0).numpy(),
+            rp=torch.nan_to_num(torch.cat(dump_store['rp']),
+                                neginf=0.0).numpy(),
+            valid=valid.numpy(),
+            target=torch.cat(dump_store['target']).numpy(),
+            task=torch.cat(dump_store['task']).numpy())
+        print('Dumped per-sample scores for %d samples to %s'
+              % (routed.shape[0], args.rp_dump_scores))
+        for key in dump_store:
+            dump_store[key].clear()
     if bool(getattr(args, 'report_conventional_cost', False)):
         result_str += "\tLoRA/sample: {:.4f}\tForwardCalls/sample: {:.4f}".format(
             avg_stat[150], avg_stat[151])
