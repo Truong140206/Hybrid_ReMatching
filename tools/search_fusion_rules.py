@@ -67,6 +67,22 @@ def accuracy(scores, target):
     return float((scores.argmax(axis=1) == target).mean() * 100.0)
 
 
+def accuracy_by_task(scores, target, task, mask=None):
+    """Mean of the per-task accuracies, which is what the logs report.
+
+    The final row averages ten per-task numbers rather than pooling six thousand
+    samples, and ImageNet-R's tasks hold different numbers of test images, so
+    the two differ -- by 0.11 on Sup-21K and 0.52 on MAE. Pooling and calling it
+    the same number is how a tool silently disagrees with the run it is meant to
+    reproduce.
+    """
+    correct = scores.argmax(axis=1) == target
+    if mask is not None:
+        correct, task = correct[mask], task[mask]
+    per_task = [correct[task == t].mean() for t in np.unique(task)]
+    return float(np.mean(per_task) * 100.0)
+
+
 def auc(scores, labels):
     """Rank AUC, ties handled by average rank; 0.5 means no separation."""
     order = np.argsort(scores, kind='mergesort')
@@ -116,6 +132,7 @@ def main():
     data = np.load(args.dump)
     valid = data['valid']
     target = data['target'].astype(int)
+    task = data['task'].astype(int)
     routed = standardize(data['routed'].astype(np.float64), valid)
     rp = standardize(data['rp'].astype(np.float64), valid)
     count = len(target)
@@ -126,12 +143,15 @@ def main():
 
     print('%d mau, %d lop hop le trung binh\n'
           % (count, valid.sum(axis=1).mean()))
-    print('%-34s %8s' % ('cau hinh', 'Acc@1'))
-    print('-' * 43)
-    print('%-34s %8.2f' % ('chi dinh tuyen (beta=0)', accuracy(routed, target)))
-    print('%-34s %8.2f' % ('chi RP (beta=1)', accuracy(rp, target)))
-    print('%-34s %8.2f' % ('tron hien tai (beta=%.2f)' % args.beta,
-                           accuracy(fused, target)))
+    print('%-34s %8s %9s' % ('cau hinh', 'gop', 'theo nv'))
+    print('%-34s %8s %9s' % ('', '6000 mau', 'nhu log'))
+    print('-' * 53)
+    for name, scores in (('chi dinh tuyen (beta=0)', routed),
+                         ('chi RP (beta=1)', rp),
+                         ('tron hien tai (beta=%.2f)' % args.beta, fused)):
+        print('%-34s %8.2f %9.2f'
+              % (name, accuracy(scores, target),
+                 accuracy_by_task(scores, target, task)))
     print('%-34s %8.2f' % ('tran: hop oracle',
                            float((routed_ok | rp_ok).mean() * 100.0)))
     print('%-34s %8.2f' % ('  trong do RP dung mot minh',
@@ -139,10 +159,11 @@ def main():
     print('%-34s %8.2f' % ('  trong do dinh tuyen dung mot minh',
                            float((routed_ok & ~rp_ok).mean() * 100.0)))
 
-    print('\nQuet beta hang so:')
+    print('\nQuet beta hang so (trung binh theo nhiem vu, nhu log):')
     best_beta, best_acc = None, -1.0
     for beta in np.arange(0.0, 1.01, 0.05):
-        got = accuracy((1.0 - beta) * routed + beta * rp, target)
+        got = accuracy_by_task((1.0 - beta) * routed + beta * rp, target,
+                               task)
         if got > best_acc:
             best_beta, best_acc = beta, got
     print('  tot nhat %.2f tai beta=%.2f' % (best_acc, best_beta))
@@ -199,24 +220,25 @@ def main():
     probability = apply_logistic(matrix, model)
     print('\n%-34s %8s %8s' % ('luat', 'Acc@1', 'so voi tron'))
     print('-' * 52)
-    reference = accuracy(fused[test], target[test])
+    reference = accuracy_by_task(fused, target, task, test)
     print('%-34s %8.2f %8s' % ('tron hien tai (nua kiem tra)', reference, '--'))
     for scale in (0.3, 0.5, 0.8, 1.0):
         weights = (scale * probability)[:, None]
         mixed = (1.0 - weights) * routed + weights * rp
-        got = accuracy(mixed[test], target[test])
+        got = accuracy_by_task(mixed, target, task, test)
         print('%-34s %8.2f %+8.2f'
               % ('beta_i = %.1f * p(RP dung)' % scale, got, got - reference))
     for threshold in (0.5, 0.6, 0.7):
         pick = probability > threshold
         mixed = np.where(pick[:, None], rp, fused)
-        got = accuracy(mixed[test], target[test])
+        got = accuracy_by_task(mixed, target, task, test)
         print('%-34s %8.2f %+8.2f'
               % ('chon RP khi p > %.1f' % threshold, got, got - reference))
     oracle = np.where((rp_ok & ~routed_ok)[:, None], rp, fused)
     print('%-34s %8.2f %+8.2f'
-          % ('oracle (biet truoc)', accuracy(oracle[test], target[test]),
-             accuracy(oracle[test], target[test]) - reference))
+          % ('oracle (biet truoc)', accuracy_by_task(oracle, target, task,
+                                                     test),
+             accuracy_by_task(oracle, target, task, test) - reference))
     return 0
 
 
