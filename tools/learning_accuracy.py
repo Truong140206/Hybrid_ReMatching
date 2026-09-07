@@ -23,9 +23,15 @@ a_i(i) is read off the diagonal of the evaluation schedule. Stage t evaluates
 tasks 1..t, so among the '* Acc@task ...' lines the diagonal sits at positions
 t(t+1)/2, and the final row a_i(T) is the last T of them.
 
+The comparison needs no baseline of a particular kind, only two schedules, so
+--vs takes either the conventional HRM-PET log or another arm. That matters
+here: the conventional log exists for one backbone on two benchmarks, while the
+gated and ungated arms exist on all twenty-one cells, and the claim being
+checked is about those two.
+
 Usage:
     python tools/learning_accuracy.py --arm nogate03
-    python tools/learning_accuracy.py --arm relative
+    python tools/learning_accuracy.py --arm relative --vs nogate03
 """
 import argparse
 import os
@@ -63,8 +69,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--root', default=None)
     parser.add_argument('--arm', default='nogate03',
-                        help='nhanh can so voi HRM-PET goc: %s'
-                             % ', '.join(sorted(cr.ARMS)))
+                        help='nhanh can cham: %s' % ', '.join(sorted(cr.ARMS)))
+    parser.add_argument('--vs', default='conventional',
+                        help="cham voi cai gi: 'conventional' la HRM-PET goc, "
+                             'hoac ten mot nhanh khac')
     args = parser.parse_args()
     root = args.root or cr.output_root()
     if args.arm not in cr.ARMS:
@@ -84,16 +92,20 @@ def main():
         for dir_tags, log_tag, backbone_label in cr.BACKBONES:
             arm_path = cr.find_log(root, dataset, dir_tags, log_tag, num_tasks,
                                    args.arm)
-            base_path = None
-            for dir_tag in dir_tags:
-                suffix = '_%s' % dir_tag if dir_tag else ''
-                candidate = os.path.join(
-                    root, '%s%s_lora_rank8_baseline_%dtasks_seed42'
-                          '_eval_conventional.log'
-                          % (dataset, suffix, num_tasks))
-                if os.path.isfile(candidate):
-                    base_path = candidate
-                    break
+            if args.vs == 'conventional':
+                base_path = None
+                for dir_tag in dir_tags:
+                    suffix = '_%s' % dir_tag if dir_tag else ''
+                    candidate = os.path.join(
+                        root, '%s%s_lora_rank8_baseline_%dtasks_seed42'
+                              '_eval_conventional.log'
+                              % (dataset, suffix, num_tasks))
+                    if os.path.isfile(candidate):
+                        base_path = candidate
+                        break
+            else:
+                base_path = cr.find_log(root, dataset, dir_tags, log_tag,
+                                        num_tasks, args.vs)
             ours = accuracies(arm_path, num_tasks)
             base = accuracies(base_path, num_tasks)
             if ours is None or base is None:
