@@ -58,7 +58,13 @@ ARMS = {'baseline': ('w1p0', 'cw0p0', 'gmargin'),
         # Cung w va beta voi 'proposed', chi khac che do cong, nen chenh lech
         # giua hai cot doc duoc la cua rieng cai cong.
         'relative': ('w0p7', 'cw0p5', 'grelative'),
-        'nogate': ('w0p7', 'cw0p5', '')}
+        'nogate': ('w0p7', 'cw0p5', ''),
+        # Beta=0.3 la dinh that cua nhanh khong cong tren ImageNet-R (do ca
+        # cot 0.0 nen biet la dinh trong, khong phai bien luoi). Cham no o
+        # 0.5 la cham mot nhanh chua chinh.
+        'proposed03': ('w0p7', 'cw0p3', 'gmargin'),
+        'relative03': ('w0p7', 'cw0p3', 'grelative'),
+        'nogate03': ('w0p7', 'cw0p3', '')}
 
 # Everything else in the log name, fixed across this grid.
 FIXED = ('_eval_rp_lora_d10000_relu_l10000_nnone_t0_b0p0_p1_inone_c0_ra0ls0'
