@@ -2181,6 +2181,16 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                     fusion_rp_scores, id_logits,
                     class_mask, task_id + 1, args, device,
                     layer_scores=layer_scores)
+                if bool(getattr(args, 'rp_route_oracle', False)):
+                    # Uses the labels, so it is an audit and can never ship. It
+                    # splits the 24.58 points of error on ImageNet-R Sup-21K
+                    # into the part routing costs and the part the classifier
+                    # costs -- the one division the class-union audit cannot
+                    # make, and the reason a day spent on the 3.48 points that
+                    # audit bounds may have been spent on the smaller half.
+                    prompt_id = torch.tensor(
+                        [target_task_map[int(v)] for v in target.cpu()],
+                        device=device)
             ##############
             # target_id = torch.tensor([target_task_map[v.item()] for v in target], device=device)
 
