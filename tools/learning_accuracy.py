@@ -74,9 +74,9 @@ def main():
 
     print('Tach Backward thanh hai nua, %s so voi HRM-PET goc\n' % args.arm)
     print('%-12s %-11s %8s %8s %9s %9s'
-          % ('bo du lieu', 'backbone', 'hoc', 'giu', 'backward', 'khop'))
+          % ('bo du lieu', 'backbone', 'hoc', 'giu', 'giu-hoc', 'backward'))
     print('%-12s %-11s %8s %8s %9s %9s'
-          % ('', '', 'a_i(i)', 'a_i(T)', 'chenh', 'dong nhat'))
+          % ('', '', 'a_i(i)', 'a_i(T)', 'suy ra', 'do duoc'))
     print('-' * 62)
 
     rows = []
@@ -98,15 +98,25 @@ def main():
             base = accuracies(base_path, num_tasks)
             if ours is None or base is None:
                 continue
+            # The identity is only worth printing if it is checked against the
+            # Backward the run actually reported, not against itself.
+            ours_row = cr.final_row(arm_path, num_tasks)
+            base_row = cr.final_row(base_path, num_tasks)
+            if not ours_row or not base_row:
+                continue
+            measured = ours_row.get('Backward')
+            baseline = base_row.get('Backward')
+            if measured is None or baseline is None:
+                continue
             # Backward averages over the tasks that have a later stage, so the
             # last task is excluded from both halves.
             keep = num_tasks - 1
             learn = (sum(ours[0][:keep]) - sum(base[0][:keep])) / keep
             retain = (sum(ours[1][:keep]) - sum(base[1][:keep])) / keep
-            print('%-12s %-11s %+8.2f %+8.2f %+9.2f %9.2f'
+            print('%-12s %-11s %+8.2f %+8.2f %+9.2f %+9.2f'
                   % (dataset_label, backbone_label, learn, retain,
-                     retain - learn, retain - learn))
-            rows.append((learn, retain))
+                     retain - learn, measured - baseline))
+            rows.append((learn, retain, measured - baseline))
         print()
 
     if not rows:
@@ -114,10 +124,12 @@ def main():
         return 1
     learn = sum(r[0] for r in rows) / len(rows)
     retain = sum(r[1] for r in rows) / len(rows)
+    drift = max(abs(r[1] - r[0] - r[2]) for r in rows)
     print('%d o. Trung binh: hoc %+.2f, giu %+.2f, nen Backward %+.2f.'
           % (len(rows), learn, retain, retain - learn))
-    better_both = sum(1 for a, b in rows if a > 0 and b > 0)
-    charged = sum(1 for a, b in rows if a > 0 and b > 0 and b - a < 0)
+    print('Sai lech lon nhat giua hai cot cuoi: %.3f diem.' % drift)
+    better_both = sum(1 for a, b, _ in rows if a > 0 and b > 0)
+    charged = sum(1 for a, b, c in rows if a > 0 and b > 0 and c < 0)
     print('Hoc VA giu deu tot hon o %d o; trong so do %d o van bi Backward '
           'cham diem am, vi hoc tot hon nhieu hon giu tot hon.'
           % (better_both, charged))
