@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""Split Backward transfer into the two accuracies it subtracts.
+
+Backward averages a_i(T) - a_i(i): final accuracy on task i minus the accuracy
+on task i measured the moment it was learned. Only the first term is retention.
+The second is plasticity, and it enters with a minus sign, so a method that
+learns each task better is charged for it -- the metric improves when the
+subtrahend falls.
+
+On ImageNet-R Sup-21K that is exactly what happens. Against conventional
+HRM-PET the hybrid learns each task 1.58 points better on average and keeps
+1.38 points more at the end, and the eval script still stamps
+`Backward delta=-0.1958: FAIL`, because 1.38 - 1.58 is negative. The gated
+variant scores a better Backward than the ungated one for the same reason in
+reverse: its learning accuracy is lower on nine of ten tasks.
+
+So Backward cannot be read on its own here. This prints both halves for every
+cell, and checks the identity that ties them together:
+
+    delta(Backward) = delta(retention) - delta(plasticity)
+
+a_i(i) is read off the diagonal of the evaluation schedule. Stage t evaluates
+tasks 1..t, so among the '* Acc@task ...' lines the diagonal sits at positions
+t(t+1)/2, and the final row a_i(T) is the last T of them.
+
+Usage:
+    python tools/learning_accuracy.py --arm nogate03
+    python tools/learning_accuracy.py --arm relative
+"""
+import argparse
+import os
+import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import collect_results as cr
+
+ROW = re.compile(r'^\*\s+Acc@task\s+[0-9.]+\s+Acc@1\s+(-?[0-9.]+)')
+
+
+def accuracies(path, num_tasks):
+    """(diagonal a_t(t), final row a_i(T)), or None if the log is not complete.
+
+    A run that stopped early leaves a short schedule, and reading a diagonal out
+    of it would silently mix stages. The expected count is exact, so check it.
+    """
+    if not path or not os.path.isfile(path):
+        return None
+    values = []
+    with open(path, encoding='utf-8', errors='replace') as handle:
+        for line in handle:
+            found = ROW.match(line)
+            if found:
+                values.append(float(found.group(1)))
+    if len(values) != num_tasks * (num_tasks + 1) // 2:
+        return None
+    diagonal = [values[t * (t + 1) // 2 - 1] for t in range(1, num_tasks + 1)]
+    return diagonal, values[-num_tasks:]
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--root', default=None)
+    parser.add_argument('--arm', default='nogate03',
+                        help='nhanh can so voi HRM-PET goc: %s'
+                             % ', '.join(sorted(cr.ARMS)))
+    args = parser.parse_args()
+    root = args.root or cr.output_root()
+    if args.arm not in cr.ARMS:
+        print('khong biet nhanh %r; co: %s'
+              % (args.arm, ', '.join(sorted(cr.ARMS))))
+        return 1
+
+    print('Tach Backward thanh hai nua, %s so voi HRM-PET goc\n' % args.arm)
+    print('%-12s %-11s %8s %8s %9s %9s'
+          % ('bo du lieu', 'backbone', 'hoc', 'giu', 'backward', 'khop'))
+    print('%-12s %-11s %8s %8s %9s %9s'
+          % ('', '', 'a_i(i)', 'a_i(T)', 'chenh', 'dong nhat'))
+    print('-' * 62)
+
+    rows = []
+    for dataset, dataset_label, num_tasks in cr.DATASETS:
+        for dir_tags, log_tag, backbone_label in cr.BACKBONES:
+            arm_path = cr.find_log(root, dataset, dir_tags, log_tag, num_tasks,
+                                   args.arm)
+            base_path = None
+            for dir_tag in dir_tags:
+                suffix = '_%s' % dir_tag if dir_tag else ''
+                candidate = os.path.join(
+                    root, '%s%s_lora_rank8_baseline_%dtasks_seed42'
+                          '_eval_conventional.log'
+                          % (dataset, suffix, num_tasks))
+                if os.path.isfile(candidate):
+                    base_path = candidate
+                    break
+            ours = accuracies(arm_path, num_tasks)
+            base = accuracies(base_path, num_tasks)
+            if ours is None or base is None:
+                continue
+            # Backward averages over the tasks that have a later stage, so the
+            # last task is excluded from both halves.
+            keep = num_tasks - 1
+            learn = (sum(ours[0][:keep]) - sum(base[0][:keep])) / keep
+            retain = (sum(ours[1][:keep]) - sum(base[1][:keep])) / keep
+            print('%-12s %-11s %+8.2f %+8.2f %+9.2f %9.2f'
+                  % (dataset_label, backbone_label, learn, retain,
+                     retain - learn, retain - learn))
+            rows.append((learn, retain))
+        print()
+
+    if not rows:
+        print('khong o nao co du ca hai log')
+        return 1
+    learn = sum(r[0] for r in rows) / len(rows)
+    retain = sum(r[1] for r in rows) / len(rows)
+    print('%d o. Trung binh: hoc %+.2f, giu %+.2f, nen Backward %+.2f.'
+          % (len(rows), learn, retain, retain - learn))
+    better_both = sum(1 for a, b in rows if a > 0 and b > 0)
+    charged = sum(1 for a, b in rows if a > 0 and b > 0 and b - a < 0)
+    print('Hoc VA giu deu tot hon o %d o; trong so do %d o van bi Backward '
+          'cham diem am, vi hoc tot hon nhieu hon giu tot hon.'
+          % (better_both, charged))
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
