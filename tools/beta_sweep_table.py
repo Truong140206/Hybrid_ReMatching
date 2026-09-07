@@ -6,9 +6,17 @@ the value that was tuned with the gate in place. That is the standard shape for
 a cumulative ablation, but it cannot answer the question it raises: is the gate
 worth keeping, or was beta simply too large for an ungated head?
 
-So both arms are swept over the same four values of beta, on all six backbones,
-and each is judged at its own best setting. Anything else compares a tuned
+So both arms are swept over the same values of beta, on all six backbones, and
+each is judged at its own best setting. Anything else compares a tuned
 configuration against an untuned one.
+
+The grid reaches down to beta=0.0 because the ungated arm peaked at the smallest
+value of the original grid, 0.3, on five of six backbones. An optimum on the
+boundary is not an optimum, and the direction it points matters: beta=0.0 is no
+class fusion at all, so without that anchor an ungated win cannot be told apart
+from a preference for not fusing. Nothing is gated at beta=0.0, so that column
+is measured once, under the ungated arm; the other arms leave it empty rather
+than copy it.
 
 Logs are addressed by their exact name, rebuilt from the template
 eval_rp_head_any_4090.sh uses; a missing file is reported, never substituted.
@@ -34,7 +42,9 @@ BACKBONES = [
     ('mae', 'bmae', 'MAE-1K'),
 ]
 
-BETAS = [('0.3', 'cw0p3'), ('0.5', 'cw0p5'), ('0.8', 'cw0p8'), ('1.0', 'cw1p0')]
+BETAS = [('0.0', 'cw0p0'), ('0.1', 'cw0p1'), ('0.2', 'cw0p2'),
+         ('0.3', 'cw0p3'), ('0.5', 'cw0p5'), ('0.8', 'cw0p8'),
+         ('1.0', 'cw1p0')]
 GATES = [('co cong (margin)', 'gmargin'),
          ('co cong (relative)', 'grelative'),
          ('khong cong', '')]
