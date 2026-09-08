@@ -2389,6 +2389,19 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 dump_store['target'].append(target.detach().cpu())
                 dump_store['task'].append(
                     torch.full_like(target.detach().cpu(), i))
+            debias = float(getattr(args, 'rp_task_debias', 0.0))
+            if debias != 0.0 and class_mask is not None:
+                # After the dump above on purpose: the dump keeps the raw routed
+                # scores, so the offline sweep in tools/task_bias.py and this
+                # branch cannot drift apart in what they call alpha=0.
+                for seen_task in range(task_id + 1):
+                    columns = torch.as_tensor(
+                        class_mask[seen_task], dtype=torch.long,
+                        device=logits.device)
+                    block = logits.index_select(1, columns)
+                    logits = logits.index_copy(
+                        1, columns,
+                        block - debias * block.mean(dim=1, keepdim=True))
             if class_weight != 0.0 and fusion_rp_scores is not None:
                 args_ref[0] = args
                 logits = fuse_class_scores(

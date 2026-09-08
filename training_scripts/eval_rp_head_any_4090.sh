@@ -43,6 +43,7 @@ RP_DUMP="${RP_DUMP:-}"
 # Oracle routing is an audit and uses the labels, so it tags the log
 # name loudly: no such number may ever sit in a results table.
 RP_ROUTE_ORACLE="${RP_ROUTE_ORACLE:-0}"
+RP_DEBIAS="${RP_DEBIAS:-0.0}"
 RP_LS_W="${RP_LS_W:-0.0}"
 RP_COST="${RP_COST:-0}"
 RP_CLS_AUDIT="${RP_CLS_AUDIT:-0}"
@@ -109,9 +110,12 @@ DUMP_FLAG=""; DUMP_TAG=""
 if [[ -n "${RP_DUMP}" ]]; then DUMP_FLAG="--rp_dump_scores ${RP_DUMP}"; DUMP_TAG="dump"; fi
 ORACLE_FLAG=""; ORACLE_TAG=""
 if [[ "${RP_ROUTE_ORACLE}" == "1" ]]; then ORACLE_FLAG="--rp_route_oracle"; ORACLE_TAG="ROUTEORACLE"; fi
+DEBIAS_FLAG="--rp_task_debias ${RP_DEBIAS}"
+DEBIAS_TAG=""
+if [[ "${RP_DEBIAS}" != "0.0" ]]; then DEBIAS_TAG="db$(tag "${RP_DEBIAS}")"; fi
 FUSE_FLAG=""; [[ "${RP_FUSE}" == "1" ]] && FUSE_FLAG="--rp_route_fusion --rp_route_fusion_weight ${RP_FUSE_W}"
 [[ "${RP_FUSE_DRM}" == "1" ]] && FUSE_FLAG="--rp_route_fusion_drm --rp_route_fusion_weight ${RP_FUSE_W} --rp_route_fusion_ls_weight ${RP_LS_W} --rp_class_fusion_weight ${RP_CLS_W} --rp_class_fusion_sharpen ${RP_CLS_SHARP} --rp_class_fusion_min_tasks ${RP_CLS_MIN} --rp_class_fusion_gate ${RP_CLS_GATE} --rp_fusion_ramp ${RP_RAMP} --rp_fusion_ramp_scope ${RP_RAMP_SCOPE}"
-LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_rp_${RP_SOURCE}_d${RP_DIM}_${RP_ACT}_l$(tag "${RP_LAMBDA}")_n${RP_NORM}_t${RP_LORA_TASK}_b$(tag "${RP_BLEND}")_p${RP_PIN}_i${RP_INORM}_c${CALIBRATE}_ra${RP_ROUTE_AUDIT}ls${RP_LAYER_STAT}_f${RP_FUSE}d${RP_FUSE_DRM}w$(tag "${RP_FUSE_W}")lsw$(tag "${RP_LS_W}")c${RP_COST}ca${RP_CLS_AUDIT}cw$(tag "${RP_CLS_W}")sh$(tag "${RP_CLS_SHARP}")m${RP_CLS_MIN}${GATE_TAG}${RAMP_TAG}${BARE_TAG}${LSEARCH_TAG}${DUMP_TAG}${ORACLE_TAG}${BACKBONE_TAG}.log"
+LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_rp_${RP_SOURCE}_d${RP_DIM}_${RP_ACT}_l$(tag "${RP_LAMBDA}")_n${RP_NORM}_t${RP_LORA_TASK}_b$(tag "${RP_BLEND}")_p${RP_PIN}_i${RP_INORM}_c${CALIBRATE}_ra${RP_ROUTE_AUDIT}ls${RP_LAYER_STAT}_f${RP_FUSE}d${RP_FUSE_DRM}w$(tag "${RP_FUSE_W}")lsw$(tag "${RP_LS_W}")c${RP_COST}ca${RP_CLS_AUDIT}cw$(tag "${RP_CLS_W}")sh$(tag "${RP_CLS_SHARP}")m${RP_CLS_MIN}${GATE_TAG}${RAMP_TAG}${BARE_TAG}${LSEARCH_TAG}${DUMP_TAG}${ORACLE_TAG}${DEBIAS_TAG}${BACKBONE_TAG}.log"
 [[ -s "${LOG_PATH}" ]] && { echo "Refusing to overwrite: ${LOG_PATH}" >&2; exit 3; } || true
 
 cd "${REPO_ROOT}"
@@ -128,7 +132,7 @@ PYTHONUNBUFFERED=1 "${PYTHON_BIN}" -m torch.distributed.run \
   --num_tasks "${NUM_TASKS}" --rp_head --rp_dim "${RP_DIM}" \
   --rp_activation "${RP_ACT}" --rp_lambda "${RP_LAMBDA}" \
   --rp_feature_source "${RP_SOURCE}" --rp_normalize "${RP_NORM}" \
-  --rp_lora_task "${RP_LORA_TASK}" --rp_logit_blend "${RP_BLEND}" --rp_input_norm "${RP_INORM}" ${CAL_FLAG} ${PIN_FLAG} ${AUDIT_FLAG} ${FUSE_FLAG} ${LSEARCH_FLAG} ${BAREM_FLAG} ${DUMP_FLAG} ${ORACLE_FLAG} \
+  --rp_lora_task "${RP_LORA_TASK}" --rp_logit_blend "${RP_BLEND}" --rp_input_norm "${RP_INORM}" ${CAL_FLAG} ${PIN_FLAG} ${AUDIT_FLAG} ${FUSE_FLAG} ${LSEARCH_FLAG} ${BAREM_FLAG} ${DUMP_FLAG} ${ORACLE_FLAG} ${DEBIAS_FLAG} \
   --strict_exemplar_free --eval --output_dir "${RUN_DIR}" 2>&1 | tee "${LOG_PATH}"
 printf 'Hybrid RP head wall time seconds: %s\n' "$(( $(date +%s) - START_TIME ))" | tee -a "${LOG_PATH}"
 echo "Final hybrid metrics:"; grep "Average accuracy till task${NUM_TASKS}" "${LOG_PATH}" | tail -n 1 || true
