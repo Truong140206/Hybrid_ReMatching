@@ -537,9 +537,12 @@ same result serves both stages.
 \label{sec:setup}
 
 The backbone is a ViT-B/16 pre-trained on ImageNet-21K and adapted with LoRA of
-rank $8$. Each dataset is split into a sequence of $10$ tasks and every
-experiment is repeated over four seeds, $42$ through $45$; the LoRA pool and the
-TII module are retrained from scratch for each seed. Baseline and proposed
+rank $8$. The four-seed study of Sect.~\ref{sec:results} uses Split-ImageNet-R,
+Split-CIFAR100 and Split-CUB200, each divided into $10$ tasks; the grid of
+Sect.~\ref{sec:grid} replaces CUB-200 with Split-ImageNet-A and 5-Datasets, the
+latter being a $5$-task sequence. Every experiment is repeated over four seeds,
+$42$ through $45$; the LoRA pool and the TII module are retrained from scratch
+for each seed. Baseline and proposed
 method are evaluated from the same checkpoints through the same code path, so a
 reported difference reflects the inference-time change alone and carries no
 training noise. The random-projection head uses $M = 10^4$ dimensions, a ReLU
