@@ -704,15 +704,19 @@ the analysis predicts.
 \label{sec:grid}
 
 Everything above rests on one backbone. The original work states experiments on
-four datasets under five pre-training configurations without naming them; three
-traces in its released code identify them --- four pairs of configuration files
-(CIFAR-100, ImageNet-R, ImageNet-A, 5-Datasets, and no CUB-200), a stray
-\texttt{.DS\_Store} listing twenty script names in \texttt{training\_scripts/},
-i.e. four datasets times five backbones, and the absence of any MAE entry
-together with an MAE loader that raises \texttt{TypeError} at model construction.
-We rebuilt all twenty cells, retraining the entire HRM-PET pipeline from scratch
-where checkpoints were missing, and added MAE on ImageNet-R as a twenty-first,
-mechanically hardest cell.
+four datasets under five pre-training configurations. Its own ablation table
+names the five --- Sup-21K, iBOT-21K, iBOT-1K, DINO-1K and MoCo-1K --- and three
+traces in its released code identify the four datasets and corroborate that
+list: four pairs of configuration files (CIFAR-100, ImageNet-R, ImageNet-A,
+5-Datasets, and no CUB-200), a stray \texttt{.DS\_Store} in
+\texttt{training\_scripts/} listing twenty script names, i.e.\ four datasets
+times five backbones, and no MAE entry anywhere, together with an MAE loader
+that raises \texttt{TypeError} at model construction --- code broken in that way
+cannot have been executed. We rebuilt all twenty cells, retraining the entire
+HRM-PET pipeline from scratch where checkpoints were missing, and added MAE on
+ImageNet-R as a twenty-first cell: it is the configuration where the pre-trained
+features are weakest, so it is where a second source of evidence should matter
+most, and no published number exists for it.
 
 \begin{table}
 \caption{Twenty-one cells: four datasets, the five pre-training configurations
