@@ -47,8 +47,11 @@ KEEP=(
   configs/imr_lora.py
   configs/imagenet_class_names.json
 
-  # Nap du lieu
+  # Nap du lieu. dataset_utils tung bi bo sot: no duoc nhap bang import tuong
+  # doi, ma ban dau cong cu do phu thuoc cua chung toi khong theo loai import
+  # do, nen ban xuat dau tien chet ngay luc khoi dong voi ModuleNotFoundError.
   continual_datasets/continual_datasets.py
+  continual_datasets/dataset_utils.py
 
   # Bo thich ung
   peft/__init__.py
@@ -80,7 +83,6 @@ KEEP=(
   tools/collect_results.py
   tools/beta_sweep_table.py
   tools/prepare_datasets.py
-  tools/imagenet_folder_from_parquet.py
   tools/audit_exemplar_free_checkpoint.py
 
   # Kiem thu: phuong phap, va tuyen bo khong dung mau cu
@@ -108,6 +110,13 @@ done
 # engines/ giu nguyen ca thu muc: moi tep deu nam trong bao dong nhap cua main.py
 mkdir -p "${TARGET}/engines"
 cp "${SOURCE}"/engines/*.py "${TARGET}/engines/"
+
+# Cong cu dung anh tu parquet doi ten giua cac ban; chep cai nao dang co.
+for name in imagenet_folder_from_parquet.py imagenet_a_from_parquet.py; do
+  if [[ -f "${SOURCE}/tools/${name}" ]]; then
+    cp "${SOURCE}/tools/${name}" "${TARGET}/tools/${name}"
+  fi
+done
 
 copied=$(find "${TARGET}" -type f | wc -l)
 total=$(find "${SOURCE}" -type f -not -path '*/.git/*' -not -path '*__pycache__*' | wc -l)
