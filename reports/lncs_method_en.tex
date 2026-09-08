@@ -74,7 +74,54 @@ routing \and Random projection \and Signal fusion.}
 %
 \section{Introduction}
 
-\emph{Opening and contributions to be written.}
+A continual learner built on parameter-efficient tuning keeps one lightweight
+parameter set per task and, at inference, must decide which set to attach to the
+frozen backbone before it can classify. That decision is made once, from a
+single module, and everything downstream inherits it: a wrong choice attaches
+the wrong adapter, and the classifier that follows is asked to work from
+features it was not adapted for. Successive methods in this line have improved
+the decision --- richer pools, attention-weighted combinations, explicit
+re-matching stages --- but none change the fact that one signal stands in front
+of the rest of the pipeline.
+
+We observe that a second, independent source of evidence is already present
+inside such a trained model and is simply discarded. The LoRA features that the
+pipeline computes anyway can be pushed through a fixed random projection and
+read by a closed-form ridge classifier built from second-order statistics. This
+head trains no parameters, stores no images, and costs one forward pass that the
+pipeline already performs. More importantly it fails on \emph{different samples}
+than the routing module does, which is the property that makes combining them
+worthwhile rather than redundant.
+
+The paper puts that second source to work at the two points where the original
+pipeline commits to a decision. At the routing level it is blended with the
+existing task signal after both are standardised onto a common scale. At the
+classification level it is used as what it already is --- a complete classifier
+--- weighted per sample so that the blend opens only where the primary
+classifier is undecided.
+
+\subsubsection{Contributions.}
+\begin{itemize}
+\item We identify two weaknesses in the re-matching pipeline of
+      HRM-PET~\cite{ref_hrmpet}: its routing signal comes from one module, and a
+      better route does not automatically become a better prediction because the
+      shared head frequently predicts the correct class in spite of a wrong
+      route (Sect.~\ref{sec:method}).
+\item We show that a training-free second-order head over a frozen random
+      projection of the existing features supplies a second source of evidence
+      whose errors are decorrelated from the first, and we fuse the two at both
+      the routing and the classification level, entirely at inference time.
+\item We evaluate on three datasets over four seeds and report by axis: routing
+      improves by $+1.10$ to $+2.26$ points and classification by $+0.69$ to
+      $+1.50$, each several times the seed-to-seed standard deviation, while the
+      two retention metrics show no change we can resolve and we claim none
+      (Sect.~\ref{sec:results}).
+\item We reconstruct the full grid the original work covers --- four datasets by
+      five pre-training configurations, identified from traces in its released
+      code --- and add MAE as a twenty-first cell. All $21$ improve on both
+      accuracy axes, with the largest gain on the weakest backbone
+      (Sect.~\ref{sec:grid}).
+\end{itemize}
 
 \subsection{Problem Statement}
 
@@ -485,6 +532,185 @@ element-wise, so this stage also reduces exactly to the baseline.
 \subsubsection{Cost.}
 The random-projection head requires exactly one forward pass per sample, and the
 same result serves both stages.
+
+\section{Experimental Setup}
+\label{sec:setup}
+
+The backbone is a ViT-B/16 pre-trained on ImageNet-21K and adapted with LoRA of
+rank $8$. Each dataset is split into a sequence of $10$ tasks and every
+experiment is repeated over four seeds, $42$ through $45$; the LoRA pool and the
+TII module are retrained from scratch for each seed. Baseline and proposed
+method are evaluated from the same checkpoints through the same code path, so a
+reported difference reflects the inference-time change alone and carries no
+training noise. The random-projection head uses $M = 10^4$ dimensions, a ReLU
+non-linearity and ridge parameter $\lambda = 10^4$; no temperature scaling is
+applied.
+
+Writing $a_{i,t}$ for the accuracy on task $i$ measured at stage $t$, we report
+routing accuracy (Acc@task), classification accuracy at ranks one and five
+(Acc@1, Acc@5), cross-entropy Loss, and the two retention measures
+\begin{equation}
+\mathrm{Forgetting} = \frac{1}{T}\sum_{i=1}^{T}
+\Big( \max_{t} a_{i,t} - a_{i,T} \Big),
+\qquad
+\mathrm{Backward} = \frac{1}{T}\sum_{i=1}^{T} \big( a_{i,T} - a_{i,i} \big).
+\label{eq:metrics}
+\end{equation}
+Lower is better for Loss and Forgetting, higher for the rest. Both retention
+measures compare a task against \emph{itself} at an earlier stage rather than
+against another method, which is what makes them behave differently from the
+accuracy axes in Sect.~\ref{sec:results}.
+
+\subsubsection{Sanity check on the implementation.}
+Setting $w = 1.0$ in (\ref{eq:route}) places the whole routing weight on TII and
+switches the second source off. In that configuration the method reproduces the
+HRM-PET baseline digit for digit on all three datasets --- $77.7914$, $74.0191$,
+$1.2305$ and the remainder agree to the fourth decimal. Every difference in
+Table~\ref{tab:main} therefore comes from the added components rather than from
+an incidental difference in the evaluation path, and $w$ doubles as a continuous
+ablation axis between baseline and proposed method.
+
+\section{Results}
+\label{sec:results}
+
+Table~\ref{tab:main} reports all three datasets. Values are the mean $\pm$
+standard deviation over four seeds. The change column is computed pairwise ---
+the difference between proposed and baseline is taken per seed and only then
+averaged --- so its standard deviation describes the stability of the
+improvement itself rather than the varying difficulty of the seeds.
+
+\begin{table}
+\caption{Results on three datasets, mean $\pm$ standard deviation over seeds
+42--45.}\label{tab:main}
+\begin{tabular}{llrrr}
+\hline
+\multicolumn{2}{l}{Dataset and metric} & HRM-PET & Proposed & Change\\
+\hline
+\multicolumn{5}{l}{\emph{Split-ImageNet-R}}\\
+& Acc@task   & $77.58 \pm 0.33$ & $79.85 \pm 0.18$ & $+2.264 \pm 0.158$\\
+& Acc@1      & $73.94 \pm 0.48$ & $75.18 \pm 0.24$ & $+1.236 \pm 0.416$\\
+& Acc@5      & $86.71 \pm 0.21$ & $88.02 \pm 0.17$ & $+1.312 \pm 0.148$\\
+& Loss       & $1.23 \pm 0.01$  & $1.19 \pm 0.01$  & $-0.040 \pm 0.002$\\
+& Forgetting & $3.36 \pm 0.56$  & $3.30 \pm 0.35$  & $-0.056 \pm 0.334$\\
+& Backward   & $-3.16 \pm 0.61$ & $-3.20 \pm 0.42$ & $-0.047 \pm 0.282$\\
+\multicolumn{5}{l}{\emph{Split-CIFAR100}}\\
+& Acc@task   & $89.77 \pm 0.11$ & $90.87 \pm 0.09$ & $+1.103 \pm 0.066$\\
+& Acc@1      & $89.78 \pm 0.03$ & $90.47 \pm 0.05$ & $+0.690 \pm 0.063$\\
+& Acc@5      & $98.65 \pm 0.03$ & $98.86 \pm 0.07$ & $+0.217 \pm 0.057$\\
+& Loss       & $0.39 \pm 0.00$  & $0.39 \pm 0.00$  & $-0.000 \pm 0.001$\\
+& Forgetting & $3.89 \pm 0.08$  & $3.74 \pm 0.12$  & $-0.156 \pm 0.098$\\
+& Backward   & $-3.87 \pm 0.07$ & $-3.73 \pm 0.11$ & $+0.142 \pm 0.097$\\
+\multicolumn{5}{l}{\emph{Split-CUB200}}\\
+& Acc@task   & $93.12 \pm 0.14$ & $94.34 \pm 0.10$ & $+1.226 \pm 0.149$\\
+& Acc@1      & $86.38 \pm 0.25$ & $87.88 \pm 0.27$ & $+1.495 \pm 0.353$\\
+& Acc@5      & $97.04 \pm 0.10$ & $97.44 \pm 0.13$ & $+0.400 \pm 0.103$\\
+& Loss       & $0.57 \pm 0.00$  & $0.53 \pm 0.01$  & $-0.036 \pm 0.004$\\
+& Forgetting & $2.54 \pm 0.35$  & $2.18 \pm 0.12$  & $-0.359 \pm 0.325$\\
+& Backward   & $-2.42 \pm 0.39$ & $-2.14 \pm 0.13$ & $+0.279 \pm 0.391$\\
+\hline
+\end{tabular}
+\end{table}
+
+The six metrics are not six independent events; they measure three axes, and
+reporting by axis says more than a pooled count. The deciding quantity is the
+ratio of a change to the standard deviation of that same change: below $2$ it is
+not resolved.
+
+\subsubsection{Routing (Acc@task): improved.}
+The gain is $+1.10$ to $+2.26$ points at ratios between $8$ and $17$. This is
+the axis the first stage acts on directly and it carries the firmest evidence.
+
+\subsubsection{Classification (Acc@1, Acc@5): improved.}
+Acc@1 rises by $+0.69$ to $+1.50$ points at ratios of $3.0$ to $11.0$, Acc@5 by
+$+0.22$ to $+1.31$ at $3.8$ to $8.9$. Routing gains do not convert fully into
+classification gains --- Sect.~\ref{sec:method} explains why the shared head
+often predicts the right class in spite of a wrong route --- but the part that
+does convert repeats across every seed.
+
+\subsubsection{Retention (Forgetting, Backward): no evidence either way.}
+The ratios fall between $0.17$ and $1.6$ and never reach the resolution
+threshold on any dataset. The two are also near mirror images of one another
+--- $-0.156$ against $+0.142$ on CIFAR-100, $-0.359$ against $+0.279$ on
+CUB-200 --- so counting them as two results counts one event twice. \emph{We
+claim no improvement on this axis.} Read alongside Sect.~\ref{sec:limits}: the
+hyper-parameters were selected on ImageNet-R, so the independent evidence is the
+$11$ cells of CIFAR-100 and CUB-200, all $11$ of which improve.
+
+\subsubsection{The CUB-200 case.}
+This dataset was the weak point of the routing-only version, where a clear gain
+in routing accuracy stalled at $-0.03$ in Acc@1. With the classification stage
+added it becomes the dataset with the largest Acc@1 gain, which is the behaviour
+the analysis predicts.
+
+\subsection{The Full Grid}
+\label{sec:grid}
+
+Everything above rests on one backbone. The original work states experiments on
+four datasets under five pre-training configurations without naming them; three
+traces in its released code identify them --- four pairs of configuration files
+(CIFAR-100, ImageNet-R, ImageNet-A, 5-Datasets, and no CUB-200), a stray
+\texttt{.DS\_Store} listing twenty script names in \texttt{training\_scripts/},
+i.e. four datasets times five backbones, and the absence of any MAE entry
+together with an MAE loader that raises \texttt{TypeError} at model construction.
+We rebuilt all twenty cells, retraining the entire HRM-PET pipeline from scratch
+where checkpoints were missing, and added MAE on ImageNet-R as a twenty-first,
+mechanically hardest cell.
+
+Across those $21$ cells, \emph{every one} improves on both accuracy axes:
+Acc@task by $+0.97$ to $+4.57$ and Acc@1 by $+0.59$ to $+4.50$, while the
+baselines span more than a factor of two, from $40.2$ to $93.8$ Acc@1. The
+largest gain falls on the weakest backbone, MAE ($+4.50$ Acc@1), not the
+strongest. Forgetting improves in $15$ of $21$ cells and worsens in $6$, which
+is consistent with the four-seed reading above: on that axis the method moves
+nothing reliably.
+
+\section{Ablation}
+\label{sec:ablation}
+
+Removing the second stage and keeping only routing fusion retains the Acc@task
+gain in full but loses most of the Acc@1 gain, which is what identifies the
+classification stage as the larger contributor on five of six backbones. The
+routing weight $w$ and the class-fusion weight $\beta$ were examined jointly on
+a grid; $w = 0.7$ and $\beta = 0.5$ are used throughout and neither is at a
+boundary.
+
+The margin gate of (\ref{eq:gate}) adds no hyper-parameter of its own and its
+value is dataset-dependent. Removing it while lowering $\beta$ to $0.3$ is worth
+roughly half a point on ImageNet-R and CIFAR-100, and loses on all five cells of
+5-Datasets, where the baseline is already near saturation at $91$--$94$ Acc@1.
+We keep it for two reasons: it wins on the benchmark furthest from the one it
+was tuned on, and it makes the method nearly invariant to $\beta$ --- a spread
+of at most $1.17$ points across the sweep, against at least $3.89$ without it.
+A per-stage ramp on the fusion weight was implemented and measured; it helps
+only at the first stage and is not used.
+
+\section{Limitations}
+\label{sec:limits}
+
+Hyper-parameters were selected on ImageNet-R, so that dataset does not
+contribute independent evidence; the $11$ cells of CIFAR-100 and CUB-200 do.
+The four-seed protocol covers one backbone, and the $21$-cell grid covers one
+seed; no cell has both. We claim nothing on the retention axis, where no change
+reaches the resolution threshold. Finally, the method inherits whatever the
+frozen pipeline provides: it never modifies training, so the error that remains
+when routing is correct and both heads are consulted lies outside its reach.
+
+\section{Conclusion}
+
+Two fusion stages, both at inference and neither requiring retraining, improve
+two of the three axes measured: routing by $+1.10$ to $+2.26$ points and
+classification by $+0.69$ to $+1.50$ points, across three datasets and four
+seeds, by several times the seed-to-seed standard deviation. The retention axis
+shows no change distinguishable from zero and we claim none. The first stage
+exploits the complementarity of two routing signals that fail on different
+samples; the second exploits the fact that the second signal is already a
+complete classifier that the original architecture discards.
+
+What makes us believe the result is not a property of one backbone or one
+dataset is the full grid: over the four datasets and five backbones the original
+work covers, plus MAE as a twenty-first cell, no cell moves the wrong way on
+either accuracy axis, and the largest gain falls on the weakest backbone rather
+than the strongest.
 
 %
 \begin{credits}
