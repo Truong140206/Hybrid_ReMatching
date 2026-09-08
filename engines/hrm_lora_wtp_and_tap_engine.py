@@ -1012,7 +1012,52 @@ def _fusion_gate(routed_logits, valid, mode, rp_scores=None):
     raise ValueError('unknown rp_class_fusion_gate: %s' % mode)
 
 
-def fuse_class_scores(routed_logits, rp_scores, weight, seen_tasks=None):
+def _debias_blocks(scores, alpha, mode, class_mask, seen_tasks):
+    """Equalise the per-task blocks of an already standardised score matrix.
+
+    Task-recency bias shows up here as the newest task's classes scoring higher
+    than the oldest task's for the same sample: measured on ImageNet-R, +0.18
+    with a Sup-21K backbone and +0.73 with MAE, monotone in task age, against
+    0.001 for the random-projection head, which is one ridge solution over every
+    class and so has no reason to prefer any task.
+
+    The survey places the bias in both the classifier bias terms and the weight
+    norms; Weight Aligning corrects the norms multiplicatively and BiC learns a
+    per-task affine map on the logits. We cannot touch weights, but each block's
+    mean is the additive half and its spread the multiplicative one, so 'mean',
+    'std' and 'both' cover the same ground with parameters read off the sample
+    rather than learned from a validation set we do not have. Measured, 'std'
+    alone does nothing: the per-sample standardisation applied just above has
+    already absorbed the multiplicative half.
+
+    alpha = 0 returns the input untouched.
+    """
+    if alpha == 0.0 or class_mask is None or not seen_tasks:
+        return scores
+    blocks = [torch.as_tensor(class_mask[seen_task], dtype=torch.long,
+                              device=scores.device)
+              for seen_task in range(int(seen_tasks))]
+    reference = scores.index_select(1, torch.cat(blocks))
+    target_mean = reference.mean(dim=1, keepdim=True)
+    target_std = reference.std(
+        dim=1, unbiased=False, keepdim=True).clamp_min(1e-6)
+    out = scores
+    for index in blocks:
+        block = out.index_select(1, index)
+        mean = block.mean(dim=1, keepdim=True)
+        std = block.std(dim=1, unbiased=False, keepdim=True).clamp_min(1e-6)
+        if mode == 'mean':
+            fixed = block - mean + target_mean
+        elif mode == 'std':
+            fixed = (block - mean) * (target_std / std) + mean
+        else:
+            fixed = (block - mean) / std * target_std + target_mean
+        out = out.index_copy(1, index, (1.0 - alpha) * block + alpha * fixed)
+    return out
+
+
+def fuse_class_scores(routed_logits, rp_scores, weight, seen_tasks=None,
+                      class_mask=None):
     """Mix the routed HRM-PET classifier with the RP head as a second classifier.
 
     Routing gains convert into Acc@1 poorly -- the shared head often already
@@ -1042,7 +1087,21 @@ def fuse_class_scores(routed_logits, rp_scores, weight, seen_tasks=None):
         getattr(args_ref[0], 'rp_class_fusion_gate', 'none'),
         rp_scores=torch.nan_to_num(rp_scores.float(), neginf=-1e4))
     share = weight if gate is None else weight * gate
-    mixed = ((1.0 - share) * _standardize_valid(routed, valid)
+    # The task-block correction belongs here, AFTER standardisation, not on the
+    # raw logits at the call site. Both heads have to reach the mixture on a
+    # common scale, and removing the between-block spread shrinks the routed
+    # head's own standard deviation; standardising afterwards then divides by
+    # that smaller number and silently inflates the routed head against the RP
+    # head, changing the effective beta. Measured: correcting the raw logits
+    # gave 48.47 on MAE where correcting the standardised scores gives 48.78,
+    # and the two agreed to 0.005 on Sup-21K only because its blocks are 0.18
+    # apart instead of 0.73.
+    routed_z = _debias_blocks(
+        _standardize_valid(routed, valid),
+        float(getattr(args_ref[0], 'rp_task_debias', 0.0)),
+        str(getattr(args_ref[0], 'rp_task_debias_mode', 'mean')),
+        class_mask, seen_tasks)
+    mixed = ((1.0 - share) * routed_z
              + share * _standardize_valid(
                  torch.nan_to_num(rp_scores.float(), neginf=0.0), valid))
     # Standardizing puts the mixture at unit variance, which is the wrong scale
@@ -2389,50 +2448,11 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 dump_store['target'].append(target.detach().cpu())
                 dump_store['task'].append(
                     torch.full_like(target.detach().cpu(), i))
-            debias = float(getattr(args, 'rp_task_debias', 0.0))
-            debias_mode = str(getattr(args, 'rp_task_debias_mode', 'mean'))
-            if debias != 0.0 and class_mask is not None:
-                # After the dump above on purpose: the dump keeps the raw routed
-                # scores, so the offline sweep in tools/task_bias.py and this
-                # branch cannot drift apart in what they call alpha=0.
-                #
-                # Every operation below is equivariant under a per-sample affine
-                # map, which is exactly what _standardize_valid applies later, so
-                # correcting the raw logits here and correcting the standardised
-                # scores offline give the same ranking. That is why the offline
-                # sweep predicted 75.40 for mean at 0.5 on Sup-21K and the run
-                # measured 75.3948.
-                seen_columns = []
-                for seen_task in range(task_id + 1):
-                    seen_columns.extend(class_mask[seen_task])
-                seen_index = torch.as_tensor(
-                    seen_columns, dtype=torch.long, device=logits.device)
-                whole = logits.index_select(1, seen_index).float()
-                target_mean = whole.mean(dim=1, keepdim=True)
-                target_std = whole.std(
-                    dim=1, unbiased=False, keepdim=True).clamp_min(1e-6)
-                for seen_task in range(task_id + 1):
-                    columns = torch.as_tensor(
-                        class_mask[seen_task], dtype=torch.long,
-                        device=logits.device)
-                    block = logits.index_select(1, columns).float()
-                    mean = block.mean(dim=1, keepdim=True)
-                    std = block.std(
-                        dim=1, unbiased=False, keepdim=True).clamp_min(1e-6)
-                    if debias_mode == 'mean':
-                        fixed = block - mean + target_mean
-                    elif debias_mode == 'std':
-                        fixed = (block - mean) * (target_std / std) + mean
-                    else:
-                        fixed = (block - mean) / std * target_std + target_mean
-                    logits = logits.index_copy(
-                        1, columns,
-                        ((1.0 - debias) * block + debias * fixed).to(
-                            logits.dtype))
             if class_weight != 0.0 and fusion_rp_scores is not None:
                 args_ref[0] = args
                 logits = fuse_class_scores(
-                    logits, fusion_rp_scores, class_weight, task_id + 1)
+                    logits, fusion_rp_scores, class_weight, task_id + 1,
+                    class_mask)
                 loss = criterion(logits, target)
                 acc1, acc5 = accuracy(logits, target, topk=(1, 5))
                 # GateShare is the effective per-sample weight the RP head
