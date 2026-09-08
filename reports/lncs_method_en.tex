@@ -661,39 +661,31 @@ mechanically hardest cell.
 
 \begin{table}
 \caption{Twenty-one cells: four datasets, the five pre-training configurations
-of the original work, plus MAE on ImageNet-R. Seed 42; baseline is HRM-PET
-($w=1$, $\beta=0$), proposed is $w=0.7$, $\beta=0.5$. 5-Datasets has five tasks,
-the other three have ten. The baseline column shows how far apart the cells are.}
+of the original work, plus MAE on ImageNet-R. Acc@1 at seed 42; HRM-PET is
+$w=1$, $\beta=0$ and Proposed is $w=0.7$, $\beta=0.5$. 5-Datasets is a sequence
+of five datasets and therefore has five tasks by definition; the other three
+split their classes into ten. The HRM-PET rows show that the cells span more
+than a factor of two.}
 \label{tab:grid}
-\begin{tabular}{lrrr}
+\begin{tabular}{llrrrrrr}
 \hline
-Backbone & Baseline Acc@1 & $\Delta$ Acc@task & $\Delta$ Acc@1\\
+Dataset & & Sup-21K & MoCo-1K & iBOT-1K & iBOT-21K & DINO-1K & MAE-1K\\
 \hline
-\multicolumn{4}{l}{\emph{Split-ImageNet-R}}\\
-Sup-21K   & 74.02 & $+2.18$ & $+1.49$\\
-MoCo v3-1K& 68.47 & $+2.95$ & $+1.89$\\
-iBOT-1K   & 71.89 & $+3.05$ & $+2.52$\\
-iBOT-21K  & 73.29 & $+2.78$ & $+2.55$\\
-DINO-1K   & 70.23 & $+2.93$ & $+2.68$\\
-\emph{MAE-1K} & 40.20 & $+3.95$ & $+4.50$\\
-\multicolumn{4}{l}{\emph{Split-CIFAR100}}\\
-Sup-21K   & 89.77 & $+1.02$ & $+0.76$\\
-MoCo v3-1K& 85.50 & $+1.99$ & $+2.12$\\
-iBOT-1K   & 86.46 & $+2.45$ & $+2.06$\\
-iBOT-21K  & 88.52 & $+2.06$ & $+1.80$\\
-DINO-1K   & 85.36 & $+2.42$ & $+2.03$\\
-\multicolumn{4}{l}{\emph{Split-ImageNet-A}}\\
-Sup-21K   & 45.85 & $+1.66$ & $+1.57$\\
-MoCo v3-1K& 31.80 & $+3.04$ & $+2.41$\\
-iBOT-1K   & 37.08 & $+2.97$ & $+3.58$\\
-iBOT-21K  & 41.48 & $+4.57$ & $+2.63$\\
-DINO-1K   & 36.44 & $+1.86$ & $+0.97$\\
-\multicolumn{4}{l}{\emph{5-Datasets}}\\
-Sup-21K   & 91.37 & $+2.98$ & $+2.40$\\
-MoCo v3-1K& 92.63 & $+1.28$ & $+1.41$\\
-iBOT-1K   & 93.80 & $+0.97$ & $+0.85$\\
-iBOT-21K  & 93.83 & $+1.13$ & $+0.59$\\
-DINO-1K   & 92.52 & $+1.42$ & $+0.75$\\
+ImageNet-R & HRM-PET   & 74.02 & 68.47 & 71.89 & 73.29 & 70.23 & 40.20\\
+           & Proposed  & 75.51 & 70.37 & 74.41 & 75.84 & 72.91 & 44.69\\
+           & $\Delta$  & $+1.49$ & $+1.89$ & $+2.52$ & $+2.55$ & $+2.68$ & $+4.50$\\
+\hline
+CIFAR-100  & HRM-PET   & 89.77 & 85.50 & 86.46 & 88.52 & 85.36 & ---\\
+           & Proposed  & 90.53 & 87.62 & 88.52 & 90.32 & 87.39 & ---\\
+           & $\Delta$  & $+0.76$ & $+2.12$ & $+2.06$ & $+1.80$ & $+2.03$ & ---\\
+\hline
+ImageNet-A & HRM-PET   & 45.85 & 31.80 & 37.08 & 41.48 & 36.44 & ---\\
+           & Proposed  & 47.42 & 34.21 & 40.66 & 44.11 & 37.41 & ---\\
+           & $\Delta$  & $+1.57$ & $+2.41$ & $+3.58$ & $+2.63$ & $+0.97$ & ---\\
+\hline
+5-Datasets & HRM-PET   & 91.37 & 92.63 & 93.80 & 93.83 & 92.52 & ---\\
+           & Proposed  & 93.77 & 94.04 & 94.65 & 94.42 & 93.27 & ---\\
+           & $\Delta$  & $+2.40$ & $+1.41$ & $+0.85$ & $+0.59$ & $+0.75$ & ---\\
 \hline
 \end{tabular}
 \end{table}
