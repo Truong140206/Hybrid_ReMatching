@@ -257,14 +257,69 @@ produces a score vector over all classes seen so far:
 where $\hat{t}$ is the identity after DRM and CRM. Classes not yet seen are
 masked with $-\infty$.
 
-\subsubsection{Two weaknesses of this structure.}
-First, the whole four-module chain depends on \emph{one} routing signal,
-produced at (\ref{eq:tii}); DRM and CRM only refine it and add no further
-source. Second, $\ell$ in (\ref{eq:logits}) comes from the \emph{shared} head,
-so it frequently predicts the correct class in spite of a wrong routing
-decision --- improved routing therefore does not automatically translate into
-improved classification. These two points lead directly to the two components
-proposed in Sect.~\ref{sec:method}.
+\subsubsection{First weakness: one routing signal.}
+The whole four-module chain depends on \emph{one} routing signal, produced at
+(\ref{eq:tii}); DRM and CRM refine it and add no further source. To see what a
+second source would be worth we built the random-projection head of
+Sect.~\ref{sec:method} on HRM-PET's own LoRA features and used it as a router.
+Table~\ref{tab:routing} measures both, and the last row measures their union ---
+the fraction of samples at least one of them routes correctly, that is the
+ceiling any combination of the two could reach.
+
+\begin{table}
+\caption{Routing accuracy (\%), seed 42. The last row is the fraction of samples
+at least one of the two routers gets right, i.e.\ the ceiling available to a
+combination of the two.}\label{tab:routing}
+\begin{tabular}{lrrr}
+\hline
+Routing source & ImageNet-R & CIFAR-100 & CUB-200\\
+\hline
+TII                       & 63.80 & 81.21 & 92.96\\
+HRM-PET after DRM and CRM & 77.79 & 89.82 & 93.21\\
+RP head                   & 77.12 & 89.51 & 94.02\\
+\hline
+Union of TII and RP head  & \textbf{82.99} & \textbf{92.86} & \textbf{96.26}\\
+\hline
+\end{tabular}
+\end{table}
+
+The two routers fail on \emph{different} samples: on ImageNet-R the RP head
+routes correctly $19.2\%$ of the samples TII gets wrong. That complementarity is
+the necessary condition for fusion to mean anything --- had the two failed on
+the same samples, their union could not exceed the stronger of them, and it
+exceeds both by more than five points.
+
+\subsubsection{Second weakness: better routing is not better classification.}
+$\ell$ in (\ref{eq:logits}) comes from the \emph{shared} head, which spans every
+class seen so far, so a mis-routed sample is frequently classified correctly
+anyway. Correcting its route then buys nothing, and re-routing a sample that was
+already correct can break it. Empirically the routing gain converts into
+classification accuracy at only $14$--$21\%$, and on CUB-200 not at all.
+
+The RP head, however, is not merely a router: it is a complete classifier that
+the routing stage discards. Table~\ref{tab:cls} measures the complementarity at
+that level.
+
+\begin{table}
+\caption{Complementarity at the classification level (\%), seed 42. The last
+column is the fraction of samples the routed head gets wrong and the RP head
+gets right.}\label{tab:cls}
+\begin{tabular}{lrrrr}
+\hline
+Dataset & Routed head & RP head & Union & RP-only correct\\
+\hline
+ImageNet-R & 74.31 & 70.08 & 78.89 & $+4.58$\\
+CIFAR-100  & 89.97 & 88.76 & 92.40 & $+2.43$\\
+CUB-200    & 86.48 & 87.50 & 90.35 & $+3.87$\\
+\hline
+\end{tabular}
+\end{table}
+
+Even on ImageNet-R, where the RP head is four points weaker overall, it
+classifies correctly $4.58\%$ of the samples the primary head cannot handle.
+These two measurements lead directly to the two components proposed in
+Sect.~\ref{sec:method}: the first fuses at the routing level, the second uses
+the same head as a second classifier.
 
 \section{Related Work}
 \label{sec:related}
@@ -674,18 +729,22 @@ Dataset & & Sup-21K & MoCo-1K & iBOT-1K & iBOT-21K & DINO-1K & MAE-1K\\
 ImageNet-R & HRM-PET   & 74.02 & 68.47 & 71.89 & 73.29 & 70.23 & 40.20\\
            & Proposed  & 75.51 & 70.37 & 74.41 & 75.84 & 72.91 & 44.69\\
            & $\Delta$  & $+1.49$ & $+1.89$ & $+2.52$ & $+2.55$ & $+2.68$ & $+4.50$\\
+           & Rel.\ ER  & 5.7\% & 6.0\% & 9.0\% & 9.5\% & 9.0\% & 7.5\%\\
 \hline
 CIFAR-100  & HRM-PET   & 89.77 & 85.50 & 86.46 & 88.52 & 85.36 & ---\\
            & Proposed  & 90.53 & 87.62 & 88.52 & 90.32 & 87.39 & ---\\
            & $\Delta$  & $+0.76$ & $+2.12$ & $+2.06$ & $+1.80$ & $+2.03$ & ---\\
+           & Rel.\ ER  & 7.4\% & 14.6\% & 15.2\% & 15.7\% & 13.9\% & ---\\
 \hline
 ImageNet-A & HRM-PET   & 45.85 & 31.80 & 37.08 & 41.48 & 36.44 & ---\\
            & Proposed  & 47.42 & 34.21 & 40.66 & 44.11 & 37.41 & ---\\
            & $\Delta$  & $+1.57$ & $+2.41$ & $+3.58$ & $+2.63$ & $+0.97$ & ---\\
+           & Rel.\ ER  & 2.9\% & 3.5\% & 5.7\% & 4.5\% & 1.5\% & ---\\
 \hline
 5-Datasets & HRM-PET   & 91.37 & 92.63 & 93.80 & 93.83 & 92.52 & ---\\
            & Proposed  & 93.77 & 94.04 & 94.65 & 94.42 & 93.27 & ---\\
            & $\Delta$  & $+2.40$ & $+1.41$ & $+0.85$ & $+0.59$ & $+0.75$ & ---\\
+           & Rel.\ ER  & 27.8\% & 19.1\% & 13.7\% & 9.6\% & 10.0\% & ---\\
 \hline
 \end{tabular}
 \end{table}
@@ -694,7 +753,15 @@ Table~\ref{tab:grid} reports all of them. \emph{Every cell} improves on both
 accuracy axes --- Acc@task by $+0.97$ to $+4.57$, Acc@1 by $+0.59$ to $+4.50$
 --- while the baselines span more than a factor of two, from $40.2$ to $93.8$.
 The largest gain falls on the weakest backbone, MAE, not the strongest, which is
-the direction a method that supplies a second opinion should show. Forgetting,
+the direction a method that supplies a second opinion should show.
+
+Absolute differences are hard to compare across cells that start $50$ points
+apart, so the table also reports relative error reduction. Read that way the
+picture changes in one place worth naming: 5-Datasets has the smallest absolute
+gains in the table --- as little as $+0.59$ --- and the largest relative ones,
+$9.6\%$ to $27.8\%$, because its baselines are already at $91$--$94$. The
+converse holds for ImageNet-A, where gains of $+2.41$ and $+2.63$ amount to only
+$3.5\%$ and $4.5\%$ against baselines in the thirties and forties. Forgetting,
 omitted from the table for space, improves in $15$ of the $21$ cells and worsens
 in $6$, consistent with the four-seed reading above: on that axis the method
 moves nothing reliably.
