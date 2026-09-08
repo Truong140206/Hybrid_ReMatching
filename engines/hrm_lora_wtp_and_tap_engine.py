@@ -2390,18 +2390,45 @@ def evaluate(model: torch.nn.Module, original_model: torch.nn.Module, data_loade
                 dump_store['task'].append(
                     torch.full_like(target.detach().cpu(), i))
             debias = float(getattr(args, 'rp_task_debias', 0.0))
+            debias_mode = str(getattr(args, 'rp_task_debias_mode', 'mean'))
             if debias != 0.0 and class_mask is not None:
                 # After the dump above on purpose: the dump keeps the raw routed
                 # scores, so the offline sweep in tools/task_bias.py and this
                 # branch cannot drift apart in what they call alpha=0.
+                #
+                # Every operation below is equivariant under a per-sample affine
+                # map, which is exactly what _standardize_valid applies later, so
+                # correcting the raw logits here and correcting the standardised
+                # scores offline give the same ranking. That is why the offline
+                # sweep predicted 75.40 for mean at 0.5 on Sup-21K and the run
+                # measured 75.3948.
+                seen_columns = []
+                for seen_task in range(task_id + 1):
+                    seen_columns.extend(class_mask[seen_task])
+                seen_index = torch.as_tensor(
+                    seen_columns, dtype=torch.long, device=logits.device)
+                whole = logits.index_select(1, seen_index).float()
+                target_mean = whole.mean(dim=1, keepdim=True)
+                target_std = whole.std(
+                    dim=1, unbiased=False, keepdim=True).clamp_min(1e-6)
                 for seen_task in range(task_id + 1):
                     columns = torch.as_tensor(
                         class_mask[seen_task], dtype=torch.long,
                         device=logits.device)
-                    block = logits.index_select(1, columns)
+                    block = logits.index_select(1, columns).float()
+                    mean = block.mean(dim=1, keepdim=True)
+                    std = block.std(
+                        dim=1, unbiased=False, keepdim=True).clamp_min(1e-6)
+                    if debias_mode == 'mean':
+                        fixed = block - mean + target_mean
+                    elif debias_mode == 'std':
+                        fixed = (block - mean) * (target_std / std) + mean
+                    else:
+                        fixed = (block - mean) / std * target_std + target_mean
                     logits = logits.index_copy(
                         1, columns,
-                        block - debias * block.mean(dim=1, keepdim=True))
+                        ((1.0 - debias) * block + debias * fixed).to(
+                            logits.dtype))
             if class_weight != 0.0 and fusion_rp_scores is not None:
                 args_ref[0] = args
                 logits = fuse_class_scores(

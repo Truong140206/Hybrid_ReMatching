@@ -44,6 +44,7 @@ RP_DUMP="${RP_DUMP:-}"
 # name loudly: no such number may ever sit in a results table.
 RP_ROUTE_ORACLE="${RP_ROUTE_ORACLE:-0}"
 RP_DEBIAS="${RP_DEBIAS:-0.0}"
+RP_DEBIAS_MODE="${RP_DEBIAS_MODE:-mean}"
 RP_LS_W="${RP_LS_W:-0.0}"
 RP_COST="${RP_COST:-0}"
 RP_CLS_AUDIT="${RP_CLS_AUDIT:-0}"
@@ -110,9 +111,9 @@ DUMP_FLAG=""; DUMP_TAG=""
 if [[ -n "${RP_DUMP}" ]]; then DUMP_FLAG="--rp_dump_scores ${RP_DUMP}"; DUMP_TAG="dump"; fi
 ORACLE_FLAG=""; ORACLE_TAG=""
 if [[ "${RP_ROUTE_ORACLE}" == "1" ]]; then ORACLE_FLAG="--rp_route_oracle"; ORACLE_TAG="ROUTEORACLE"; fi
-DEBIAS_FLAG="--rp_task_debias ${RP_DEBIAS}"
+DEBIAS_FLAG="--rp_task_debias ${RP_DEBIAS} --rp_task_debias_mode ${RP_DEBIAS_MODE}"
 DEBIAS_TAG=""
-if [[ "${RP_DEBIAS}" != "0.0" ]]; then DEBIAS_TAG="db$(tag "${RP_DEBIAS}")"; fi
+if [[ "${RP_DEBIAS}" != "0.0" ]]; then if [[ "${RP_DEBIAS_MODE}" == "mean" ]]; then DEBIAS_TAG="db$(tag "${RP_DEBIAS}")"; else DEBIAS_TAG="db${RP_DEBIAS_MODE}$(tag "${RP_DEBIAS}")"; fi; fi
 FUSE_FLAG=""; [[ "${RP_FUSE}" == "1" ]] && FUSE_FLAG="--rp_route_fusion --rp_route_fusion_weight ${RP_FUSE_W}"
 [[ "${RP_FUSE_DRM}" == "1" ]] && FUSE_FLAG="--rp_route_fusion_drm --rp_route_fusion_weight ${RP_FUSE_W} --rp_route_fusion_ls_weight ${RP_LS_W} --rp_class_fusion_weight ${RP_CLS_W} --rp_class_fusion_sharpen ${RP_CLS_SHARP} --rp_class_fusion_min_tasks ${RP_CLS_MIN} --rp_class_fusion_gate ${RP_CLS_GATE} --rp_fusion_ramp ${RP_RAMP} --rp_fusion_ramp_scope ${RP_RAMP_SCOPE}"
 LOG_PATH="${OUTPUT_ROOT}/${RUN_BASENAME}_eval_rp_${RP_SOURCE}_d${RP_DIM}_${RP_ACT}_l$(tag "${RP_LAMBDA}")_n${RP_NORM}_t${RP_LORA_TASK}_b$(tag "${RP_BLEND}")_p${RP_PIN}_i${RP_INORM}_c${CALIBRATE}_ra${RP_ROUTE_AUDIT}ls${RP_LAYER_STAT}_f${RP_FUSE}d${RP_FUSE_DRM}w$(tag "${RP_FUSE_W}")lsw$(tag "${RP_LS_W}")c${RP_COST}ca${RP_CLS_AUDIT}cw$(tag "${RP_CLS_W}")sh$(tag "${RP_CLS_SHARP}")m${RP_CLS_MIN}${GATE_TAG}${RAMP_TAG}${BARE_TAG}${LSEARCH_TAG}${DUMP_TAG}${ORACLE_TAG}${DEBIAS_TAG}${BACKBONE_TAG}.log"
