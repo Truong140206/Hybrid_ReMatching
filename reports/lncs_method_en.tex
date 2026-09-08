@@ -775,32 +775,52 @@ configurations as columns. Table~\ref{tab:cumul} rebuilds that shape for our two
 stages, so the two ablations can be read side by side.
 
 \begin{table}
-\caption{Cumulative ablation on Split-ImageNet-R, seed 42, Acc@1. Each row is a
-strict superset of the one above. The lower block is the difference from the row
-above, i.e.\ the isolated contribution of the component just added.}
+\caption{Ablation on Split-ImageNet-R, seed 42, Acc@1, in the cumulative shape
+the original work uses. Rows three and four differ only in whether the routing
+stage is on, which is what exposes the interaction between the two. Unlike the
+corresponding table of the original work this one is a single seed and carries
+no standard deviation.}
 \label{tab:cumul}
 \begin{tabular}{lrrrrrr}
 \hline
 & Sup-21K & MoCo-1K & iBOT-1K & iBOT-21K & DINO-1K & MAE-1K\\
 \hline
-Baseline ($w=1$, $\beta=0$)      & 74.02 & 68.47 & 71.89 & 73.29 & 70.23 & 40.20\\
-$+$ routing stage ($w=0.7$)      & 74.31 & 68.81 & 72.46 & 73.91 & 70.97 & 42.64\\
-$+$ class stage ($\beta=0.5$)    & 74.55 & 70.63 & 74.95 & 75.72 & 72.87 & 48.40\\
-$+$ margin gate (full)           & 75.51 & 70.37 & 74.41 & 75.84 & 72.91 & 44.69\\
+Baseline ($w=1$, $\beta=0$)             & 74.02 & 68.47 & 71.89 & 73.29 & 70.23 & 40.20\\
+Baseline $+$ routing ($w=0.7$)          & 74.31 & 68.81 & 72.46 & 73.91 & 70.97 & 42.64\\
+Baseline $+$ class ($\beta=0.5$)        & 74.53 & 70.70 & 74.96 & 75.72 & 72.91 & 48.39\\
+Baseline $+$ routing $+$ class          & 74.55 & 70.63 & 74.95 & 75.72 & 72.87 & 48.40\\
+Baseline $+$ routing $+$ class $+$ gate & 75.51 & 70.37 & 74.41 & 75.84 & 72.91 & 44.69\\
 \hline
-\multicolumn{7}{l}{\emph{Isolated contribution}}\\
-$+$ routing stage & $+0.29$ & $+0.34$ & $+0.57$ & $+0.62$ & $+0.74$ & $+2.44$\\
-$+$ class stage   & $+0.24$ & $+1.82$ & $+2.49$ & $+1.81$ & $+1.90$ & $+5.76$\\
-$+$ margin gate   & $+0.96$ & $-0.26$ & $-0.54$ & $+0.12$ & $+0.04$ & $-3.71$\\
+\multicolumn{7}{l}{\emph{Isolated contribution over the baseline}}\\
+routing alone & $+0.29$ & $+0.34$ & $+0.57$ & $+0.62$ & $+0.74$ & $+2.44$\\
+class alone   & $+0.51$ & $+2.23$ & $+3.07$ & $+2.43$ & $+2.68$ & $+8.19$\\
+\multicolumn{7}{l}{\emph{Marginal contribution given the rest}}\\
+routing given class & $+0.02$ & $-0.07$ & $-0.01$ & $\ \ 0.00$ & $-0.04$ & $+0.01$\\
+gate given both     & $+0.96$ & $-0.26$ & $-0.54$ & $+0.12$ & $+0.04$ & $-3.71$\\
 \hline
 \end{tabular}
 \end{table}
 
-\subsubsection{The classification stage is the larger component.}
-On five of six backbones it contributes $+1.81$ to $+5.76$ points against
-$+0.29$ to $+0.74$ for the routing stage. Sup-21K is the sole exception --- and
-it is the backbone every design decision in Sect.~\ref{sec:results} was measured
-on, which is one more reason not to generalise from a single configuration.
+\subsubsection{On Acc@1 the two stages do not add up.}
+Each stage alone beats the baseline --- routing by $+0.29$ to $+2.44$, the
+classifier by $+0.51$ to $+8.19$ --- but running both is worth no more than
+running the classifier alone: the two rows agree to within $0.07$ points on
+every backbone, and the marginal contribution of routing given the classifier is
+between $-0.07$ and $+0.02$. Whatever the routing stage repairs, the
+classification stage was going to repair anyway. This is the second weakness of
+Sect.~\ref{sec:related} measured as an interaction rather than asserted: because
+the shared head spans every seen class, a corrected route mostly changes which
+adapter produced a prediction that was already right.
+
+We report it because it bounds what the first stage is for. It is not redundant
+--- it is the only component that moves Acc@task, by $+2.18$ to $+3.95$
+(Table~\ref{tab:grid}), and Acc@task is a reported axis in its own right for a
+routing method. But a reader should not add the two Acc@1 contributions
+together, and an earlier version of this ablation, which reported only the
+nested chain, invited exactly that error. Note also that the classifier's
+isolated contribution is largest where the backbone is weakest: $+8.19$ on MAE
+against $+0.51$ on Sup-21K, the backbone every design decision in
+Sect.~\ref{sec:results} was taken on.
 
 \subsubsection{The gate helps where it was tuned and costs elsewhere.}
 At the published $\beta$ it is worth $+0.96$ on Sup-21K, is neutral on iBOT-21K
