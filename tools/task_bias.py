@@ -120,8 +120,7 @@ def main():
                each[:len(blocks) // 2].mean(), each[len(blocks) // 2:].mean())
         if base is None:
             base = row
-        print('%-7.2f %9.2f %11.2f %11.2f' % (alpha,) + '' % ())
-        print('\033[F%-7.2f %9.2f %11.2f %11.2f'
+        print('%-7.2f %9.2f %11.2f %11.2f'
               % (alpha, row[0], row[1], row[2]))
     print('\nChenh so voi alpha=0 la thu dang doc: neu loi ich don vao cot '
           '"nv cu"\nthi hieu ung co dung hinh dang de nang a_i(T) hon a_i(i).')
