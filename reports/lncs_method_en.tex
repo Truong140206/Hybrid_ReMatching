@@ -118,9 +118,8 @@ classifier is undecided.
       (Sect.~\ref{sec:results}).
 \item We reconstruct the full grid the original work covers --- four datasets by
       five pre-training configurations, identified from traces in its released
-      code --- and add MAE as a twenty-first cell. All $21$ improve on both
-      accuracy axes, with the largest gain on the weakest backbone
-      (Sect.~\ref{sec:grid}).
+      code. All $20$ cells improve on both accuracy axes, over baselines that
+      span from $31.8$ to $93.8$ Acc@1 (Sect.~\ref{sec:grid}).
 \end{itemize}
 
 \subsection{Problem Statement}
@@ -708,56 +707,49 @@ four datasets under five pre-training configurations. Its own ablation table
 names the five --- Sup-21K, iBOT-21K, iBOT-1K, DINO-1K and MoCo-1K --- and three
 traces in its released code identify the four datasets and corroborate that
 list: four pairs of configuration files (CIFAR-100, ImageNet-R, ImageNet-A,
-5-Datasets, and no CUB-200), a stray \texttt{.DS\_Store} in
+5-Datasets, and no CUB-200) and a stray \texttt{.DS\_Store} in
 \texttt{training\_scripts/} listing twenty script names, i.e.\ four datasets
-times five backbones, and no MAE entry anywhere, together with an MAE loader
-that raises \texttt{TypeError} at model construction --- code broken in that way
-cannot have been executed. We rebuilt all twenty cells, retraining the entire
-HRM-PET pipeline from scratch where checkpoints were missing, and added MAE on
-ImageNet-R as a twenty-first cell: it is the configuration where the pre-trained
-features are weakest, so it is where a second source of evidence should matter
-most, and no published number exists for it.
+times five backbones. We rebuilt all twenty cells, retraining the entire HRM-PET
+pipeline from scratch wherever checkpoints were missing, and evaluated baseline
+and proposed method through one code path at one seed.
 
 \begin{table}
-\caption{Twenty-one cells: four datasets, the five pre-training configurations
-of the original work, plus MAE on ImageNet-R. Acc@1 at seed 42; HRM-PET is
-$w=1$, $\beta=0$ and Proposed is $w=0.7$, $\beta=0.5$. 5-Datasets is a sequence
-of five datasets and therefore has five tasks by definition; the other three
-split their classes into ten. The HRM-PET rows show that the cells span more
-than a factor of two.}
+\caption{The full grid: four datasets by the five pre-training configurations of
+the original work. Acc@1 at seed 42; HRM-PET is $w=1$, $\beta=0$ and Proposed is
+$w=0.7$, $\beta=0.5$. 5-Datasets is a sequence of five datasets and therefore has
+five tasks by definition; the other three split their classes into ten. Rel.\ ER
+is the reduction in error relative to the HRM-PET row.}
 \label{tab:grid}
-\begin{tabular}{llrrrrrr}
+\begin{tabular}{llrrrrr}
 \hline
-Dataset & & Sup-21K & MoCo-1K & iBOT-1K & iBOT-21K & DINO-1K & MAE-1K\\
+Dataset & & Sup-21K & MoCo-1K & iBOT-1K & iBOT-21K & DINO-1K\\
 \hline
-ImageNet-R & HRM-PET   & 74.02 & 68.47 & 71.89 & 73.29 & 70.23 & 40.20\\
-           & Proposed  & 75.51 & 70.37 & 74.41 & 75.84 & 72.91 & 44.69\\
-           & $\Delta$  & $+1.49$ & $+1.89$ & $+2.52$ & $+2.55$ & $+2.68$ & $+4.50$\\
-           & Rel.\ ER  & 5.7\% & 6.0\% & 9.0\% & 9.5\% & 9.0\% & 7.5\%\\
+ImageNet-R & HRM-PET   & 74.02 & 68.47 & 71.89 & 73.29 & 70.23\\
+           & Proposed  & 75.51 & 70.37 & 74.41 & 75.84 & 72.91\\
+           & $\Delta$  & $+1.49$ & $+1.89$ & $+2.52$ & $+2.55$ & $+2.68$\\
+           & Rel.\ ER  & 5.7\% & 6.0\% & 9.0\% & 9.5\% & 9.0\%\\
 \hline
-CIFAR-100  & HRM-PET   & 89.77 & 85.50 & 86.46 & 88.52 & 85.36 & ---\\
-           & Proposed  & 90.53 & 87.62 & 88.52 & 90.32 & 87.39 & ---\\
-           & $\Delta$  & $+0.76$ & $+2.12$ & $+2.06$ & $+1.80$ & $+2.03$ & ---\\
-           & Rel.\ ER  & 7.4\% & 14.6\% & 15.2\% & 15.7\% & 13.9\% & ---\\
+CIFAR-100  & HRM-PET   & 89.77 & 85.50 & 86.46 & 88.52 & 85.36\\
+           & Proposed  & 90.53 & 87.62 & 88.52 & 90.32 & 87.39\\
+           & $\Delta$  & $+0.76$ & $+2.12$ & $+2.06$ & $+1.80$ & $+2.03$\\
+           & Rel.\ ER  & 7.4\% & 14.6\% & 15.2\% & 15.7\% & 13.9\%\\
 \hline
-ImageNet-A & HRM-PET   & 45.85 & 31.80 & 37.08 & 41.48 & 36.44 & ---\\
-           & Proposed  & 47.42 & 34.21 & 40.66 & 44.11 & 37.41 & ---\\
-           & $\Delta$  & $+1.57$ & $+2.41$ & $+3.58$ & $+2.63$ & $+0.97$ & ---\\
-           & Rel.\ ER  & 2.9\% & 3.5\% & 5.7\% & 4.5\% & 1.5\% & ---\\
+ImageNet-A & HRM-PET   & 45.85 & 31.80 & 37.08 & 41.48 & 36.44\\
+           & Proposed  & 47.42 & 34.21 & 40.66 & 44.11 & 37.41\\
+           & $\Delta$  & $+1.57$ & $+2.41$ & $+3.58$ & $+2.63$ & $+0.97$\\
+           & Rel.\ ER  & 2.9\% & 3.5\% & 5.7\% & 4.5\% & 1.5\%\\
 \hline
-5-Datasets & HRM-PET   & 91.37 & 92.63 & 93.80 & 93.83 & 92.52 & ---\\
-           & Proposed  & 93.77 & 94.04 & 94.65 & 94.42 & 93.27 & ---\\
-           & $\Delta$  & $+2.40$ & $+1.41$ & $+0.85$ & $+0.59$ & $+0.75$ & ---\\
-           & Rel.\ ER  & 27.8\% & 19.1\% & 13.7\% & 9.6\% & 10.0\% & ---\\
+5-Datasets & HRM-PET   & 91.37 & 92.63 & 93.80 & 93.83 & 92.52\\
+           & Proposed  & 93.77 & 94.04 & 94.65 & 94.42 & 93.27\\
+           & $\Delta$  & $+2.40$ & $+1.41$ & $+0.85$ & $+0.59$ & $+0.75$\\
+           & Rel.\ ER  & 27.8\% & 19.1\% & 13.7\% & 9.6\% & 10.0\%\\
 \hline
 \end{tabular}
 \end{table}
 
 Table~\ref{tab:grid} reports all of them. \emph{Every cell} improves on both
-accuracy axes --- Acc@task by $+0.97$ to $+4.57$, Acc@1 by $+0.59$ to $+4.50$
---- while the baselines span more than a factor of two, from $40.2$ to $93.8$.
-The largest gain falls on the weakest backbone, MAE, not the strongest, which is
-the direction a method that supplies a second opinion should show.
+accuracy axes --- Acc@task by $+0.97$ to $+4.57$, Acc@1 by $+0.59$ to $+3.58$
+--- while the baselines span nearly a factor of three, from $31.8$ to $93.8$.
 
 Absolute differences are hard to compare across cells that start $50$ points
 apart, so the table also reports relative error reduction. Read that way the
@@ -785,22 +777,22 @@ stage is on, which is what exposes the interaction between the two. Unlike the
 corresponding table of the original work this one is a single seed and carries
 no standard deviation.}
 \label{tab:cumul}
-\begin{tabular}{lrrrrrr}
+\begin{tabular}{lrrrrr}
 \hline
-& Sup-21K & MoCo-1K & iBOT-1K & iBOT-21K & DINO-1K & MAE-1K\\
+& Sup-21K & MoCo-1K & iBOT-1K & iBOT-21K & DINO-1K\\
 \hline
-Baseline ($w=1$, $\beta=0$)             & 74.02 & 68.47 & 71.89 & 73.29 & 70.23 & 40.20\\
-Baseline $+$ routing ($w=0.7$)          & 74.31 & 68.81 & 72.46 & 73.91 & 70.97 & 42.64\\
-Baseline $+$ class ($\beta=0.5$)        & 74.53 & 70.70 & 74.96 & 75.72 & 72.91 & 48.39\\
-Baseline $+$ routing $+$ class          & 74.55 & 70.63 & 74.95 & 75.72 & 72.87 & 48.40\\
-Baseline $+$ routing $+$ class $+$ gate & 75.51 & 70.37 & 74.41 & 75.84 & 72.91 & 44.69\\
+Baseline ($w=1$, $\beta=0$)             & 74.02 & 68.47 & 71.89 & 73.29 & 70.23\\
+Baseline $+$ routing ($w=0.7$)          & 74.31 & 68.81 & 72.46 & 73.91 & 70.97\\
+Baseline $+$ class ($\beta=0.5$)        & 74.53 & 70.70 & 74.96 & 75.72 & 72.91\\
+Baseline $+$ routing $+$ class          & 74.55 & 70.63 & 74.95 & 75.72 & 72.87\\
+Baseline $+$ routing $+$ class $+$ gate & 75.51 & 70.37 & 74.41 & 75.84 & 72.91\\
 \hline
-\multicolumn{7}{l}{\emph{Isolated contribution over the baseline}}\\
-routing alone & $+0.29$ & $+0.34$ & $+0.57$ & $+0.62$ & $+0.74$ & $+2.44$\\
-class alone   & $+0.51$ & $+2.23$ & $+3.07$ & $+2.43$ & $+2.68$ & $+8.19$\\
-\multicolumn{7}{l}{\emph{Marginal contribution given the rest}}\\
-routing given class & $+0.02$ & $-0.07$ & $-0.01$ & $\ \ 0.00$ & $-0.04$ & $+0.01$\\
-gate given both     & $+0.96$ & $-0.26$ & $-0.54$ & $+0.12$ & $+0.04$ & $-3.71$\\
+\multicolumn{6}{l}{\emph{Isolated contribution over the baseline}}\\
+routing alone & $+0.29$ & $+0.34$ & $+0.57$ & $+0.62$ & $+0.74$\\
+class alone   & $+0.51$ & $+2.23$ & $+3.07$ & $+2.43$ & $+2.68$\\
+\multicolumn{6}{l}{\emph{Marginal contribution given the rest}}\\
+routing given class & $+0.02$ & $-0.07$ & $-0.01$ & $\ \ 0.00$ & $-0.04$\\
+gate given both     & $+0.96$ & $-0.26$ & $-0.54$ & $+0.12$ & $+0.04$\\
 \hline
 \end{tabular}
 \end{table}
@@ -822,14 +814,14 @@ We report it because it bounds what the first stage is for. It is not redundant
 routing method. But a reader should not add the two Acc@1 contributions
 together, and an earlier version of this ablation, which reported only the
 nested chain, invited exactly that error. Note also that the classifier's
-isolated contribution is largest where the backbone is weakest: $+8.19$ on MAE
-against $+0.51$ on Sup-21K, the backbone every design decision in
-Sect.~\ref{sec:results} was taken on.
+isolated contribution is by far the smallest on Sup-21K, $+0.51$ against $+2.23$
+to $+3.07$ on the other four --- and Sup-21K is the backbone every design
+decision in Sect.~\ref{sec:results} was taken on.
 
 \subsubsection{The gate helps where it was tuned and costs elsewhere.}
 At the published $\beta$ it is worth $+0.96$ on Sup-21K, is neutral on iBOT-21K
-and DINO, and removes $0.26$ to $0.54$ points on MoCo and iBOT-1K and $3.71$ on
-MAE. That comparison is not fair to the ungated arm, however: $\beta=0.5$ was
+and DINO, and removes $0.26$ to $0.54$ points on MoCo and iBOT-1K. That
+comparison is not fair to the ungated arm, however: $\beta=0.5$ was
 chosen \emph{with} the gate active, so holding it fixed pits a tuned
 configuration against an untuned one. Sweeping $\beta \in \{0.3,0.5,0.8,1.0\}$
 for both arms on all six backbones separates two findings. First, the gate makes
@@ -841,16 +833,16 @@ on five of six, the sixth losing by $0.09$.
 \begin{table}
 \caption{Acc@1 change from removing the gate and lowering $\beta$ to $0.3$,
 against the published configuration (gate on, $\beta=0.5$). Positive means
-\emph{removing the gate is better}. Seed 42; MAE was run on ImageNet-R only.}
+\emph{removing the gate is better}. Seed 42.}
 \label{tab:gate-cross}
-\begin{tabular}{lrrrrrrr}
+\begin{tabular}{lrrrrrr}
 \hline
-& Sup-21K & MoCo-1K & iBOT-1K & iBOT-21K & DINO-1K & MAE-1K & Mean\\
+& Sup-21K & MoCo-1K & iBOT-1K & iBOT-21K & DINO-1K & Mean\\
 \hline
-ImageNet-R & $-0.09$ & $+0.78$ & $+0.80$ & $+0.51$ & $+0.60$ & $+3.09$ & $+0.52$\\
-CIFAR-100  & $0.00$  & $+0.57$ & $+0.80$ & $+0.56$ & $+0.83$ & ---     & $+0.55$\\
-ImageNet-A & $+0.14$ & $-0.14$ & $+0.06$ & $+0.89$ & $+0.46$ & ---     & $+0.28$\\
-5-Datasets & $-0.13$ & $-0.26$ & $-0.19$ & $-0.26$ & $-0.99$ & ---     & $-0.37$\\
+ImageNet-R & $-0.09$ & $+0.78$ & $+0.80$ & $+0.51$ & $+0.60$ & $+0.52$\\
+CIFAR-100  & $0.00$  & $+0.57$ & $+0.80$ & $+0.56$ & $+0.83$ & $+0.55$\\
+ImageNet-A & $+0.14$ & $-0.14$ & $+0.06$ & $+0.89$ & $+0.46$ & $+0.28$\\
+5-Datasets & $-0.13$ & $-0.26$ & $-0.19$ & $-0.26$ & $-0.99$ & $-0.37$\\
 \hline
 \end{tabular}
 \end{table}
@@ -901,9 +893,11 @@ complete classifier that the original architecture discards.
 
 What makes us believe the result is not a property of one backbone or one
 dataset is the full grid: over the four datasets and five backbones the original
-work covers, plus MAE as a twenty-first cell, no cell moves the wrong way on
-either accuracy axis, and the largest gain falls on the weakest backbone rather
-than the strongest.
+work covers, no cell moves the wrong way on
+either accuracy axis, and it does so over baselines spanning nearly a factor of
+three, from $31.8$ to $93.8$ Acc@1. Read as relative error reduction the effect
+is largest where the baseline is strongest, up to $27.8\%$ on 5-Datasets, which
+is where an absolute reading makes the method look weakest.
 
 %
 \begin{credits}
