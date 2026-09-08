@@ -659,33 +659,140 @@ We rebuilt all twenty cells, retraining the entire HRM-PET pipeline from scratch
 where checkpoints were missing, and added MAE on ImageNet-R as a twenty-first,
 mechanically hardest cell.
 
-Across those $21$ cells, \emph{every one} improves on both accuracy axes:
-Acc@task by $+0.97$ to $+4.57$ and Acc@1 by $+0.59$ to $+4.50$, while the
-baselines span more than a factor of two, from $40.2$ to $93.8$ Acc@1. The
-largest gain falls on the weakest backbone, MAE ($+4.50$ Acc@1), not the
-strongest. Forgetting improves in $15$ of $21$ cells and worsens in $6$, which
-is consistent with the four-seed reading above: on that axis the method moves
-nothing reliably.
+\begin{table}
+\caption{Twenty-one cells: four datasets, the five pre-training configurations
+of the original work, plus MAE on ImageNet-R. Seed 42; baseline is HRM-PET
+($w=1$, $\beta=0$), proposed is $w=0.7$, $\beta=0.5$. 5-Datasets has five tasks,
+the other three have ten. The baseline column shows how far apart the cells are.}
+\label{tab:grid}
+\begin{tabular}{lrrr}
+\hline
+Backbone & Baseline Acc@1 & $\Delta$ Acc@task & $\Delta$ Acc@1\\
+\hline
+\multicolumn{4}{l}{\emph{Split-ImageNet-R}}\\
+Sup-21K   & 74.02 & $+2.18$ & $+1.49$\\
+MoCo v3-1K& 68.47 & $+2.95$ & $+1.89$\\
+iBOT-1K   & 71.89 & $+3.05$ & $+2.52$\\
+iBOT-21K  & 73.29 & $+2.78$ & $+2.55$\\
+DINO-1K   & 70.23 & $+2.93$ & $+2.68$\\
+\emph{MAE-1K} & 40.20 & $+3.95$ & $+4.50$\\
+\multicolumn{4}{l}{\emph{Split-CIFAR100}}\\
+Sup-21K   & 89.77 & $+1.02$ & $+0.76$\\
+MoCo v3-1K& 85.50 & $+1.99$ & $+2.12$\\
+iBOT-1K   & 86.46 & $+2.45$ & $+2.06$\\
+iBOT-21K  & 88.52 & $+2.06$ & $+1.80$\\
+DINO-1K   & 85.36 & $+2.42$ & $+2.03$\\
+\multicolumn{4}{l}{\emph{Split-ImageNet-A}}\\
+Sup-21K   & 45.85 & $+1.66$ & $+1.57$\\
+MoCo v3-1K& 31.80 & $+3.04$ & $+2.41$\\
+iBOT-1K   & 37.08 & $+2.97$ & $+3.58$\\
+iBOT-21K  & 41.48 & $+4.57$ & $+2.63$\\
+DINO-1K   & 36.44 & $+1.86$ & $+0.97$\\
+\multicolumn{4}{l}{\emph{5-Datasets}}\\
+Sup-21K   & 91.37 & $+2.98$ & $+2.40$\\
+MoCo v3-1K& 92.63 & $+1.28$ & $+1.41$\\
+iBOT-1K   & 93.80 & $+0.97$ & $+0.85$\\
+iBOT-21K  & 93.83 & $+1.13$ & $+0.59$\\
+DINO-1K   & 92.52 & $+1.42$ & $+0.75$\\
+\hline
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:grid} reports all of them. \emph{Every cell} improves on both
+accuracy axes --- Acc@task by $+0.97$ to $+4.57$, Acc@1 by $+0.59$ to $+4.50$
+--- while the baselines span more than a factor of two, from $40.2$ to $93.8$.
+The largest gain falls on the weakest backbone, MAE, not the strongest, which is
+the direction a method that supplies a second opinion should show. Forgetting,
+omitted from the table for space, improves in $15$ of the $21$ cells and worsens
+in $6$, consistent with the four-seed reading above: on that axis the method
+moves nothing reliably.
 
 \section{Ablation}
 \label{sec:ablation}
 
-Removing the second stage and keeping only routing fusion retains the Acc@task
-gain in full but loses most of the Acc@1 gain, which is what identifies the
-classification stage as the larger contributor on five of six backbones. The
-routing weight $w$ and the class-fusion weight $\beta$ were examined jointly on
-a grid; $w = 0.7$ and $\beta = 0.5$ are used throughout and neither is at a
-boundary.
+The original work ablates \emph{cumulatively}: each row adds exactly one
+component to the row above, measured on ImageNet-R with the pre-training
+configurations as columns. Table~\ref{tab:cumul} rebuilds that shape for our two
+stages, so the two ablations can be read side by side.
 
-The margin gate of (\ref{eq:gate}) adds no hyper-parameter of its own and its
-value is dataset-dependent. Removing it while lowering $\beta$ to $0.3$ is worth
-roughly half a point on ImageNet-R and CIFAR-100, and loses on all five cells of
-5-Datasets, where the baseline is already near saturation at $91$--$94$ Acc@1.
-We keep it for two reasons: it wins on the benchmark furthest from the one it
-was tuned on, and it makes the method nearly invariant to $\beta$ --- a spread
-of at most $1.17$ points across the sweep, against at least $3.89$ without it.
-A per-stage ramp on the fusion weight was implemented and measured; it helps
-only at the first stage and is not used.
+\begin{table}
+\caption{Cumulative ablation on Split-ImageNet-R, seed 42, Acc@1. Each row is a
+strict superset of the one above. The lower block is the difference from the row
+above, i.e.\ the isolated contribution of the component just added.}
+\label{tab:cumul}
+\begin{tabular}{lrrrrrr}
+\hline
+& Sup-21K & MoCo-1K & iBOT-1K & iBOT-21K & DINO-1K & MAE-1K\\
+\hline
+Baseline ($w=1$, $\beta=0$)      & 74.02 & 68.47 & 71.89 & 73.29 & 70.23 & 40.20\\
+$+$ routing stage ($w=0.7$)      & 74.31 & 68.81 & 72.46 & 73.91 & 70.97 & 42.64\\
+$+$ class stage ($\beta=0.5$)    & 74.55 & 70.63 & 74.95 & 75.72 & 72.87 & 48.40\\
+$+$ margin gate (full)           & 75.51 & 70.37 & 74.41 & 75.84 & 72.91 & 44.69\\
+\hline
+\multicolumn{7}{l}{\emph{Isolated contribution}}\\
+$+$ routing stage & $+0.29$ & $+0.34$ & $+0.57$ & $+0.62$ & $+0.74$ & $+2.44$\\
+$+$ class stage   & $+0.24$ & $+1.82$ & $+2.49$ & $+1.81$ & $+1.90$ & $+5.76$\\
+$+$ margin gate   & $+0.96$ & $-0.26$ & $-0.54$ & $+0.12$ & $+0.04$ & $-3.71$\\
+\hline
+\end{tabular}
+\end{table}
+
+\subsubsection{The classification stage is the larger component.}
+On five of six backbones it contributes $+1.81$ to $+5.76$ points against
+$+0.29$ to $+0.74$ for the routing stage. Sup-21K is the sole exception --- and
+it is the backbone every design decision in Sect.~\ref{sec:results} was measured
+on, which is one more reason not to generalise from a single configuration.
+
+\subsubsection{The gate helps where it was tuned and costs elsewhere.}
+At the published $\beta$ it is worth $+0.96$ on Sup-21K, is neutral on iBOT-21K
+and DINO, and removes $0.26$ to $0.54$ points on MoCo and iBOT-1K and $3.71$ on
+MAE. That comparison is not fair to the ungated arm, however: $\beta=0.5$ was
+chosen \emph{with} the gate active, so holding it fixed pits a tuned
+configuration against an untuned one. Sweeping $\beta \in \{0.3,0.5,0.8,1.0\}$
+for both arms on all six backbones separates two findings. First, the gate makes
+the method nearly invariant to $\beta$: Acc@1 varies by at most $1.17$ points
+across the sweep with it, and by at least $3.89$ without it. Second, at its own
+best $\beta$ --- which is $0.3$ on five of six backbones --- the ungated arm wins
+on five of six, the sixth losing by $0.09$.
+
+\begin{table}
+\caption{Acc@1 change from removing the gate and lowering $\beta$ to $0.3$,
+against the published configuration (gate on, $\beta=0.5$). Positive means
+\emph{removing the gate is better}. Seed 42; MAE was run on ImageNet-R only.}
+\label{tab:gate-cross}
+\begin{tabular}{lrrrrrrr}
+\hline
+& Sup-21K & MoCo-1K & iBOT-1K & iBOT-21K & DINO-1K & MAE-1K & Mean\\
+\hline
+ImageNet-R & $-0.09$ & $+0.78$ & $+0.80$ & $+0.51$ & $+0.60$ & $+3.09$ & $+0.52$\\
+CIFAR-100  & $0.00$  & $+0.57$ & $+0.80$ & $+0.56$ & $+0.83$ & ---     & $+0.55$\\
+ImageNet-A & $+0.14$ & $-0.14$ & $+0.06$ & $+0.89$ & $+0.46$ & ---     & $+0.28$\\
+5-Datasets & $-0.13$ & $-0.26$ & $-0.19$ & $-0.26$ & $-0.99$ & ---     & $-0.37$\\
+\hline
+\end{tabular}
+\end{table}
+
+\subsubsection{Across the grid the picture reverses by dataset.}
+Table~\ref{tab:gate-cross} extends the comparison to all four benchmarks.
+Removing the gate wins on ImageNet-R and CIFAR-100, roughly ties on ImageNet-A,
+and \emph{loses on all five cells} of 5-Datasets; over the twenty grid cells it
+is ahead by $0.25$ points. The shape matches what the gate is for. It mixes the
+second stage only into samples the primary model is not already sure about, and
+on 5-Datasets the baseline is at $91.4$--$93.8$ Acc@1, so nearly every sample is
+both correct and confident --- exactly the samples the gate protects. On
+ImageNet-R ($68$--$74$) and CIFAR-100 ($85$--$90$) enough samples remain wrong
+that mixing unconditionally pays.
+
+We keep the gate, and state the reasoning rather than the conclusion. It wins on
+the benchmark furthest from the one it was tuned on, which is transfer evidence
+rather than fitting evidence; it makes the method insensitive to $\beta$, which
+matters because we do not tune $\beta$ per dataset; and what it costs is half a
+point on two benchmarks against up to one point on the third. We record that we
+nearly discarded it on ImageNet-R evidence alone, because that is precisely the
+trap Sect.~\ref{sec:limits} warns about. One caveat completes the picture: the
+ungated arm reaches higher Acc@1 on ImageNet-R and CIFAR-100 but its Loss on
+CIFAR-100 is worse by $+0.019 \pm 0.003$ over three seeds. Mixing unconditionally
+fixes more labels while making the probability distribution worse.
 
 \section{Limitations}
 \label{sec:limits}
