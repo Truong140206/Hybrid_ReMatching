@@ -58,15 +58,41 @@ def class_to_task(target, task, width):
     return owner
 
 
-def debias(scores, owner, blocks, alpha):
-    """Centre each task block on its own per-sample mean, by alpha."""
+def debias(scores, owner, blocks, alpha, mode='mean'):
+    """Equalise the task blocks, by alpha, in one of three ways.
+
+    The survey of class-incremental learning locates task-recency bias in both
+    the classifier bias terms and the weight norms, and Weight Aligning corrects
+    it multiplicatively, rescaling new-class weights by the ratio of mean old to
+    mean new weight norm; BiC instead learns a per-task affine map on the logits.
+    Both halves therefore matter, and the first version of this tool removed only
+    the additive one.
+
+    We cannot touch the weights -- they are frozen and we observe only logits --
+    but both halves have observable counterparts in each block's score
+    distribution: its mean is the additive term, its spread the multiplicative
+    one. 'mean' removes the offset, 'std' equalises the spread, 'both' does what
+    the engine already does globally, only at block granularity. alpha=0 is the
+    identity in all three.
+    """
     out = scores.copy()
+    owned = owner >= 0
+    target_mean = out[:, owned].mean(axis=1, keepdims=True)
+    target_std = out[:, owned].std(axis=1, keepdims=True)
     for block in blocks:
         columns = owner == block
         if not columns.any():
             continue
-        means = out[:, columns].mean(axis=1, keepdims=True)
-        out[:, columns] -= alpha * means
+        chunk = out[:, columns]
+        mean = chunk.mean(axis=1, keepdims=True)
+        std = np.maximum(chunk.std(axis=1, keepdims=True), 1e-6)
+        if mode == 'mean':
+            fixed = chunk - mean + target_mean
+        elif mode == 'std':
+            fixed = (chunk - mean) * (target_std / std) + mean
+        else:
+            fixed = (chunk - mean) / std * target_std + target_mean
+        out[:, columns] = (1.0 - alpha) * chunk + alpha * fixed
     return out
 
 
@@ -109,19 +135,24 @@ def main():
              - rp[:, np.isin(owner, early)].mean()))
 
     print('\nSua thien lech, quet cuong do alpha:')
-    print('%-7s %9s %11s %11s' % ('alpha', 'Acc@1', 'nv cu', 'nv moi'))
-    print('-' * 41)
-    base = None
-    for alpha in (0.0, 0.25, 0.5, 0.75, 1.0):
-        fixed = debias(routed, owner, blocks, alpha)
-        mixed = (1.0 - args.beta) * fixed + args.beta * rp
-        each = per_task_accuracy(mixed, target, task)
-        row = (accuracy_by_task(mixed, target, task),
-               each[:len(blocks) // 2].mean(), each[len(blocks) // 2:].mean())
-        if base is None:
-            base = row
-        print('%-7.2f %9.2f %11.2f %11.2f'
-              % (alpha, row[0], row[1], row[2]))
+    print('%-6s %-7s %9s %11s %11s'
+          % ('dang', 'alpha', 'Acc@1', 'nv cu', 'nv moi'))
+    print('-' * 48)
+    plain = (1.0 - args.beta) * routed + args.beta * rp
+    each = per_task_accuracy(plain, target, task)
+    print('%-6s %-7.2f %9.2f %11.2f %11.2f'
+          % ('khong', 0.0, accuracy_by_task(plain, target, task),
+             each[:len(blocks) // 2].mean(), each[len(blocks) // 2:].mean()))
+    for mode in ('mean', 'std', 'both'):
+        print()
+        for alpha in (0.25, 0.5, 0.75, 1.0):
+            fixed = debias(routed, owner, blocks, alpha, mode)
+            mixed = (1.0 - args.beta) * fixed + args.beta * rp
+            each = per_task_accuracy(mixed, target, task)
+            print('%-6s %-7.2f %9.2f %11.2f %11.2f'
+                  % (mode, alpha, accuracy_by_task(mixed, target, task),
+                     each[:len(blocks) // 2].mean(),
+                     each[len(blocks) // 2:].mean()))
     print('\nChenh so voi alpha=0 la thu dang doc: neu loi ich don vao cot '
           '"nv cu"\nthi hieu ung co dung hinh dang de nang a_i(T) hon a_i(i).')
     return 0
