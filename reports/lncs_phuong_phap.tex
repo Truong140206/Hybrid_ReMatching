@@ -54,9 +54,9 @@ dựa trên tinh chỉnh hiệu quả tham số}
 %
 \authorrunning{N. T. Trường và T. Q. Thái}
 %
-% Dien dia chi email truoc khi nop.
 \institute{Trường Đại học Công nghệ, Đại học Quốc gia Hà Nội,\\
-Hà Nội, Việt Nam}
+Hà Nội, Việt Nam\\
+\email{24022480@vnu.edu.vn, 24022450@vnu.edu.vn}}
 %
 \maketitle
 %
@@ -87,7 +87,54 @@ mỗi mẫu.
 %
 \section{Giới thiệu}
 
-\emph{Phần dẫn nhập và đóng góp viết sau.}
+Một hệ học liên tục dựa trên tinh chỉnh hiệu quả tham số giữ một bộ tham số nhẹ
+cho mỗi tác vụ, và lúc suy luận phải quyết định gắn bộ nào vào mạng xương sống
+đóng băng trước khi có thể phân lớp. Quyết định ấy được đưa ra một lần, từ một
+khối duy nhất, và mọi thứ phía sau thừa hưởng nó: chọn sai thì bộ thích ứng sai
+được gắn vào, và bộ phân lớp tiếp sau bị buộc làm việc trên những đặc trưng
+không được thích nghi cho nó. Các phương pháp kế tiếp trong dòng này đã cải
+thiện chính quyết định đó --- kho phong phú hơn, tổ hợp có trọng số theo
+attention, các tầng khớp lại tường minh --- nhưng không cái nào thay đổi việc
+một tín hiệu duy nhất đứng chắn trước phần còn lại của đường ống.
+
+Chúng tôi nhận thấy một nguồn bằng chứng thứ hai, độc lập, vốn đã nằm sẵn trong
+chính mô hình đã huấn luyện và đang bị bỏ đi. Đặc trưng LoRA mà đường ống dù sao
+cũng phải tính có thể được đẩy qua một phép chiếu ngẫu nhiên cố định rồi đọc bằng
+một bộ phân lớp ridge dạng đóng dựng từ thống kê bậc hai. Đầu này không huấn
+luyện tham số nào, không lưu ảnh nào, và tốn đúng một lượt truyền xuôi mà đường
+ống đã thực hiện sẵn. Quan trọng hơn, nó sai trên \emph{những mẫu khác} với khối
+định tuyến --- chính tính chất ấy khiến việc kết hợp hai nguồn có ý nghĩa thay vì
+thừa thãi.
+
+Bài báo đưa nguồn thứ hai đó vào làm việc ở đúng hai điểm mà đường ống gốc chốt
+quyết định. Ở cấp định tuyến, nó được trộn với tín hiệu tác vụ sẵn có sau khi cả
+hai được chuẩn hoá về cùng một thang. Ở cấp phân lớp, nó được dùng đúng như bản
+chất của nó --- một bộ phân lớp hoàn chỉnh --- với trọng số đặt theo từng mẫu, sao
+cho phép trộn chỉ mở ra ở những mẫu mà bộ phân lớp chính còn phân vân.
+
+\subsubsection{Đóng góp.}
+\begin{itemize}
+\item Chúng tôi chỉ ra hai điểm yếu trong đường ống khớp lại của
+      HRM-PET~\cite{ref_hrmpet}: tín hiệu định tuyến của nó đến từ một khối duy
+      nhất, và một đường định tuyến tốt hơn không tự động thành một dự đoán tốt
+      hơn, vì đầu phân lớp dùng chung thường đã đoán đúng lớp bất chấp định tuyến
+      sai (Mục~\ref{sec:method}).
+\item Chúng tôi cho thấy một đầu bậc hai không huấn luyện, đặt trên phép chiếu
+      ngẫu nhiên đóng băng của chính những đặc trưng sẵn có, cung cấp một nguồn
+      bằng chứng thứ hai có sai số không tương quan với nguồn thứ nhất, và hợp
+      nhất hai nguồn ở cả cấp định tuyến lẫn cấp phân lớp, hoàn toàn ở giai đoạn
+      suy luận.
+\item Chúng tôi đánh giá trên ba bộ dữ liệu với bốn seed và báo cáo theo từng
+      trục: định tuyến tăng $+1{,}10$ đến $+2{,}26$ điểm và phân lớp tăng
+      $+0{,}69$ đến $+1{,}50$ điểm, mỗi mức đều lớn gấp nhiều lần độ lệch chuẩn
+      giữa các seed, trong khi hai chỉ số ghi nhớ không cho thay đổi nào phân
+      giải được và chúng tôi không tuyên bố gì ở đó (Mục~\ref{sec:results}).
+\item Chúng tôi dựng lại trọn lưới mà bài gốc phủ --- bốn bộ dữ liệu nhân năm cấu
+      hình tiền huấn luyện, xác định từ chính bảng khảo sát của họ và từ dấu vết
+      trong mã họ phát hành. Cả $20$ ô đều cải thiện ở cả hai trục độ chính xác,
+      trên những mốc trải từ $31{,}8$ đến $93{,}8$ điểm Acc@1
+      (Mục~\ref{sec:grid}).
+\end{itemize}
 
 \subsection{Phát biểu bài toán}
 
@@ -216,17 +263,121 @@ véc-tơ điểm số trên toàn bộ các lớp đã gặp:
 \end{equation}
 với $\hat{t}$ là định danh sau DRM và CRM. Các lớp chưa gặp bị che bằng $-\infty$.
 
-\subsubsection{Hai điểm yếu của cấu trúc này.}
-Thứ nhất, cả chuỗi bốn khối phụ thuộc vào \emph{một} nguồn tín hiệu định tuyến
-duy nhất, sinh ra ở (\ref{eq:tii}); DRM và CRM chỉ tinh chỉnh chứ không bổ sung
-nguồn nào. Thứ hai, $\ell$ ở (\ref{eq:logits}) đến từ đầu phân lớp \emph{dùng
-chung}, nên nó thường đã đoán đúng lớp bất chấp định tuyến sai --- cải thiện định
-tuyến do đó không tự động chuyển thành cải thiện phân lớp. Hai điểm này dẫn thẳng
-tới hai thành phần đề xuất ở Mục~\ref{sec:method}.
+\subsubsection{Điểm yếu thứ nhất: chỉ một nguồn tín hiệu định tuyến.}
+Cả chuỗi bốn khối phụ thuộc vào \emph{một} nguồn duy nhất, sinh ra ở
+(\ref{eq:tii}); DRM và CRM chỉ tinh chỉnh chứ không bổ sung nguồn nào. Để biết
+một nguồn thứ hai đáng giá bao nhiêu, chúng tôi dựng đầu chiếu ngẫu nhiên của
+Mục~\ref{sec:method} trên chính đặc trưng LoRA của HRM-PET rồi dùng nó làm bộ
+định tuyến. Bảng~\ref{tab:routing} đo cả hai, và hàng cuối đo \emph{hợp} của
+chúng --- tỉ lệ mẫu mà ít nhất một trong hai định tuyến đúng, tức trần mà mọi
+cách kết hợp hai nguồn có thể đạt tới.
+
+\begin{table}
+\caption{Độ chính xác định tuyến (\%), seed 42. Hàng cuối là tỉ lệ mẫu mà ít
+nhất một trong hai bộ định tuyến cho kết quả đúng, tức trần khả dụng khi kết hợp
+hai nguồn.}\label{tab:routing}
+\begin{tabular}{lrrr}
+\hline
+Nguồn định tuyến & ImageNet-R & CIFAR-100 & CUB-200\\
+\hline
+TII                    & 63.80 & 81.21 & 92.96\\
+HRM-PET sau DRM và CRM & 77.79 & 89.82 & 93.21\\
+Đầu RP                 & 77.12 & 89.51 & 94.02\\
+\hline
+Hợp của TII và đầu RP  & \textbf{82.99} & \textbf{92.86} & \textbf{96.26}\\
+\hline
+\end{tabular}
+\end{table}
+
+Hai bộ định tuyến sai trên \emph{những tập mẫu khác nhau}: trên ImageNet-R, đầu
+RP định tuyến đúng $19{,}2\%$ số mẫu mà TII định tuyến sai. Tính bổ trợ ấy là
+điều kiện cần để việc hợp nhất có ý nghĩa --- nếu hai nguồn cùng sai trên một tập
+mẫu thì hợp của chúng không thể vượt nguồn mạnh hơn, mà ở đây nó vượt cả hai hơn
+năm điểm.
+
+\subsubsection{Điểm yếu thứ hai: định tuyến tốt hơn không phải là phân lớp tốt hơn.}
+$\ell$ ở (\ref{eq:logits}) đến từ đầu phân lớp \emph{dùng chung}, vốn trải trên
+mọi lớp đã gặp, nên một mẫu bị định tuyến sai vẫn thường được phân lớp đúng. Sửa
+lại đường định tuyến của nó khi đó không đem lại gì, còn định tuyến lại một mẫu
+vốn đã đúng thì có thể làm nó sai. Trên thực tế, mức lợi ở định tuyến chỉ chuyển
+hoá thành độ chính xác phân lớp với tỉ lệ $14$--$21\%$, và trên CUB-200 thì
+không chuyển hoá chút nào.
+
+Nhưng đầu RP không chỉ là một bộ định tuyến: nó là một bộ phân lớp hoàn chỉnh mà
+tầng định tuyến đã bỏ qua. Bảng~\ref{tab:cls} đo mức bổ trợ ở cấp đó.
+
+\begin{table}
+\caption{Tính bổ trợ ở cấp phân lớp (\%), seed 42. Cột cuối là tỉ lệ mẫu mà đầu
+sau định tuyến cho kết quả sai còn đầu RP cho kết quả đúng.}\label{tab:cls}
+\begin{tabular}{lrrrr}
+\hline
+Bộ dữ liệu & Đầu sau định tuyến & Đầu RP & Hợp & Phần đầu RP bổ trợ\\
+\hline
+ImageNet-R & 74.31 & 70.08 & 78.89 & $+4{,}58$\\
+CIFAR-100  & 89.97 & 88.76 & 92.40 & $+2{,}43$\\
+CUB-200    & 86.48 & 87.50 & 90.35 & $+3{,}87$\\
+\hline
+\end{tabular}
+\end{table}
+
+Ngay trên ImageNet-R, nơi đầu RP kém hơn bốn điểm về tổng thể, nó vẫn phân lớp
+đúng $4{,}58\%$ số mẫu mà đầu chính không xử lý được. Hai phép đo này dẫn thẳng
+tới hai thành phần đề xuất ở Mục~\ref{sec:method}: tầng thứ nhất hợp nhất ở cấp
+định tuyến, tầng thứ hai dùng chính đầu ấy làm bộ phân lớp thứ hai.
 
 \section{Công trình liên quan}
+\label{sec:related}
 
-\emph{Để trống.}
+\subsubsection{Kho tham số và phép chọn mà nó bắt buộc.}
+L2P~\cite{ref_l2p} và DualPrompt~\cite{ref_dualprompt} định hình dạng mà phần
+lớn phương pháp học liên tục dựa trên tinh chỉnh hiệu quả tham số vẫn theo: đóng
+băng mạng xương sống, giữ một kho tham số nhẹ, và lúc suy luận chọn từ kho bằng
+một truy vấn tính từ mạng trần. CODA-Prompt~\cite{ref_coda} thay phép chọn rời
+rạc bằng một tổ hợp có trọng số theo attention, còn HiDe-Prompt~\cite{ref_hide}
+làm cấu trúc ấy tường minh bằng cách tách bài toán thành dự đoán trong tác vụ,
+suy ra định danh tác vụ và dự đoán thích ứng theo tác vụ; quan sát trung tâm của
+họ là suy ra định danh tác vụ, chứ không phải phân lớp trong tác vụ, mới là thứ
+giới hạn cả đường ống. HRM-PET~\cite{ref_hrmpet}, mốc của chúng tôi, thuộc dòng
+này: thay prompt bằng bộ thích ứng LoRA~\cite{ref_lora} và thêm các tầng khớp
+lại xét lại quyết định ban đầu. Công trình gần đây tiếp tục mở rộng kho chứ
+không đổi cấu trúc --- MoTE~\cite{ref_mote} giữ một chuyên gia riêng cho mỗi tác
+vụ rồi lọc chúng lúc suy luận, và phép chọn LoRA-chuyên-gia động theo nguyên mẫu
+\cite{ref_dlepem} làm điều tương tự với nguyên mẫu làm tín hiệu khớp. Tất cả đều
+mang đúng tính chất mà bài này nhắm tới: một quyết định chọn đứng chắn trước bộ
+phân lớp, và mọi thứ phía sau thừa hưởng sai sót của nó.
+
+\subsubsection{Những bộ phân lớp không hề được huấn luyện.}
+Một dòng khác bỏ hẳn việc định tuyến và đọc thẳng đặc trưng đóng băng. Nguyên
+mẫu trung bình lớp là dạng đơn giản nhất; ADaM và các kế thừa~\cite{ref_adam}
+thích nghi mạng xương sống ở riêng tác vụ đầu rồi đóng băng; RanPAC
+\cite{ref_ranpac} chiếu đặc trưng đóng băng qua một ma trận ngẫu nhiên cố định,
+tích luỹ thống kê bậc hai và giải hệ ridge ở dạng đóng. Những phương pháp này
+mạnh: trên Split-ImageNet-R với mạng ViT-B/16, RanPAC báo cáo $77{,}9\%$ trong
+khi một bộ phân lớp tuyến tính huấn luyện chung trên cả $200$ lớp --- thứ theo
+cấu tạo không thể quên --- chỉ đạt $72{,}0\%$~\cite{ref_ranpac}. Con số ấy đáng
+nói thẳng ra, vì nó đặt lại điều kiện cho chính bài này: một đầu không huấn
+luyện trên đặc trưng đóng băng không phải phương án chữa cháy, và khoảng cách
+giữa nó với một đường ống có định tuyến không giải thích được bằng sự quên. Cái
+mà chúng đánh đổi là cấu trúc mà định tuyến đem lại. Chúng tôi lấy đầu của
+\cite{ref_ranpac} và dùng nó \emph{bên trong} một đường ống có định tuyến, như
+một nguồn bằng chứng thứ hai chứ không phải vật thay thế cho nguồn thứ nhất.
+
+\subsubsection{Sửa bộ phân lớp sau khi đã huấn luyện.}
+Bộ phân lớp trong học liên tục theo lớp thiên lệch về những lớp gặp gần đây, và
+khảo sát của Masana và cộng sự~\cite{ref_survey} định vị thiên lệch ấy một cách
+cụ thể: cả số hạng chệch lẫn chuẩn của vector trọng số đều lớn dần theo độ mới
+của tác vụ. Các phép sửa đi theo chẩn đoán đó. iCaRL~\cite{ref_icarl} né trọng
+số đã học bằng cách phân lớp theo trung bình mẫu lưu gần nhất; BiC~\cite{ref_bic}
+học một ánh xạ affine theo từng tác vụ đặt trên logit, dùng một phần dữ liệu giữ
+lại; Weight Aligning~\cite{ref_wa} chuẩn hoá lại vector trọng số của lớp mới cho
+khớp chuẩn trung bình của lớp cũ; LUCIR~\cite{ref_lucir} khử bất đối xứng về
+chuẩn ngay từ cấu trúc bằng cách chuẩn hoá cả đặc trưng lẫn trọng số trước
+softmax. Bối cảnh của chúng tôi loại bỏ phần lớn những cách này chứ không cải
+tiến chúng: không giữ mẫu cũ, không có phần dữ liệu kiểm định, và không đụng vào
+huấn luyện --- bộ thích ứng, bộ phân lớp phụ và đầu dùng chung đều đến ở trạng
+thái đóng băng. Phép hợp nhất mô tả ở Mục~\ref{sec:method} vì thế phải tác động
+lên riêng điểm số, lúc suy luận, từ những đại lượng vốn đã có sẵn trong lượt
+truyền xuôi.
 
 \section{Phương pháp}
 \label{sec:method}
@@ -427,6 +578,305 @@ sở.
 Đầu chiếu ngẫu nhiên cần đúng một lượt truyền xuôi trên mỗi mẫu, và cùng kết quả
 đó phục vụ cả hai tầng.
 
+\section{Thiết lập thí nghiệm}
+\label{sec:setup}
+
+Mạng xương sống là ViT-B/16 tiền huấn luyện trên ImageNet-21K, thích nghi bằng
+LoRA hạng $8$. Nghiên cứu bốn seed ở Mục~\ref{sec:results} dùng Split-ImageNet-R,
+Split-CIFAR100 và Split-CUB200, mỗi bộ chia thành $10$ tác vụ; lưới ở
+Mục~\ref{sec:grid} thay CUB-200 bằng Split-ImageNet-A và 5-Datasets, bộ sau vốn
+là một chuỗi năm bộ dữ liệu nên có năm tác vụ theo định nghĩa. Mọi thí nghiệm lặp
+trên bốn seed $42$ đến $45$; kho LoRA và khối TII được huấn luyện lại từ đầu cho
+từng seed. Mốc và phương pháp đề xuất được đánh giá từ cùng một bộ checkpoint qua
+cùng một đường mã, nên chênh lệch báo cáo phản ánh đúng phần thay đổi ở giai đoạn
+suy luận và không lẫn nhiễu huấn luyện. Đầu RP dùng $M = 10^4$ chiều, phi tuyến
+ReLU và tham số ridge $\lambda = 10^4$; không áp dụng hiệu chỉnh nhiệt độ.
+
+Ký hiệu $a_{i,t}$ là độ chính xác trên tác vụ $i$ đo tại giai đoạn $t$, chúng tôi
+báo cáo độ chính xác định tuyến (Acc@task), độ chính xác phân lớp ở hạng một và
+hạng năm (Acc@1, Acc@5), hàm mất mát cross-entropy (Loss), và hai chỉ số ghi nhớ
+\begin{equation}
+\mathrm{Forgetting} = \frac{1}{T}\sum_{i=1}^{T}
+\Big( \max_{t} a_{i,t} - a_{i,T} \Big),
+\qquad
+\mathrm{Backward} = \frac{1}{T}\sum_{i=1}^{T} \big( a_{i,T} - a_{i,i} \big).
+\label{eq:metrics}
+\end{equation}
+Với Loss và Forgetting, thấp hơn là tốt hơn; với bốn chỉ số còn lại thì ngược
+lại. Cả hai chỉ số ghi nhớ đều so một tác vụ với \emph{chính nó} ở thời điểm
+trước, chứ không so giữa các phương pháp --- đặc điểm khiến chúng hành xử khác
+hẳn hai trục độ chính xác ở Mục~\ref{sec:results}.
+
+\subsubsection{Kiểm chứng tính đúng đắn của cài đặt.}
+Đặt $w = 1{,}0$ ở (\ref{eq:route}) dồn toàn bộ trọng số định tuyến về TII và tắt
+nguồn thứ hai. Ở cấu hình đó, phương pháp tái lập mốc HRM-PET đến từng chữ số
+trên cả ba bộ dữ liệu --- $77{,}7914$, $74{,}0191$, $1{,}2305$ và phần còn lại
+khớp tới chữ số thập phân thứ tư. Vì vậy mọi chênh lệch ở Bảng~\ref{tab:main}
+đến từ đúng các thành phần được bổ sung chứ không từ khác biệt ngẫu nhiên trong
+quy trình đánh giá, và $w$ đồng thời là một trục khảo sát liên tục nối mốc với
+phương pháp đề xuất.
+
+\section{Kết quả}
+\label{sec:results}
+
+Bảng~\ref{tab:main} tổng hợp cả ba bộ dữ liệu. Giá trị là trung bình $\pm$ độ
+lệch chuẩn trên bốn seed. Cột thay đổi được tính theo cặp --- chênh lệch giữa
+phương pháp đề xuất và mốc tính riêng cho từng seed rồi mới lấy trung bình ---
+nên độ lệch chuẩn của cột đó mô tả độ ổn định của chính mức cải thiện, không bị
+ảnh hưởng bởi độ khó khác nhau giữa các seed.
+
+\begin{table}
+\caption{Kết quả trên ba bộ dữ liệu, trung bình $\pm$ độ lệch chuẩn trên bốn
+seed 42--45.}\label{tab:main}
+\begin{tabular}{llrrr}
+\hline
+\multicolumn{2}{l}{Bộ dữ liệu và chỉ số} & HRM-PET & Đề xuất & Thay đổi\\
+\hline
+\multicolumn{5}{l}{\emph{Split-ImageNet-R}}\\
+& Acc@task   & $77{,}58 \pm 0{,}33$ & $79{,}85 \pm 0{,}18$ & $+2{,}264 \pm 0{,}158$\\
+& Acc@1      & $73{,}94 \pm 0{,}48$ & $75{,}18 \pm 0{,}24$ & $+1{,}236 \pm 0{,}416$\\
+& Acc@5      & $86{,}71 \pm 0{,}21$ & $88{,}02 \pm 0{,}17$ & $+1{,}312 \pm 0{,}148$\\
+& Loss       & $1{,}23 \pm 0{,}01$  & $1{,}19 \pm 0{,}01$  & $-0{,}040 \pm 0{,}002$\\
+& Forgetting & $3{,}36 \pm 0{,}56$  & $3{,}30 \pm 0{,}35$  & $-0{,}056 \pm 0{,}334$\\
+& Backward   & $-3{,}16 \pm 0{,}61$ & $-3{,}20 \pm 0{,}42$ & $-0{,}047 \pm 0{,}282$\\
+\multicolumn{5}{l}{\emph{Split-CIFAR100}}\\
+& Acc@task   & $89{,}77 \pm 0{,}11$ & $90{,}87 \pm 0{,}09$ & $+1{,}103 \pm 0{,}066$\\
+& Acc@1      & $89{,}78 \pm 0{,}03$ & $90{,}47 \pm 0{,}05$ & $+0{,}690 \pm 0{,}063$\\
+& Acc@5      & $98{,}65 \pm 0{,}03$ & $98{,}86 \pm 0{,}07$ & $+0{,}217 \pm 0{,}057$\\
+& Loss       & $0{,}39 \pm 0{,}00$  & $0{,}39 \pm 0{,}00$  & $-0{,}000 \pm 0{,}001$\\
+& Forgetting & $3{,}89 \pm 0{,}08$  & $3{,}74 \pm 0{,}12$  & $-0{,}156 \pm 0{,}098$\\
+& Backward   & $-3{,}87 \pm 0{,}07$ & $-3{,}73 \pm 0{,}11$ & $+0{,}142 \pm 0{,}097$\\
+\multicolumn{5}{l}{\emph{Split-CUB200}}\\
+& Acc@task   & $93{,}12 \pm 0{,}14$ & $94{,}34 \pm 0{,}10$ & $+1{,}226 \pm 0{,}149$\\
+& Acc@1      & $86{,}38 \pm 0{,}25$ & $87{,}88 \pm 0{,}27$ & $+1{,}495 \pm 0{,}353$\\
+& Acc@5      & $97{,}04 \pm 0{,}10$ & $97{,}44 \pm 0{,}13$ & $+0{,}400 \pm 0{,}103$\\
+& Loss       & $0{,}57 \pm 0{,}00$  & $0{,}53 \pm 0{,}01$  & $-0{,}036 \pm 0{,}004$\\
+& Forgetting & $2{,}54 \pm 0{,}35$  & $2{,}18 \pm 0{,}12$  & $-0{,}359 \pm 0{,}325$\\
+& Backward   & $-2{,}42 \pm 0{,}39$ & $-2{,}14 \pm 0{,}13$ & $+0{,}279 \pm 0{,}391$\\
+\hline
+\end{tabular}
+\end{table}
+
+Sáu chỉ số không phải sáu sự kiện độc lập; chúng đo ba trục, và phát biểu theo
+trục nói được nhiều hơn một phép đếm gộp. Đại lượng quyết định là tỉ số giữa mức
+thay đổi và độ lệch chuẩn của chính mức thay đổi đó: dưới $2$ thì không phân giải
+được.
+
+\subsubsection{Trục định tuyến (Acc@task): cải thiện chắc chắn.}
+Mức tăng $+1{,}10$ đến $+2{,}26$ điểm, tỉ số nằm trong khoảng $8$ đến $17$. Đây
+là trục tầng thứ nhất tác động trực tiếp và cũng là trục có bằng chứng vững nhất.
+
+\subsubsection{Trục phân lớp (Acc@1, Acc@5): cải thiện chắc chắn.}
+Acc@1 tăng $+0{,}69$ đến $+1{,}50$ điểm với tỉ số từ $3{,}0$ đến $11{,}0$; Acc@5
+tăng $+0{,}22$ đến $+1{,}31$ với tỉ số từ $3{,}8$ đến $8{,}9$. Phần lợi ở định
+tuyến không chuyển hoá hết sang phân lớp --- Mục~\ref{sec:method} giải thích vì
+sao đầu dùng chung thường đã đoán đúng lớp bất chấp định tuyến sai --- nhưng phần
+chuyển hoá được thì lặp lại ổn định trên mọi seed.
+
+\subsubsection{Trục ghi nhớ (Forgetting, Backward): không có bằng chứng.}
+Tỉ số nằm trong khoảng $0{,}17$ đến $1{,}6$, không lần nào chạm ngưỡng phân giải
+trên bất kỳ bộ dữ liệu nào. Hai chỉ số này còn gần như là ảnh gương của nhau ---
+$-0{,}156$ với $+0{,}142$ trên CIFAR-100, $-0{,}359$ với $+0{,}279$ trên CUB-200
+--- nên đếm chúng thành hai kết quả là đếm một sự kiện hai lần. \emph{Chúng tôi
+không tuyên bố cải thiện ở trục này.} Đọc kèm Mục~\ref{sec:limits}: siêu tham số
+được chọn trên ImageNet-R, nên phần bằng chứng độc lập là $11$ ô của CIFAR-100 và
+CUB-200, và cả $11$ đều cải thiện.
+
+\subsubsection{Trường hợp CUB-200.}
+Bộ này vốn là điểm yếu của phiên bản chỉ có tầng định tuyến, nơi mức tăng rõ rệt
+ở định tuyến dừng lại ở $-0{,}03$ điểm Acc@1. Sau khi bổ sung tầng phân lớp, đây
+trở thành bộ có Acc@1 tăng mạnh nhất, đúng như phân tích dự đoán.
+
+\subsection{Lưới đầy đủ}
+\label{sec:grid}
+
+Mọi con số ở trên đứng trên một mạng xương sống. Bài gốc nêu thí nghiệm trên bốn
+bộ dữ liệu dưới năm cấu hình tiền huấn luyện. Bảng khảo sát của chính họ gọi tên
+năm cấu hình ấy --- Sup-21K, iBOT-21K, iBOT-1K, DINO-1K và MoCo-1K --- và ba dấu
+vết trong mã họ phát hành xác định bốn bộ dữ liệu đồng thời củng cố danh sách
+đó: bốn cặp tệp cấu hình (CIFAR-100, ImageNet-R, ImageNet-A, 5-Datasets, và
+không có CUB-200) cùng một tệp \texttt{.DS\_Store} bỏ quên trong
+\texttt{training\_scripts/} liệt kê hai mươi tên script, tức bốn bộ nhân năm
+mạng. Chúng tôi dựng lại cả hai mươi ô, huấn luyện lại trọn quy trình HRM-PET từ
+đầu ở mọi ô thiếu checkpoint, rồi đo mốc và phương pháp đề xuất qua đúng một
+đường mã và đúng một seed.
+
+\begin{table}
+\caption{Lưới đầy đủ: bốn bộ dữ liệu nhân năm cấu hình tiền huấn luyện của bài
+gốc. Acc@1 ở seed 42; HRM-PET là $w=1$, $\beta=0$ còn Đề xuất là $w=0{,}7$,
+$\beta=0{,}5$. Giảm lỗi là mức giảm sai số tương đối so với hàng HRM-PET.}
+\label{tab:grid}
+\begin{tabular}{llrrrrr}
+\hline
+Bộ dữ liệu & & Sup-21K & MoCo-1K & iBOT-1K & iBOT-21K & DINO-1K\\
+\hline
+ImageNet-R & HRM-PET  & 74,02 & 68,47 & 71,89 & 73,29 & 70,23\\
+           & Đề xuất  & 75,51 & 70,37 & 74,41 & 75,84 & 72,91\\
+           & $\Delta$ & $+1{,}49$ & $+1{,}89$ & $+2{,}52$ & $+2{,}55$ & $+2{,}68$\\
+           & Giảm lỗi & 5,7\% & 6,0\% & 9,0\% & 9,5\% & 9,0\%\\
+\hline
+CIFAR-100  & HRM-PET  & 89,77 & 85,50 & 86,46 & 88,52 & 85,36\\
+           & Đề xuất  & 90,53 & 87,62 & 88,52 & 90,32 & 87,39\\
+           & $\Delta$ & $+0{,}76$ & $+2{,}12$ & $+2{,}06$ & $+1{,}80$ & $+2{,}03$\\
+           & Giảm lỗi & 7,4\% & 14,6\% & 15,2\% & 15,7\% & 13,9\%\\
+\hline
+ImageNet-A & HRM-PET  & 45,85 & 31,80 & 37,08 & 41,48 & 36,44\\
+           & Đề xuất  & 47,42 & 34,21 & 40,66 & 44,11 & 37,41\\
+           & $\Delta$ & $+1{,}57$ & $+2{,}41$ & $+3{,}58$ & $+2{,}63$ & $+0{,}97$\\
+           & Giảm lỗi & 2,9\% & 3,5\% & 5,7\% & 4,5\% & 1,5\%\\
+\hline
+5-Datasets & HRM-PET  & 91,37 & 92,63 & 93,80 & 93,83 & 92,52\\
+           & Đề xuất  & 93,77 & 94,04 & 94,65 & 94,42 & 93,27\\
+           & $\Delta$ & $+2{,}40$ & $+1{,}41$ & $+0{,}85$ & $+0{,}59$ & $+0{,}75$\\
+           & Giảm lỗi & 27,8\% & 19,1\% & 13,7\% & 9,6\% & 10,0\%\\
+\hline
+\end{tabular}
+\end{table}
+
+Bảng~\ref{tab:grid} báo cáo trọn hai mươi ô. \emph{Không ô nào} đi ngược chiều ở
+cả hai trục độ chính xác --- Acc@task tăng $+0{,}97$ đến $+4{,}57$, Acc@1 tăng
+$+0{,}59$ đến $+3{,}58$ --- trong khi các mốc trải gần gấp ba, từ $31{,}8$ đến
+$93{,}8$.
+
+Chênh lệch tuyệt đối khó so giữa những ô cách nhau năm mươi điểm, nên bảng báo
+cáo thêm mức giảm sai số tương đối. Đọc theo cách đó, bức tranh đổi ở đúng một
+chỗ đáng gọi tên: 5-Datasets có mức tăng tuyệt đối nhỏ nhất bảng --- có ô chỉ
+$+0{,}59$ --- nhưng mức giảm lỗi tương đối lớn nhất, $9{,}6\%$ đến $27{,}8\%$, vì
+mốc của nó đã ở $91$--$94$. Ngược lại trên ImageNet-A, mức tăng $+2{,}41$ và
+$+2{,}63$ chỉ tương ứng $3{,}5\%$ và $4{,}5\%$ trên những mốc ở khoảng ba mươi
+đến bốn mươi. Forgetting, bỏ khỏi bảng vì chỗ, cải thiện ở $15$ trong $20$ ô và
+xấu đi ở $5$, nhất quán với phần đọc bốn seed ở trên: ở trục đó phương pháp không
+dịch chuyển gì một cách đáng tin.
+
+\section{Khảo sát loại bỏ thành phần}
+\label{sec:ablation}
+
+Bài gốc khảo sát theo kiểu \emph{cộng dồn}: mỗi hàng thêm đúng một thành phần vào
+hàng trên, đo trên ImageNet-R với các cấu hình tiền huấn luyện làm cột.
+Bảng~\ref{tab:cumul} dựng lại đúng hình dạng ấy cho hai tầng của chúng tôi.
+
+\begin{table}
+\caption{Khảo sát trên Split-ImageNet-R, seed 42, Acc@1, theo hình dạng cộng dồn
+mà bài gốc dùng. Hàng ba và hàng bốn chỉ khác nhau ở chỗ tầng định tuyến có bật
+hay không, và đó là chỗ bộc lộ tương tác giữa hai tầng. Khác với bảng tương ứng
+của bài gốc, bảng này là một seed và không kèm độ lệch chuẩn.}\label{tab:cumul}
+\begin{tabular}{lrrrrr}
+\hline
+& Sup-21K & MoCo-1K & iBOT-1K & iBOT-21K & DINO-1K\\
+\hline
+Mốc ($w=1$, $\beta=0$)                & 74,02 & 68,47 & 71,89 & 73,29 & 70,23\\
+Mốc $+$ định tuyến ($w=0{,}7$)        & 74,31 & 68,81 & 72,46 & 73,91 & 70,97\\
+Mốc $+$ phân lớp ($\beta=0{,}5$)      & 74,53 & 70,70 & 74,96 & 75,72 & 72,91\\
+Mốc $+$ định tuyến $+$ phân lớp       & 74,55 & 70,63 & 74,95 & 75,72 & 72,87\\
+Mốc $+$ cả hai $+$ cổng               & 75,51 & 70,37 & 74,41 & 75,84 & 72,91\\
+\hline
+\multicolumn{6}{l}{\emph{Đóng góp riêng lẻ so với mốc}}\\
+định tuyến một mình & $+0{,}29$ & $+0{,}34$ & $+0{,}57$ & $+0{,}62$ & $+0{,}74$\\
+phân lớp một mình   & $+0{,}51$ & $+2{,}23$ & $+3{,}07$ & $+2{,}43$ & $+2{,}68$\\
+\multicolumn{6}{l}{\emph{Đóng góp biên khi đã có phần còn lại}}\\
+định tuyến khi đã có phân lớp & $+0{,}02$ & $-0{,}07$ & $-0{,}01$ & $0{,}00$ & $-0{,}04$\\
+cổng khi đã có cả hai         & $+0{,}96$ & $-0{,}26$ & $-0{,}54$ & $+0{,}12$ & $+0{,}04$\\
+\hline
+\end{tabular}
+\end{table}
+
+\subsubsection{Ở Acc@1 hai tầng không cộng dồn.}
+Mỗi tầng đứng riêng đều hơn mốc --- định tuyến $+0{,}29$ đến $+0{,}74$, phân lớp
+$+0{,}51$ đến $+3{,}07$ --- nhưng chạy cả hai không hơn chạy riêng tầng phân lớp:
+hai hàng khớp nhau trong vòng $0{,}07$ điểm trên mọi mạng xương sống, và đóng góp
+biên của tầng định tuyến khi đã có tầng phân lớp nằm giữa $-0{,}07$ và $+0{,}02$.
+Cái mà tầng định tuyến sửa thì tầng phân lớp cũng sẽ sửa. Đây chính là điểm yếu
+thứ hai, nhưng đo được dưới dạng tương tác thay vì phát biểu suông: vì đầu dùng
+chung trải trên mọi lớp đã gặp, sửa một đường định tuyến phần lớn chỉ đổi xem bộ
+thích ứng nào sinh ra một dự đoán vốn đã đúng.
+
+Chúng tôi báo cáo điều này vì nó khoanh vùng công dụng của tầng thứ nhất. Nó
+không thừa --- nó là thành phần duy nhất làm Acc@task dịch chuyển, $+0{,}97$ đến
+$+4{,}57$ (Bảng~\ref{tab:grid}), và với một phương pháp định tuyến thì Acc@task
+là một trục báo cáo có giá trị riêng. Nhưng người đọc không nên cộng hai mức đóng
+góp Acc@1 lại với nhau. Cũng đáng chú ý: đóng góp riêng của tầng phân lớp nhỏ
+nhất hẳn trên Sup-21K, $+0{,}51$ so với $+2{,}23$ đến $+3{,}07$ trên bốn mạng còn
+lại --- mà Sup-21K lại chính là mạng mọi quyết định thiết kế được đo trên nó.
+
+\subsubsection{Cổng có ích ở nơi nó được chỉnh và tốn kém ở nơi khác.}
+Ở $\beta$ đã công bố, cổng đem lại $+0{,}96$ trên Sup-21K, gần như không đổi trên
+iBOT-21K và DINO, và lấy đi $0{,}26$ đến $0{,}54$ điểm trên MoCo và iBOT-1K. Phép
+so đó không công bằng với bản không cổng: $\beta = 0{,}5$ vốn được chọn
+\emph{khi} cổng đang bật, nên giữ nguyên giá trị ấy là đặt một cấu hình đã chỉnh
+cạnh một cấu hình chưa chỉnh. Quét $\beta \in \{0{,}3; 0{,}5; 0{,}8; 1{,}0\}$ cho
+cả hai nhánh trên cả năm mạng tách ra hai phát hiện. Thứ nhất, cổng làm phương
+pháp gần như bất biến với $\beta$: Acc@1 dao động nhiều nhất $1{,}17$ điểm khi có
+cổng và ít nhất $3{,}89$ khi không. Thứ hai, ở $\beta$ tốt nhất của riêng mình
+--- là $0{,}3$ ở bốn trên năm mạng --- bản không cổng thắng ở bốn trên năm, mạng
+còn lại thua $0{,}09$ điểm.
+
+\begin{table}
+\caption{Chênh lệch Acc@1 khi bỏ cổng và hạ $\beta$ xuống $0{,}3$, so với cấu
+hình đã công bố (có cổng, $\beta = 0{,}5$). Dấu dương nghĩa là \emph{bỏ cổng tốt
+hơn}. Seed 42.}\label{tab:gate-cross}
+\begin{tabular}{lrrrrrr}
+\hline
+& Sup-21K & MoCo-1K & iBOT-1K & iBOT-21K & DINO-1K & Trung bình\\
+\hline
+ImageNet-R & $-0{,}09$ & $+0{,}78$ & $+0{,}80$ & $+0{,}51$ & $+0{,}60$ & $+0{,}52$\\
+CIFAR-100  & $0{,}00$  & $+0{,}57$ & $+0{,}80$ & $+0{,}56$ & $+0{,}83$ & $+0{,}55$\\
+ImageNet-A & $+0{,}14$ & $-0{,}14$ & $+0{,}06$ & $+0{,}89$ & $+0{,}46$ & $+0{,}28$\\
+5-Datasets & $-0{,}13$ & $-0{,}26$ & $-0{,}19$ & $-0{,}26$ & $-0{,}99$ & $-0{,}37$\\
+\hline
+\end{tabular}
+\end{table}
+
+\subsubsection{Trên toàn lưới bức tranh đảo chiều theo bộ dữ liệu.}
+Bảng~\ref{tab:gate-cross} mở rộng phép so sang cả bốn bộ. Bỏ cổng thắng trên
+ImageNet-R và CIFAR-100, gần như hoà trên ImageNet-A, và \emph{thua cả năm ô}
+của 5-Datasets; trên hai mươi ô của lưới, bỏ cổng hơn $0{,}25$ điểm. Hình dạng
+ấy khớp với công dụng mà cổng được thiết kế ra. Nó chỉ trộn tầng thứ hai vào
+những mẫu mà mô hình gốc chưa chắc chắn, mà trên 5-Datasets mốc đã ở $91{,}4$
+đến $93{,}8$ điểm Acc@1, tức gần như mọi mẫu đều vừa đúng vừa chắc chắn --- đúng
+loại mẫu mà cổng bảo vệ. Trên ImageNet-R ($68$--$74$) và CIFAR-100 ($85$--$90$)
+còn đủ nhiều mẫu sai để việc trộn thẳng tay có lợi.
+
+Chúng tôi giữ cổng, và nêu lập luận thay vì chỉ nêu kết luận. Nó thắng ở bộ xa
+nhất khỏi nơi nó được chỉnh, đó là bằng chứng chuyển giao chứ không phải bằng
+chứng khớp dữ liệu; nó làm phương pháp ít nhạy với $\beta$, điều đáng giá vì
+chúng tôi không chỉnh $\beta$ riêng cho từng bộ; và phần thua là nửa điểm trên
+hai bộ đổi lấy tới một điểm trên bộ còn lại. Chúng tôi ghi lại rằng mình suýt
+loại bỏ nó dựa trên bằng chứng của riêng ImageNet-R, vì đó đúng là cái bẫy mà
+Mục~\ref{sec:limits} cảnh báo. Một lưu ý khép lại bức tranh: bản không cổng đạt
+Acc@1 cao hơn trên ImageNet-R và CIFAR-100 nhưng Loss trên CIFAR-100 xấu đi
+$+0{,}019 \pm 0{,}003$ trên ba seed. Trộn thẳng tay sửa được nhiều nhãn hơn đồng
+thời làm phân bố xác suất tệ hơn.
+
+\section{Hạn chế}
+\label{sec:limits}
+
+Siêu tham số được chọn trên ImageNet-R, nên bộ đó không đóng góp bằng chứng độc
+lập; $11$ ô của CIFAR-100 và CUB-200 thì có. Quy trình bốn seed phủ một mạng
+xương sống, còn lưới hai mươi ô phủ một seed; không ô nào có cả hai. Chúng tôi
+không tuyên bố gì ở trục ghi nhớ, nơi không thay đổi nào chạm ngưỡng phân giải.
+Cuối cùng, phương pháp thừa hưởng đúng những gì đường ống đóng băng cung cấp: nó
+không hề đụng vào huấn luyện, nên phần sai số còn lại khi định tuyến đã đúng và
+cả hai đầu đều đã được hỏi ý nằm ngoài tầm với của nó.
+
+\section{Kết luận}
+
+Hai tầng hợp nhất, cùng đặt ở giai đoạn suy luận và không đòi hỏi huấn luyện
+lại, cải thiện hai trong ba trục đo được: định tuyến tăng $+1{,}10$ đến $+2{,}26$
+điểm và phân lớp tăng $+0{,}69$ đến $+1{,}50$ điểm, trên ba bộ dữ liệu và bốn
+seed, với mức tăng lớn gấp nhiều lần độ lệch chuẩn giữa các seed. Trục ghi nhớ
+không cho thay đổi phân biệt được với không và chúng tôi không tuyên bố gì ở đó.
+Tầng thứ nhất khai thác tính bổ trợ giữa hai tín hiệu định tuyến vốn sai trên
+những mẫu khác nhau; tầng thứ hai khai thác việc tín hiệu thứ hai bản thân nó đã
+là một bộ phân lớp hoàn chỉnh mà kiến trúc gốc bỏ đi.
+
+Điều khiến chúng tôi tin kết quả không phải là đặc tính của riêng một mạng xương
+sống hay một bộ dữ liệu là trọn lưới: trên bốn bộ nhân năm mạng mà bài gốc phủ,
+không ô nào đi ngược chiều ở bất kỳ trục độ chính xác nào, và điều đó đúng trên
+những mốc trải gần gấp ba, từ $31{,}8$ đến $93{,}8$ điểm Acc@1. Đọc theo mức giảm
+sai số tương đối thì hiệu quả lớn nhất lại rơi vào nơi mốc mạnh nhất, tới
+$27{,}8\%$ trên 5-Datasets --- đúng chỗ mà cách đọc tuyệt đối khiến phương pháp
+trông yếu nhất.
+
 %
 \begin{credits}
 \subsubsection{\ackname}
@@ -474,6 +924,50 @@ rehearsal-free continual learning. In: ECCV (2022)
 \bibitem{ref_lora}
 Hu, E.J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., Chen,
 W.: LoRA: low-rank adaptation of large language models. In: ICLR (2022)
+
+% Chin muc duoi day them cung muc Cong trinh lien quan, doi chieu voi ban tieng
+% Anh. Danh sach tac gia cua sau muc kinh dien da kiem lai voi chinh cac bai.
+% CON PHAI DIEN: ref_dlepem chua co danh sach tac gia; trang nha xuat ban chan
+% truy cap tu dong nen de trong co y thay vi doan.
+
+\bibitem{ref_coda}
+Smith, J.S., Karlinsky, L., Gutta, V., Cascante-Bonilla, P., Kim, D., Arbelle,
+A., Panda, R., Feris, R., Kira, Z.: CODA-Prompt: continual decomposed
+attention-based prompting for rehearsal-free continual learning. In: CVPR (2023)
+
+\bibitem{ref_adam}
+Zhou, D.W., Cai, Z.W., Ye, H.J., Zhan, D.C., Liu, Z.: Revisiting
+class-incremental learning with pre-trained models: generalizability and
+adaptivity are all you need. Int. J. Comput. Vis. (2024)
+
+\bibitem{ref_survey}
+Masana, M., Liu, X., Twardowski, B., Menta, M., Bagdanov, A.D., van de Weijer,
+J.: Class-incremental learning: survey and performance evaluation on image
+classification. IEEE Trans. Pattern Anal. Mach. Intell. (2023)
+
+\bibitem{ref_icarl}
+Rebuffi, S.A., Kolesnikov, A., Sperl, G., Lampert, C.H.: iCaRL: incremental
+classifier and representation learning. In: CVPR (2017)
+
+\bibitem{ref_bic}
+Wu, Y., Chen, Y., Wang, L., Ye, Y., Liu, Z., Guo, Y., Fu, Y.: Large scale
+incremental learning. In: CVPR (2019)
+
+\bibitem{ref_wa}
+Zhao, B., Xiao, X., Gan, G., Zhang, B., Xia, S.T.: Maintaining discrimination
+and fairness in class incremental learning. In: CVPR (2020)
+
+\bibitem{ref_lucir}
+Hou, S., Pan, X., Loy, C.C., Wang, Z., Lin, D.: Learning a unified classifier
+incrementally via rebalancing. In: CVPR (2019)
+
+\bibitem{ref_mote}
+Li, L., Wu, Z., Ji, Y.: MoTE: mixture of task-specific experts for pre-trained
+model based class-incremental learning. Knowledge-Based Systems (2025)
+
+\bibitem{ref_dlepem}
+Dynamic LoRA-experts and prototype-ensemble matching for class-incremental
+learning. Applied Sciences \textbf{16}(12), 6153 (2026)
 
 \end{thebibliography}
 \end{document}
