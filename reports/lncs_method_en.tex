@@ -391,29 +391,31 @@ first matching step; every downstream mechanism is left untouched. At $w = 1.0$,
 (\ref{eq:route}) returns exactly the ordering of $\ell^{\mathrm{task}}$, so the
 method reduces to the baseline.
 
-\subsubsection{Second stage: gated fusion at the classification level.}
+\subsubsection{Second stage: fusion at the classification level.}
 Because $\ell$ comes from the shared head, it frequently predicts the correct
 class in spite of a wrong routing decision. We therefore use the
 random-projection head itself as a secondary classifier, this time taking its
-class scores $s$.
-
-A fixed weight is the wrong instrument. It spends the same share of the decision
-on a sample the primary head has already named with certainty as on one it is
-hesitating over, and the former outnumber the latter overwhelmingly; paying there
-only flattens a peak that was already correct. Fusion can change a prediction
-only by unseating the top-ranked class, and its most plausible challenger is the
-runner-up, so the weight is set in inverse proportion to the margin between the
-two highest-scoring classes:
+class scores $s$, and mix the two with a single constant weight
 \begin{equation}
-\beta_i = \beta \left( 1 - \frac{p_{(1)} - p_{(2)}}{p_{(1)} + p_{(2)}} \right),
-\qquad \beta = 0.5 ,
-\label{eq:gate}
+\beta = 0.3 .
+\label{eq:beta}
 \end{equation}
-where $p_{(1)} \geq p_{(2)}$ are the two largest probabilities of
-$\mathrm{softmax}(\ell)$ over the classes seen so far. Dividing by the sum makes
-the quantity depend only on the ratio $p_{(2)}/p_{(1)}$, that is, it measures how
-threatened the top class is, independently of how much probability mass the pair
-holds. The gate closes on decided samples and opens on contested ones.
+
+A constant weight is not the obvious choice, and we did not begin with it. Fusion
+can change a prediction only by unseating the top-ranked class, so spending the
+same share of the decision on a sample the primary head has already named with
+certainty as on one it is hesitating over appears wasteful, and we first made
+$\beta$ depend on each sample through the margin between the two highest-scoring
+classes. Section~\ref{sec:ablation} reports what that cost. Judged at the value
+of $\beta$ each arm prefers, the constant weight is the more accurate of the two
+on five of six backbones and never has the higher loss; the gated variant's
+better forgetting comes from being less accurate at nine of the ten stages rather
+than from retaining more. The signal a gate would need does exist -- a linear
+combination of margin and rank features separates the samples only the
+random-projection head gets right at an AUC of $0.78$ to $0.83$ -- but its
+operating point does not survive the move from one task to the next, or from one
+backbone to another, and the gain it realises falls from $+1.23$ to $+0.11$ once
+it must transfer. We therefore report the simpler rule.
 
 The blend reuses (\ref{eq:znorm}) and then maps the result back onto the scale of
 $\ell$:
